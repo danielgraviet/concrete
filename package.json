@@ -1,0 +1,48 @@
+{
+  "name": "markdown-vault",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "electron.cjs",
+  "scripts": {
+    "dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "build": "tsc && vite build && electron-builder",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@codemirror/state": "^6.7.4",
+    "@codemirror/view": "^6.43.11",
+    "@mdxeditor/editor": "^4.2.4",
+    "@vitejs/plugin-react": "latest",
+    "chokidar": "^5.0.0",
+    "electron": "latest",
+    "electron-builder": "latest",
+    "katex": "^0.18.7",
+    "lucide-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "react-markdown": "^10.1.0",
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "concurrently": "latest",
+    "typescript": "latest",
+    "vite": "latest",
+    "wait-on": "latest"
+  },
+  "build": {
+    "appId": "com.markdownvault.app",
+    "productName": "Markdown Vault",
+    "files": [
+      "dist/**",
+      "electron.cjs",
+      "preload.cjs",
+      "package.json"
+    ]
+  }
+}
