@@ -1,5 +1,13 @@
-import type { AiProvider, CompleteRequest } from './types';
+import type {
+  AiProvider,
+  CompleteRequest,
+  GenerateQuizRequest,
+  GradeQuizRequest,
+  GradeReport,
+  QuizDocument,
+} from './types';
 import { TEACHER_SYSTEM_PROMPT } from './systemPrompt';
+import { stubGenerateQuiz, stubGradeQuiz } from './quizStubs';
 
 const CANNED: Record<string, string> = {
   summarize:
@@ -52,5 +60,13 @@ export class MockAiProvider implements AiProvider {
     }
     const norm = Math.sqrt(out.reduce((s, v) => s + v * v, 0)) || 1;
     return out.map((v) => Math.round((v / norm) * 1000) / 1000);
+  }
+
+  async generateQuiz(request: GenerateQuizRequest): Promise<QuizDocument> {
+    return stubGenerateQuiz(request);
+  }
+
+  async gradeQuiz(request: GradeQuizRequest): Promise<GradeReport> {
+    return stubGradeQuiz(request);
   }
 }

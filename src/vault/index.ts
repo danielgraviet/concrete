@@ -14,6 +14,7 @@ export {
   buildFileTree,
   ensureFolderAncestors,
   filesInFolder,
+  isQuizFileName,
   joinNotePath,
   noteTitle,
   parentDir,

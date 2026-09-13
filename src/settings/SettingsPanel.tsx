@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { SettingsStore } from './SettingsStore';
 import type { AppSettings } from './types';
 import { THEME_PACK_LIST } from './types';
+import { OPENROUTER_MODEL_OPTIONS } from '../ai/openRouterModels';
 
 type Props = {
   store: SettingsStore;
@@ -10,11 +11,12 @@ type Props = {
 };
 
 /**
- * Settings panel — theme packs, autosave, AI provider id.
+ * Settings panel — theme packs, autosave, AI provider + model.
  */
 export function SettingsPanel({
   store,
   providerOptions = [
+    { id: 'openrouter', label: 'OpenRouter' },
     { id: 'mock', label: 'Mock AI' },
     { id: 'local-echo', label: 'Local Echo' },
   ],
@@ -94,6 +96,21 @@ export function SettingsPanel({
             ))}
           </select>
         </label>
+        {settings.providerId === 'openrouter' ? (
+          <label className="mv-field">
+            <span>OpenRouter model</span>
+            <select
+              value={settings.openRouterModelId}
+              onChange={(e) => store.setOpenRouterModelId(e.target.value)}
+            >
+              {OPENROUTER_MODEL_OPTIONS.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.label} — {model.description}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
       </section>
 
       <button type="button" className="mv-btn mv-btn-ghost" onClick={() => store.reset()}>

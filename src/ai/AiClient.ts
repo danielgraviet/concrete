@@ -1,6 +1,14 @@
-import type { AiProvider, CompleteRequest } from './types';
+import type {
+  AiProvider,
+  CompleteRequest,
+  GenerateQuizRequest,
+  GradeQuizRequest,
+  GradeReport,
+  QuizDocument,
+} from './types';
 import { buildTeacherCompletePrompt, truncateNoteContext } from './systemPrompt';
 import { MockAiProvider } from './MockAiProvider';
+import { stubGenerateQuiz, stubGradeQuiz } from './quizStubs';
 
 /**
  * Thin façade — swap providers via setProvider / getProvider.
@@ -32,6 +40,20 @@ export class AiClient {
   embed(text: string): Promise<number[] | null> {
     if (!this.provider.embed) return Promise.resolve(null);
     return this.provider.embed(text);
+  }
+
+  generateQuiz(request: GenerateQuizRequest): Promise<QuizDocument> {
+    if (this.provider.generateQuiz) {
+      return this.provider.generateQuiz(request);
+    }
+    return Promise.resolve(stubGenerateQuiz(request));
+  }
+
+  gradeQuiz(request: GradeQuizRequest): Promise<GradeReport> {
+    if (this.provider.gradeQuiz) {
+      return this.provider.gradeQuiz(request);
+    }
+    return Promise.resolve(stubGradeQuiz(request));
   }
 }
 

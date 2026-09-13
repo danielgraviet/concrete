@@ -85,12 +85,15 @@ export type AppSettings = {
   theme: ThemePackId;
   autosaveMs: number;
   providerId: string;
+  /** OpenRouter model id when provider is openrouter. */
+  openRouterModelId: string;
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: DEFAULT_THEME_PACK,
   autosaveMs: 800,
   providerId: 'mock',
+  openRouterModelId: 'deepseek/deepseek-v4-flash-0731',
 };
 
 export function isThemePackId(value: unknown): value is ThemePackId {

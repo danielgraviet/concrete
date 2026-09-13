@@ -1,6 +1,7 @@
 import { applyTheme } from './applyTheme';
 import type { AppSettings, ThemePackId } from './types';
 import { DEFAULT_SETTINGS, DEFAULT_THEME_PACK, isThemePackId } from './types';
+import { resolveOpenRouterModelId } from '../ai/openRouterModels';
 
 const STORAGE_KEY = 'mv:settings';
 
@@ -23,6 +24,7 @@ function readStorage(): AppSettings {
         typeof parsed.autosaveMs === 'number' ? parsed.autosaveMs : DEFAULT_SETTINGS.autosaveMs,
       providerId:
         typeof parsed.providerId === 'string' ? parsed.providerId : DEFAULT_SETTINGS.providerId,
+      openRouterModelId: resolveOpenRouterModelId(parsed.openRouterModelId),
     };
   } catch {
     return structuredClone(DEFAULT_SETTINGS);
@@ -70,6 +72,15 @@ export class SettingsStore {
 
   setProviderId(providerId: string): AppSettings {
     this.settings = { ...this.settings, providerId };
+    this.persist();
+    return this.get();
+  }
+
+  setOpenRouterModelId(modelId: string): AppSettings {
+    this.settings = {
+      ...this.settings,
+      openRouterModelId: resolveOpenRouterModelId(modelId),
+    };
     this.persist();
     return this.get();
   }

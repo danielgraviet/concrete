@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen,
   ChevronDown,
+  ClipboardList,
   FileText,
   Folder,
   FolderOpen,
@@ -27,6 +28,7 @@ import {
   ensureFolderAncestors,
   FileTreeView,
   joinNotePath,
+  noteTitle,
   parentDir,
   useVault,
   VaultService,
@@ -47,10 +49,19 @@ import {
   AiOrb,
   LocalEchoProvider,
   MockAiProvider,
+  OpenRouterProvider,
   setSlashAiHandler,
   truncateNoteContext,
 } from './ai';
+import {
+  isQuizPath,
+  quizDocumentToMarkdown,
+  QuizShell,
+  GenerateQuizDialog,
+  type GenerateQuizDialogResult,
+} from './quiz';
 import { settingsStore, SettingsPanel } from './settings';
+
 
 const demoNotes = [
   'Welcome.md',
@@ -99,8 +110,12 @@ function loadLayout(): LayoutState {
   }
 }
 
-function resolveAiProvider(id: string) {
-  return id === 'local-echo' ? new LocalEchoProvider() : new MockAiProvider();
+function resolveAiProvider(id: string, openRouterModelId?: string) {
+  if (id === 'openrouter') {
+    return new OpenRouterProvider(openRouterModelId);
+  }
+  if (id === 'local-echo') return new LocalEchoProvider();
+  return new MockAiProvider();
 }
 
 export default function App() {
@@ -116,6 +131,8 @@ export default function App() {
   const [quizCards, setQuizCards] = useState<Flashcard[] | null>(null);
   const [dueTick, setDueTick] = useState(0);
   const [layout, setLayout] = useState<LayoutState>(() => loadLayout());
+  const [generateQuizOpen, setGenerateQuizOpen] = useState(false);
+  const [generatingQuiz, setGeneratingQuiz] = useState(false);
 
   const openAiChat = (seed?: string) => {
     if (seed?.trim()) setAiSeedPrompt(seed.trim());
@@ -186,15 +203,57 @@ export default function App() {
 
   useEffect(() => {
     const settings = settingsStore.hydrate();
-    aiClient.setProvider(resolveAiProvider(settings.providerId));
-    return settingsStore.subscribe((next) => {
-      aiClient.setProvider(resolveAiProvider(next.providerId));
+    aiClient.setProvider(
+      resolveAiProvider(settings.providerId, settings.openRouterModelId),
+    );
+    const unsub = settingsStore.subscribe((next) => {
+      aiClient.setProvider(
+        resolveAiProvider(next.providerId, next.openRouterModelId),
+      );
     });
+
+    // Prefer OpenRouter automatically when a key is configured and settings still say mock.
+    void (async () => {
+      try {
+        const status = await window.ai?.status();
+        if (!status?.configured) return;
+        const current = settingsStore.get();
+        if (current.providerId === 'mock') {
+          settingsStore.setProviderId('openrouter');
+        } else {
+          aiClient.setProvider(
+            resolveAiProvider(current.providerId, current.openRouterModelId),
+          );
+        }
+      } catch {
+        // Browser demo / missing bridge — keep mock.
+      }
+    })();
+
+    return unsub;
   }, []);
 
   useEffect(() => {
     setSlashAiHandler((query) => openAiChat(query));
     return () => setSlashAiHandler(null);
+  }, []);
+
+  // Persist into Documents/Markdown Vault so creates/edits survive restarts.
+  useEffect(() => {
+    if (vault.root) return;
+    let cancelled = false;
+    void vault.openDefault().then((result) => {
+      if (cancelled || !result) return;
+      setContents({});
+      setActiveFolder('');
+      const preferred =
+        result.files.find((file) => file === 'Welcome.md') ?? result.files[0] ?? '';
+      setSelected(preferred);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once when Electron vault API is ready
   }, []);
 
   useEffect(() => {
@@ -337,18 +396,22 @@ export default function App() {
     if (controller.isDirty) void controller.persistence.flush();
     setSelected(name);
     setActiveFolder(parentDir(name));
+    const cached = contents[name] ?? demoContent[name];
+    if (cached !== undefined) {
+      controller.loadContent(cached);
+    }
   };
 
-  const finishNewNote = (relative: string) => {
+  const finishNewNote = (relative: string, body?: string) => {
     const title = relative.split('/').pop()?.replace(/\.md$/i, '') ?? 'Untitled';
-    const body = `# ${title}\n\n`;
-    setContents((prev) => ({ ...prev, [relative]: body }));
+    const content = body ?? `# ${title}\n\n`;
+    setContents((prev) => ({ ...prev, [relative]: content }));
     setSelected(relative);
     setActiveFolder(parentDir(relative));
-    controller.loadContent(body);
+    controller.loadContent(content);
   };
 
-  const createDemoNote = (relative: string) => {
+  const createDemoNote = (relative: string, body?: string) => {
     vault.setFiles((current) =>
       current.includes(relative)
         ? current
@@ -358,10 +421,11 @@ export default function App() {
     if (parent) {
       vault.setFolders((current) => ensureFolderAncestors(current, parent));
     }
-    finishNewNote(relative);
+    finishNewNote(relative, body);
   };
 
   const create = async () => {
+    if (controller.isDirty) await controller.persistence.flush();
     const name = await askText(
       activeFolder ? `New note in ${activeFolder}` : 'New note name',
     );
@@ -376,6 +440,11 @@ export default function App() {
         return;
       } catch (error) {
         console.error('Failed to create note on disk', error);
+        window.alert(
+          error instanceof Error
+            ? error.message
+            : 'Could not create that note. Try a simpler name.',
+        );
         return;
       }
     }
@@ -383,6 +452,76 @@ export default function App() {
     createDemoNote(relative);
   };
 
+  const createQuiz = () => {
+    setGenerateQuizOpen(true);
+  };
+
+  const loadNoteBody = async (path: string): Promise<string> => {
+    if (contents[path] !== undefined) return contents[path];
+    if (demoContent[path] !== undefined) return demoContent[path];
+    if (canUseDiskVault(root)) {
+      try {
+        return await vault.read(path);
+      } catch {
+        return '';
+      }
+    }
+    return '';
+  };
+
+  const confirmGenerateQuiz = async (result: GenerateQuizDialogResult) => {
+    if (generatingQuiz) return;
+    if (controller.isDirty) await controller.persistence.flush();
+
+    const sourcePaths = result.sourcePaths.filter((path) => !isQuizPath(path));
+    if (sourcePaths.length === 0) {
+      window.alert('Select at least one source note.');
+      return;
+    }
+
+    setGeneratingQuiz(true);
+    try {
+      const chunks: string[] = [];
+      for (const path of sourcePaths) {
+        const body = await loadNoteBody(path);
+        chunks.push(`### File: ${path}\n\n${body.trim()}`);
+      }
+      const noteContext = chunks.join('\n\n-----\n\n');
+      const primary = sourcePaths[0];
+      const titled = result.title;
+      const saveFolder = parentDir(primary) || activeFolder;
+      const relative = joinNotePath(saveFolder, titled);
+      if (!relative) return;
+
+      const doc = await aiClient.generateQuiz({
+        topic: titled.replace(/^Quiz\s+/, ''),
+        noteContext: truncateNoteContext(noteContext, 12000),
+        source: primary,
+        sources: sourcePaths,
+      });
+      doc.title = titled;
+      doc.source = primary;
+      const body = quizDocumentToMarkdown(doc, titled);
+
+      if (canUseDiskVault(root)) {
+        const created = await vault.create(relative);
+        await vault.write(created, body);
+        finishNewNote(created, body);
+      } else {
+        createDemoNote(relative, body);
+      }
+      setGenerateQuizOpen(false);
+    } catch (error) {
+      console.error('Quiz generation failed', error);
+      window.alert(
+        error instanceof Error
+          ? `Quiz generation failed:\n${error.message}`
+          : 'Quiz generation failed. Check OpenRouter key / network and try again.',
+      );
+    } finally {
+      setGeneratingQuiz(false);
+    }
+  };
   const createFolder = async () => {
     const name = await askText(
       activeFolder ? `New folder inside ${activeFolder}` : 'New folder name',
@@ -574,6 +713,15 @@ export default function App() {
                 </button>
               </div>
             </div>
+            <button
+              type="button"
+              className="generate-quiz-sidebar-btn"
+              onClick={createQuiz}
+              disabled={generatingQuiz}
+            >
+              <ClipboardList size={16} />
+              {generatingQuiz ? 'Generating quiz…' : 'Generate quiz'}
+            </button>
             <button type="button" className="open-vault" onClick={openVault}>
               <FolderOpen size={15} /> {root ? 'Change vault' : 'Open a vault'}
             </button>
@@ -626,12 +774,12 @@ export default function App() {
             </button>
           )}
           <div className="tab active" title={selected}>
-            <FileText size={14} />
+            {isQuizPath(selected) ? <ClipboardList size={14} /> : <FileText size={14} />}
             {(selected.split('/').pop() ?? selected).replace(/\.md$/i, '') || 'Untitled'}{' '}
             {!saved && <span className="dirty">•</span>}
           </div>
           <div className="tab-spacer" />
-          {noteTags.length > 0 && (
+          {!isQuizPath(selected) && noteTags.length > 0 && (
             <div className="note-tags">
               {noteTags.map((t) => (
                 <span key={t}>#{t}</span>
@@ -656,18 +804,44 @@ export default function App() {
               {layout.rightOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
             </button>
           )}
-          <span className="mode-label">Markdown</span>
+          <span className="mode-label">{isQuizPath(selected) ? 'Quiz' : 'Markdown'}</span>
+          {!isQuizPath(selected) && selected ? (
+            <button
+              type="button"
+              className="generate-quiz-tab-btn"
+              title={`Generate quiz from ${noteTitle(selected)}`}
+              disabled={generatingQuiz}
+              onClick={createQuiz}
+            >
+              <ClipboardList size={15} />
+              {generatingQuiz ? 'Generating…' : 'Generate quiz'}
+            </button>
+          ) : null}
         </div>
         <div className="editor-wrap">
-          <WysiwygEditor
-            className="wysiwyg"
-            markdown={controller.content}
-            onChange={(value) => {
-              controller.setContent(value);
-              setContents((prev) => ({ ...prev, [selected]: value }));
-            }}
-            onBlur={() => void controller.persistence.flush()}
-          />
+          {isQuizPath(selected) ? (
+            <QuizShell
+              documentPath={selected}
+              markdown={controller.content}
+              client={aiClient}
+              onChange={(value) => {
+                controller.setContent(value);
+                setContents((prev) => ({ ...prev, [selected]: value }));
+              }}
+              onBlur={() => void controller.persistence.flush()}
+            />
+          ) : (
+            <WysiwygEditor
+              className="wysiwyg"
+              documentId={selected}
+              markdown={controller.content}
+              onChange={(value) => {
+                controller.setContent(value);
+                setContents((prev) => ({ ...prev, [selected]: value }));
+              }}
+              onBlur={() => void controller.persistence.flush()}
+            />
+          )}
         </div>
         <AiOrb
           client={aiClient}
@@ -680,7 +854,7 @@ export default function App() {
         <footer className="statusbar">
           <span>{controller.content.length} characters</span>
           <span>•</span>
-          <span>{root ? 'Local vault' : 'Demo vault'}</span>
+          <span>{root ? 'Saved to disk' : 'In-memory demo'}</span>
           <span className="status-spacer" />
           {layout.focusMode ? <span>Focus mode · Esc to exit</span> : <span>{saved ? 'Saved' : 'Editing'}</span>}
         </footer>
@@ -724,6 +898,22 @@ export default function App() {
         </div>
       </aside>
 
+      {generateQuizOpen && (
+        <GenerateQuizDialog
+          files={files}
+          defaultSourcePath={selected}
+          folderHint={
+            selected && !isQuizPath(selected)
+              ? parentDir(selected) || 'vault root'
+              : activeFolder || 'vault root'
+          }
+          busy={generatingQuiz}
+          onCancel={() => {
+            if (!generatingQuiz) setGenerateQuizOpen(false);
+          }}
+          onConfirm={(result) => void confirmGenerateQuiz(result)}
+        />
+      )}
       {layout.focusMode && (
         <button type="button" className="focus-exit" onClick={toggleFocusMode} title="Exit focus mode">
           <Minimize2 size={14} /> Exit focus
@@ -732,7 +922,15 @@ export default function App() {
 
       {overlay === 'settings' && (
         <div className="mv-overlay" role="dialog">
-          <SettingsPanel store={settingsStore} onClose={() => setOverlay(null)} />
+          <SettingsPanel
+            store={settingsStore}
+            providerOptions={[
+              { id: 'openrouter', label: 'OpenRouter' },
+              { id: 'mock', label: 'Mock AI' },
+              { id: 'local-echo', label: 'Local Echo' },
+            ]}
+            onClose={() => setOverlay(null)}
+          />
         </div>
       )}
       {quizCards && (

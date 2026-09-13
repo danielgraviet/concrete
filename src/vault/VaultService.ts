@@ -50,6 +50,15 @@ export const VaultService = {
     return api.mkdir(root, name);
   },
 
+  /** Create/open Documents/Markdown Vault and start watching it. */
+  ensureDefault(): Promise<VaultOpenResult> {
+    const api = requireVault();
+    if (typeof api.ensureDefault !== 'function') {
+      throw new Error('Default vault requires an Electron restart (ensureDefault IPC missing)');
+    }
+    return api.ensureDefault();
+  },
+
   rename(root: string, from: string, to: string): Promise<string> {
     return requireVault().rename(root, from, to);
   },

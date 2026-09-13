@@ -16,15 +16,19 @@ import '@mdxeditor/editor/style.css';
 import {
   forwardRef,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   type ReactNode,
 } from 'react';
 import type { EditorCommandHandler } from './types';
 import { quoteExitPlugin } from './quote';
+import { inlineCodeExitPlugin } from './inlineCode';
 import { slashMenuPlugin } from './slash';
 
 export type WysiwygEditorProps = {
+  /** Stable id for the open document — remounts/syncs when it changes. */
+  documentId?: string;
   markdown: string;
   onChange?: (markdown: string) => void;
   onBlur?: () => void;
@@ -79,16 +83,19 @@ export function createDefaultWysiwygPlugins(): NonNullable<MDXEditorProps['plugi
     markdownShortcutPlugin(),
     slashMenuPlugin(),
     quoteExitPlugin(),
+    inlineCodeExitPlugin(),
   ];
 }
 
 /**
- * Thin MDXEditor wrapper: reliable WYSIWYG Markdown editing with room for
- * more plugins and a command callback for later Command-pattern integration.
+ * Thin MDXEditor wrapper.
+ * MDXEditor only applies the `markdown` prop on mount, so we remount (and
+ * setMarkdown) whenever `documentId` changes.
  */
 export const WysiwygEditor = forwardRef<WysiwygEditorHandle, WysiwygEditorProps>(
   function WysiwygEditor(
     {
+      documentId,
       markdown,
       onChange,
       onBlur,
@@ -102,12 +109,19 @@ export const WysiwygEditor = forwardRef<WysiwygEditorHandle, WysiwygEditorProps>
     ref,
   ) {
     const editorRef = useRef<MDXEditorMethods>(null);
+    const markdownRef = useRef(markdown);
+    markdownRef.current = markdown;
 
     useImperativeHandle(ref, () => ({
       focus: () => editorRef.current?.focus(),
-      getMarkdown: () => editorRef.current?.getMarkdown() ?? markdown,
+      getMarkdown: () => editorRef.current?.getMarkdown() ?? markdownRef.current,
       setMarkdown: (value: string) => editorRef.current?.setMarkdown(value),
     }));
+
+    useLayoutEffect(() => {
+      if (!documentId) return;
+      editorRef.current?.setMarkdown(markdownRef.current);
+    }, [documentId]);
 
     const plugins = useMemo(() => {
       if (pluginsOverride) return pluginsOverride;
@@ -117,6 +131,7 @@ export const WysiwygEditor = forwardRef<WysiwygEditorHandle, WysiwygEditorProps>
 
     return (
       <MDXEditor
+        key={documentId ?? 'editor'}
         ref={editorRef}
         className={className}
         markdown={markdown}

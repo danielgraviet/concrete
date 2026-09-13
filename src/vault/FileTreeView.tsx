@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, FileText, Folder, FolderOpen } from 'lucide-react';
-import { buildFileTree } from './fileTree';
+import {
+  ChevronDown,
+  ChevronRight,
+  ClipboardList,
+  FileText,
+  Folder,
+  FolderOpen,
+} from 'lucide-react';
+import { buildFileTree, isQuizFileName } from './fileTree';
 import type { VaultFolderNode, VaultTreeNode } from './types';
 
 type FileTreeViewProps = {
@@ -123,12 +130,16 @@ function TreeNode({
   return (
     <button
       type="button"
-      className={`file-row ${selected === node.path ? 'selected' : ''}`}
+      className={`file-row ${selected === node.path ? 'selected' : ''} ${isQuizFileName(node.name) ? 'quiz-file' : ''}`}
       style={{ paddingLeft: 28 + depth * 14 }}
       onClick={() => onSelectFile(node.path)}
       onDoubleClick={() => onRenameFile?.(node.path)}
     >
-      <FileText size={14} />
+      {isQuizFileName(node.name) ? (
+        <ClipboardList size={14} className="quiz-file-icon" />
+      ) : (
+        <FileText size={14} />
+      )}
       <span>{node.name.replace(/\.md$/i, '')}</span>
     </button>
   );

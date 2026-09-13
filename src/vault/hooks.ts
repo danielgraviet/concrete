@@ -41,6 +41,18 @@ export function useVault(initialFiles: string[] = [], initialFolders: string[] =
     return result;
   }, []);
 
+  /** Open the default on-disk vault (Documents/Markdown Vault). */
+  const openDefault = useCallback(async () => {
+    if (typeof window === 'undefined' || typeof window.vault?.ensureDefault !== 'function') {
+      return null;
+    }
+    const result = await VaultService.ensureDefault();
+    setRoot(result.root);
+    setFiles(result.files);
+    setFolders(result.folders ?? []);
+    return result;
+  }, []);
+
   const refresh = useCallback(async () => {
     const currentRoot = rootRef.current;
     if (!currentRoot) return { files: [], folders: [] };
@@ -116,6 +128,7 @@ export function useVault(initialFiles: string[] = [], initialFolders: string[] =
     setFiles,
     setFolders,
     open,
+    openDefault,
     refresh,
     create,
     mkdir,

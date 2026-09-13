@@ -1,7 +1,36 @@
-export type { CompleteRequest, AiProvider } from './types';
+export type {
+  CompleteRequest,
+  AiProvider,
+  GenerateQuizRequest,
+  GradeQuizRequest,
+  GradeReport,
+  QuizDocument,
+} from './types';
 export { MockAiProvider } from './MockAiProvider';
 export { LocalEchoProvider } from './LocalEchoProvider';
+export {
+  OpenRouterProvider,
+  OPENROUTER_MODEL_DEEPSEEK_V4_FLASH,
+  OPENROUTER_MODEL_DEFAULT,
+  OPENROUTER_MODEL_LUNA,
+  OPENROUTER_MODEL_GPT4O_MINI,
+  OPENROUTER_MODEL_OPTIONS,
+  isOpenRouterConfigured,
+  isOpenRouterModelId,
+  resolveOpenRouterModelId,
+  openRouterModelLabel,
+} from './OpenRouterProvider';
+export type { OpenRouterModelOption } from './OpenRouterProvider';
 export { AiClient, aiClient } from './AiClient';
+export { stubGenerateQuiz, stubGradeQuiz } from './quizStubs';
+export {
+  QUIZ_GENERATION_SYSTEM_PROMPT,
+  buildQuizGenerationUserPrompt,
+} from './quizGenerationPrompt';
+export {
+  quizDocumentFromModelText,
+  extractQuizMarkdown,
+} from './quizDocumentFromModelText';
 export { AiPanel } from './AiPanel';
 export { AiOrb } from './AiOrb';
 export {

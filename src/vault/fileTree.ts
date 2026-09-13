@@ -11,6 +11,18 @@ export function noteTitle(relativePath: string): string {
   return base.replace(/\.md$/i, '');
 }
 
+/** True when basename (sans .md) starts with `Quiz `. */
+export function isQuizFileName(name: string): boolean {
+  const base = toPosixPath(name).split('/').pop() ?? name;
+  return /^Quiz /.test(base.replace(/\.md$/i, ''));
+}
+
+/** Sort rank: folders first, then notes, quizzes last. */
+function treeSortRank(node: VaultTreeNode): number {
+  if (node.type === 'folder') return 0;
+  return isQuizFileName(node.name) ? 2 : 1;
+}
+
 /** Parent folder relative path, or `''` for vault root files. */
 export function parentDir(relativePath: string): string {
   const parts = toPosixPath(relativePath).split('/');
@@ -99,7 +111,8 @@ export function buildFileTree(
 
   const sortNodes = (nodes: VaultTreeNode[]) => {
     nodes.sort((a, b) => {
-      if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
+      const rankDiff = treeSortRank(a) - treeSortRank(b);
+      if (rankDiff !== 0) return rankDiff;
       return a.name.localeCompare(b.name);
     });
     for (const node of nodes) {
