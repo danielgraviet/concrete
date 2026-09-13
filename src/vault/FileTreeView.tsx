@@ -1,27 +1,82 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ContextMenu, IconButton, Text } from '@radix-ui/themes';
 import {
-  ChevronDown,
-  ChevronRight,
-  ClipboardList,
-  FileText,
-  Folder,
-  FolderOpen,
-} from 'lucide-react';
-import { buildFileTree, isQuizFileName } from './fileTree';
+  ChevronDownIcon,
+  ChevronRightIcon,
+  ClipboardIcon,
+  FileTextIcon,
+  ArchiveIcon,
+} from '@radix-ui/react-icons';
+import { buildFileTree, isQuizFileName, noteTitle } from './fileTree';
 import type { VaultFolderNode, VaultTreeNode } from './types';
+
+export type TreeItemKind = 'file' | 'folder';
 
 type FileTreeViewProps = {
   files: string[];
   folders?: string[];
   selected: string;
-  /** Currently targeted folder for new notes (`''` = vault root). */
+  /** Currently targeted folder for new notes/folders (`''` = vault root). */
   activeFolder: string;
-  vaultLabel: string;
+  /** @deprecated Unused — vault root label row was removed for a minimal sidebar. */
+  vaultLabel?: string;
   filterPaths?: string[] | null;
   onSelectFile: (path: string) => void;
   onSelectFolder: (path: string) => void;
-  onRenameFile?: (path: string) => void;
+  onRename: (path: string, kind: TreeItemKind, nextName: string) => void | Promise<void>;
+  onDelete: (path: string, kind: TreeItemKind) => void | Promise<void>;
 };
+
+function InlineRenameInput({
+  initialValue,
+  onCommit,
+  onCancel,
+}: {
+  initialValue: string;
+  onCommit: (value: string) => void;
+  onCancel: () => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [value, setValue] = useState(initialValue);
+  const committed = useRef(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    el.select();
+  }, []);
+
+  const finish = (next: string | null) => {
+    if (committed.current) return;
+    committed.current = true;
+    const trimmed = next?.trim() ?? '';
+    if (!trimmed || trimmed === initialValue) onCancel();
+    else onCommit(trimmed);
+  };
+
+  return (
+    <input
+      ref={ref}
+      className="tree-rename-input"
+      value={value}
+      aria-label="Rename"
+      onChange={(event) => setValue(event.target.value)}
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          finish(value);
+        } else if (event.key === 'Escape') {
+          event.preventDefault();
+          finish(null);
+        }
+      }}
+      onBlur={() => finish(value)}
+    />
+  );
+}
 
 function FolderBranch({
   node,
@@ -29,47 +84,104 @@ function FolderBranch({
   selected,
   activeFolder,
   expanded,
+  renaming,
   onToggle,
   onSelectFile,
   onSelectFolder,
-  onRenameFile,
+  onStartRename,
+  onCommitRename,
+  onCancelRename,
+  onDelete,
 }: {
   node: VaultFolderNode;
   depth: number;
   selected: string;
   activeFolder: string;
   expanded: Set<string>;
+  renaming: { path: string; kind: TreeItemKind } | null;
   onToggle: (path: string) => void;
   onSelectFile: (path: string) => void;
   onSelectFolder: (path: string) => void;
-  onRenameFile?: (path: string) => void;
+  onStartRename: (path: string, kind: TreeItemKind) => void;
+  onCommitRename: (path: string, kind: TreeItemKind, nextName: string) => void;
+  onCancelRename: () => void;
+  onDelete: (path: string, kind: TreeItemKind) => void;
 }) {
   const isOpen = expanded.has(node.path);
   const isActive = activeFolder === node.path;
+  const isRenaming = renaming?.kind === 'folder' && renaming.path === node.path;
 
   return (
     <div className="tree-branch">
-      <div
-        className={`folder-row ${isActive ? 'active-folder' : ''}`}
-        style={{ paddingLeft: 8 + depth * 14 }}
-      >
-        <button
-          type="button"
-          className="folder-chevron"
-          aria-label={isOpen ? 'Collapse folder' : 'Expand folder'}
-          onClick={() => onToggle(node.path)}
-        >
-          {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        </button>
-        <button
-          type="button"
-          className="folder-select"
-          onClick={() => onSelectFolder(node.path)}
-        >
-          {isOpen ? <FolderOpen size={15} /> : <Folder size={15} />}
-          <span>{node.name}</span>
-        </button>
-      </div>
+      <ContextMenu.Root>
+        <ContextMenu.Trigger>
+          <div
+            className={`folder-row ${isActive ? 'active-folder' : ''}`}
+            style={{ paddingLeft: 8 + depth * 14 }}
+            tabIndex={0}
+            role="treeitem"
+            aria-selected={isActive}
+            onClick={() => onSelectFolder(isActive ? '' : node.path)}
+            onKeyDown={(event) => {
+              if (isRenaming) return;
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                onSelectFolder(node.path);
+                onStartRename(node.path, 'folder');
+              } else if (event.key === 'F2') {
+                event.preventDefault();
+                onSelectFolder(node.path);
+                onStartRename(node.path, 'folder');
+              }
+            }}
+          >
+            <IconButton
+              type="button"
+              size="1"
+              variant="ghost"
+              color="gray"
+              highContrast
+              aria-label={isOpen ? 'Collapse folder' : 'Expand folder'}
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggle(node.path);
+              }}
+            >
+              {isOpen ? <ChevronDownIcon /> : <ChevronRightIcon />}
+            </IconButton>
+            <div className="folder-select">
+              <ArchiveIcon width={15} height={15} />
+              {isRenaming ? (
+                <InlineRenameInput
+                  initialValue={node.name}
+                  onCommit={(next) => onCommitRename(node.path, 'folder', next)}
+                  onCancel={onCancelRename}
+                />
+              ) : (
+                <Text size="2" as="span">
+                  {node.name}
+                </Text>
+              )}
+            </div>
+          </div>
+        </ContextMenu.Trigger>
+        <ContextMenu.Content size="1" variant="soft">
+          <ContextMenu.Item
+            onSelect={() => {
+              onSelectFolder(node.path);
+              requestAnimationFrame(() => onStartRename(node.path, 'folder'));
+            }}
+          >
+            Rename
+          </ContextMenu.Item>
+          <ContextMenu.Separator />
+          <ContextMenu.Item
+            color="red"
+            onSelect={() => void onDelete(node.path, 'folder')}
+          >
+            Delete
+          </ContextMenu.Item>
+        </ContextMenu.Content>      </ContextMenu.Root>
       {isOpen
         ? node.children.map((child) => (
             <TreeNode
@@ -79,10 +191,14 @@ function FolderBranch({
               selected={selected}
               activeFolder={activeFolder}
               expanded={expanded}
+              renaming={renaming}
               onToggle={onToggle}
               onSelectFile={onSelectFile}
               onSelectFolder={onSelectFolder}
-              onRenameFile={onRenameFile}
+              onStartRename={onStartRename}
+              onCommitRename={onCommitRename}
+              onCancelRename={onCancelRename}
+              onDelete={onDelete}
             />
           ))
         : null}
@@ -96,20 +212,28 @@ function TreeNode({
   selected,
   activeFolder,
   expanded,
+  renaming,
   onToggle,
   onSelectFile,
   onSelectFolder,
-  onRenameFile,
+  onStartRename,
+  onCommitRename,
+  onCancelRename,
+  onDelete,
 }: {
   node: VaultTreeNode;
   depth: number;
   selected: string;
   activeFolder: string;
   expanded: Set<string>;
+  renaming: { path: string; kind: TreeItemKind } | null;
   onToggle: (path: string) => void;
   onSelectFile: (path: string) => void;
   onSelectFolder: (path: string) => void;
-  onRenameFile?: (path: string) => void;
+  onStartRename: (path: string, kind: TreeItemKind) => void;
+  onCommitRename: (path: string, kind: TreeItemKind, nextName: string) => void;
+  onCancelRename: () => void;
+  onDelete: (path: string, kind: TreeItemKind) => void;
 }) {
   if (node.type === 'folder') {
     return (
@@ -119,29 +243,76 @@ function TreeNode({
         selected={selected}
         activeFolder={activeFolder}
         expanded={expanded}
+        renaming={renaming}
         onToggle={onToggle}
         onSelectFile={onSelectFile}
         onSelectFolder={onSelectFolder}
-        onRenameFile={onRenameFile}
+        onStartRename={onStartRename}
+        onCommitRename={onCommitRename}
+        onCancelRename={onCancelRename}
+        onDelete={onDelete}
       />
     );
   }
 
+  const isSelected = selected === node.path;
+  const isQuiz = isQuizFileName(node.name);
+  const isRenaming = renaming?.kind === 'file' && renaming.path === node.path;
+  const label = noteTitle(node.path);
+
   return (
-    <button
-      type="button"
-      className={`file-row ${selected === node.path ? 'selected' : ''} ${isQuizFileName(node.name) ? 'quiz-file' : ''}`}
-      style={{ paddingLeft: 28 + depth * 14 }}
-      onClick={() => onSelectFile(node.path)}
-      onDoubleClick={() => onRenameFile?.(node.path)}
-    >
-      {isQuizFileName(node.name) ? (
-        <ClipboardList size={14} className="quiz-file-icon" />
-      ) : (
-        <FileText size={14} />
-      )}
-      <span>{node.name.replace(/\.md$/i, '')}</span>
-    </button>
+    <ContextMenu.Root>
+      <ContextMenu.Trigger>
+        <button
+          type="button"
+          className={`file-row ${isSelected ? 'selected' : ''} ${isQuiz ? 'quiz-file' : ''}`}
+          style={{ paddingLeft: 28 + depth * 14 }}
+          onClick={() => onSelectFile(node.path)}
+          onKeyDown={(event) => {
+            if (isRenaming) return;
+            if (event.key === 'Enter' || event.key === 'F2') {
+              event.preventDefault();
+              onSelectFile(node.path);
+              onStartRename(node.path, 'file');
+            }
+          }}
+        >
+          {isQuiz ? (
+            <ClipboardIcon width={14} height={14} className="quiz-file-icon" />
+          ) : (
+            <FileTextIcon width={14} height={14} />
+          )}
+          {isRenaming ? (
+            <InlineRenameInput
+              initialValue={label}
+              onCommit={(next) => onCommitRename(node.path, 'file', next)}
+              onCancel={onCancelRename}
+            />
+          ) : (
+            <Text size="2" as="span">
+              {label}
+            </Text>
+          )}
+        </button>
+      </ContextMenu.Trigger>
+      <ContextMenu.Content size="1" variant="soft">
+        <ContextMenu.Item
+          onSelect={() => {
+            onSelectFile(node.path);
+            requestAnimationFrame(() => onStartRename(node.path, 'file'));
+          }}
+        >
+          Rename
+        </ContextMenu.Item>
+        <ContextMenu.Separator />
+        <ContextMenu.Item
+          color="red"
+          onSelect={() => void onDelete(node.path, 'file')}
+        >
+          Delete
+        </ContextMenu.Item>
+      </ContextMenu.Content>
+    </ContextMenu.Root>
   );
 }
 
@@ -164,11 +335,11 @@ export function FileTreeView({
   folders = [],
   selected,
   activeFolder,
-  vaultLabel,
   filterPaths = null,
   onSelectFile,
   onSelectFolder,
-  onRenameFile,
+  onRename,
+  onDelete,
 }: FileTreeViewProps) {
   const tree = useMemo(() => {
     const full = buildFileTree(files, folders);
@@ -177,6 +348,9 @@ export function FileTreeView({
   }, [files, folders, filterPaths]);
 
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(folders));
+  const [renaming, setRenaming] = useState<{ path: string; kind: TreeItemKind } | null>(
+    null,
+  );
   const prevFoldersRef = useRef(folders);
 
   useEffect(() => {
@@ -224,16 +398,20 @@ export function FileTreeView({
     });
   };
 
+  const commitRename = (path: string, kind: TreeItemKind, nextName: string) => {
+    setRenaming(null);
+    void onRename(path, kind, nextName);
+  };
+
   return (
-    <div className="file-tree">
-      <button
-        type="button"
-        className={`folder-row root-folder ${activeFolder === '' ? 'active-folder' : ''}`}
-        onClick={() => onSelectFolder('')}
-      >
-        <FolderOpen size={15} />
-        <span>{vaultLabel}</span>
-      </button>
+    <div
+      className="file-tree"
+      role="tree"
+      onClick={(event) => {
+        // Empty sidebar / tree chrome → create target is vault root.
+        if (event.target === event.currentTarget) onSelectFolder('');
+      }}
+    >
       {tree.children.map((child) => (
         <TreeNode
           key={`${child.type}:${child.path}`}
@@ -242,10 +420,14 @@ export function FileTreeView({
           selected={selected}
           activeFolder={activeFolder}
           expanded={expanded}
+          renaming={renaming}
           onToggle={toggle}
           onSelectFile={onSelectFile}
           onSelectFolder={onSelectFolder}
-          onRenameFile={onRenameFile}
+          onStartRename={(path, kind) => setRenaming({ path, kind })}
+          onCommitRename={commitRename}
+          onCancelRename={() => setRenaming(null)}
+          onDelete={onDelete}
         />
       ))}
     </div>

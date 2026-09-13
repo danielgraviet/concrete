@@ -235,10 +235,31 @@ ipcMain.handle('vault:mkdir', async (_, root, name) => {
 });
 
 ipcMain.handle('vault:rename', async (_, root, from, to) => {
-  const safeTo = ensureMdExtension(to.replace(/\\/g, '/'));
+  const fromPaths = resolveWithinRoot(root, from);
+  const toRaw = String(to || '')
+    .replace(/\\/g, '/')
+    .replace(/^\/+|\/+$/g, '');
+  if (!toRaw || toRaw.split('/').some((part) => part === '..' || !part)) {
+    throw new Error('Invalid destination path');
+  }
+
+  const stat = await fs.stat(fromPaths.resolved);
+  if (stat.isDirectory()) {
+    const toPaths = resolveWithinRoot(root, toRaw);
+    if (toPaths.resolved === fromPaths.resolved) return fromPaths.relative;
+    // Prevent renaming a folder into itself / a descendant.
+    const rel = path.relative(fromPaths.resolved, toPaths.resolved);
+    if (rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))) {
+      throw new Error('Cannot rename a folder into itself');
+    }
+    await fs.mkdir(path.dirname(toPaths.resolved), { recursive: true });
+    await fs.rename(fromPaths.resolved, toPaths.resolved);
+    return toPaths.relative;
+  }
+
+  const safeTo = ensureMdExtension(toRaw);
   assertMarkdown(from);
   assertMarkdown(safeTo);
-  const fromPaths = resolveWithinRoot(root, from);
   const toPaths = resolveWithinRoot(root, safeTo);
   await fs.mkdir(path.dirname(toPaths.resolved), { recursive: true });
   await fs.rename(fromPaths.resolved, toPaths.resolved);
@@ -246,8 +267,13 @@ ipcMain.handle('vault:rename', async (_, root, from, to) => {
 });
 
 ipcMain.handle('vault:delete', async (_, root, name) => {
-  assertMarkdown(name);
   const { resolved } = resolveWithinRoot(root, name);
+  const stat = await fs.stat(resolved);
+  if (stat.isDirectory()) {
+    await fs.rm(resolved, { recursive: true, force: true });
+    return true;
+  }
+  assertMarkdown(name);
   await fs.unlink(resolved);
   return true;
 });

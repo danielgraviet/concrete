@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { BotMessageSquare } from 'lucide-react';
 import type { AiClient } from './AiClient';
 
 type ChatMessage = {
@@ -22,8 +23,8 @@ function newId() {
 }
 
 /**
- * Floating tutor orb (cute eyes) bottom-right of the editor pane.
- * Click toggles a compact chat panel above the face.
+ * Floating tutor control bottom-right of the editor pane.
+ * Click toggles a compact chat panel above the icon.
  */
 export function AiOrb({
   client,
@@ -135,10 +136,7 @@ export function AiOrb({
         aria-expanded={open}
         onClick={() => onOpenChange(!open)}
       >
-        <span className="ai-orb-face" aria-hidden>
-          <span className="ai-orb-eye left" />
-          <span className="ai-orb-eye right" />
-        </span>
+        <BotMessageSquare size={22} aria-hidden />
       </button>
     </div>
   );

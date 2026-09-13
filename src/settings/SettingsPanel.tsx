@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
+import { Button, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes';
 import type { SettingsStore } from './SettingsStore';
-import type { AppSettings } from './types';
-import { THEME_PACK_LIST } from './types';
+import type { AppSettings, ThemePackId } from './types';
+import { THEME_PACKS } from './themePacks';
 import { OPENROUTER_MODEL_OPTIONS } from '../ai/openRouterModels';
 
 type Props = {
@@ -11,7 +12,7 @@ type Props = {
 };
 
 /**
- * Settings panel — theme packs, autosave, AI provider + model.
+ * Settings panel — theme packs + AI controls.
  */
 export function SettingsPanel({
   store,
@@ -27,95 +28,108 @@ export function SettingsPanel({
   useEffect(() => store.subscribe(setSettings), [store]);
 
   return (
-    <div className="mv-settings-panel">
-      <div className="mv-panel-header">
-        <div className="mv-panel-label">SETTINGS</div>
+    <Flex direction="column" gap="4" className="mv-settings-panel">
+      <Flex align="center" justify="between">
+        <Heading size="3">Settings</Heading>
         {onClose ? (
-          <button type="button" className="mv-link" onClick={onClose}>
+          <Button variant="ghost" color="gray" onClick={onClose}>
             Close
-          </button>
+          </Button>
         ) : null}
-      </div>
+      </Flex>
 
-      <section className="mv-settings-section">
-        <h4>Theme</h4>
-        <p className="mv-settings-hint">Pick a pack. Colors apply together.</p>
-        <div className="mv-theme-packs" role="radiogroup" aria-label="Theme pack">
-          {THEME_PACK_LIST.map((pack) => {
-            const selected = settings.theme === pack.id;
+      <Flex direction="column" gap="2">
+        <Text size="2" weight="medium">
+          Theme
+        </Text>
+        <Text size="1" color="gray">
+          Visual packs for chrome, accents, and type
+        </Text>
+        <div className="mv-theme-packs">
+          {THEME_PACKS.map((pack) => {
+            const selected = settings.themePack === pack.id;
             return (
               <button
                 key={pack.id}
                 type="button"
-                role="radio"
-                aria-checked={selected}
-                className={`mv-theme-pack ${selected ? 'selected' : ''}`}
-                onClick={() => store.setThemePack(pack.id)}
+                className={`mv-theme-pack${selected ? ' selected' : ''}`}
+                aria-pressed={selected}
+                onClick={() => store.setThemePack(pack.id as ThemePackId)}
               >
                 <span className="mv-theme-swatch" aria-hidden>
-                  <span style={{ background: pack.colors.bg }} />
-                  <span style={{ background: pack.colors.surface }} />
-                  <span style={{ background: pack.colors.accent }} />
+                  {pack.swatches.map((color) => (
+                    <span key={color} style={{ background: color }} />
+                  ))}
                 </span>
                 <span className="mv-theme-pack-meta">
-                  <strong>{pack.name}</strong>
+                  <strong>{pack.label}</strong>
                   <small>{pack.description}</small>
                 </span>
               </button>
             );
           })}
         </div>
-      </section>
+      </Flex>
 
-      <section className="mv-settings-section">
-        <h4>Editor</h4>
-        <label className="mv-field">
-          <span>Autosave delay (ms)</span>
-          <input
-            type="number"
-            min={0}
-            step={100}
-            value={settings.autosaveMs}
-            onChange={(e) => store.setAutosaveMs(Number(e.target.value) || 0)}
-          />
-        </label>
-      </section>
+      <Flex direction="column" gap="2">
+        <Text size="2" weight="medium">
+          Editor
+        </Text>
+        <TextField.Root
+          type="number"
+          min={0}
+          step={100}
+          value={String(settings.autosaveMs)}
+          onChange={(e) => store.setAutosaveMs(Number(e.target.value) || 0)}
+        >
+          <TextField.Slot side="right">
+            <Text size="1" color="gray">
+              ms
+            </Text>
+          </TextField.Slot>
+        </TextField.Root>
+        <Text size="1" color="gray">
+          Autosave delay
+        </Text>
+      </Flex>
 
-      <section className="mv-settings-section">
-        <h4>AI</h4>
-        <label className="mv-field">
-          <span>Default provider</span>
-          <select
-            value={settings.providerId}
-            onChange={(e) => store.setProviderId(e.target.value)}
-          >
+      <Flex direction="column" gap="2">
+        <Text size="2" weight="medium">
+          AI
+        </Text>
+        <Select.Root
+          value={settings.providerId}
+          onValueChange={(value) => store.setProviderId(value)}
+        >
+          <Select.Trigger placeholder="Provider" />
+          <Select.Content>
             {providerOptions.map((p) => (
-              <option key={p.id} value={p.id}>
+              <Select.Item key={p.id} value={p.id}>
                 {p.label}
-              </option>
+              </Select.Item>
             ))}
-          </select>
-        </label>
+          </Select.Content>
+        </Select.Root>
         {settings.providerId === 'openrouter' ? (
-          <label className="mv-field">
-            <span>OpenRouter model</span>
-            <select
-              value={settings.openRouterModelId}
-              onChange={(e) => store.setOpenRouterModelId(e.target.value)}
-            >
+          <Select.Root
+            value={settings.openRouterModelId}
+            onValueChange={(value) => store.setOpenRouterModelId(value)}
+          >
+            <Select.Trigger placeholder="Model" />
+            <Select.Content>
               {OPENROUTER_MODEL_OPTIONS.map((model) => (
-                <option key={model.id} value={model.id}>
-                  {model.label} — {model.description}
-                </option>
+                <Select.Item key={model.id} value={model.id}>
+                  {model.label}
+                </Select.Item>
               ))}
-            </select>
-          </label>
+            </Select.Content>
+          </Select.Root>
         ) : null}
-      </section>
+      </Flex>
 
-      <button type="button" className="mv-btn mv-btn-ghost" onClick={() => store.reset()}>
+      <Button variant="soft" color="gray" onClick={() => store.reset()}>
         Reset all settings
-      </button>
-    </div>
+      </Button>
+    </Flex>
   );
 }

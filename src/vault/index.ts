@@ -16,6 +16,7 @@ export {
   filesInFolder,
   isQuizFileName,
   joinNotePath,
+  joinFolderPath,
   noteTitle,
   parentDir,
   toPosixPath,
@@ -30,5 +31,5 @@ export {
 
 export { VaultService, canMkdir, canUseDiskVault } from './VaultService';
 export { useVault } from './hooks';
-export { FileTreeView } from './FileTreeView';
+export { FileTreeView, type TreeItemKind } from './FileTreeView';
 export { askText } from './askText';

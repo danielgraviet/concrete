@@ -413,6 +413,6 @@ export function SlashCommandMenu() {
         </>
       ) : null}
     </div>,
-    document.body,
+    document.querySelector('.radix-themes') ?? document.body,
   );
 }

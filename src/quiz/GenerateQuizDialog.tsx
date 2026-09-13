@@ -1,5 +1,16 @@
 import { useMemo, useState } from 'react';
-import { ClipboardList } from 'lucide-react';
+import {
+  Box,
+  Button,
+  Card,
+  Checkbox,
+  Flex,
+  Heading,
+  ScrollArea,
+  Text,
+  TextField,
+} from '@radix-ui/themes';
+import { ClipboardIcon } from '@radix-ui/react-icons';
 import { isQuizPath, quizFileTitle } from './paths';
 import { noteTitle } from '../vault/fileTree';
 
@@ -60,7 +71,6 @@ export function GenerateQuizDialog({
         : [...current, path];
       if (next.length > 0) {
         setTitle((prev) => {
-          // Only auto-rename when the user hasn't customized away from a prior default.
           const prevDefault = defaultTitleFromSources(current).replace(/^Quiz\s+/i, '');
           if (!prev.trim() || prev.trim() === prevDefault) {
             return defaultTitleFromSources(next).replace(/^Quiz\s+/i, '');
@@ -83,91 +93,104 @@ export function GenerateQuizDialog({
 
   return (
     <div className="mv-overlay mv-prompt-overlay" role="dialog" aria-modal="true">
-      <div className="mv-prompt-panel generate-quiz-panel">
-        <div className="generate-quiz-header">
-          <ClipboardList size={20} />
-          <div>
-            <h3>Generate quiz</h3>
-            <p className="quiz-muted">
-              Ground questions in selected notes
-              {folderHint ? ` · saves under ${folderHint}` : ''}.
-            </p>
-          </div>
-        </div>
+      <Card size="3" className="generate-quiz-panel">
+        <Flex direction="column" gap="4">
+          <Flex gap="3" align="start">
+            <ClipboardIcon width={20} height={20} />
+            <Box>
+              <Heading size="4">Generate quiz</Heading>
+              <Text size="2" color="gray">
+                Ground questions in selected notes
+                {folderHint ? ` · saves under ${folderHint}` : ''}.
+              </Text>
+            </Box>
+          </Flex>
 
-        <label className="mv-field">
-          <span>Quiz title</span>
-          <input
-            className="mv-prompt-input"
-            value={title}
-            disabled={busy}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="t-tests"
-            autoFocus
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                submit();
-              }
-            }}
-          />
-        </label>
+          <Flex direction="column" gap="2">
+            <Text size="2" weight="medium">
+              Quiz title
+            </Text>
+            <TextField.Root
+              value={title}
+              disabled={busy}
+              placeholder="t-tests"
+              autoFocus
+              onChange={(e) => setTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  submit();
+                }
+              }}
+            />
+          </Flex>
 
-        <div className="generate-quiz-sources">
-          <div className="generate-quiz-sources-label">
-            Source notes
-            <small>{selected.length} selected</small>
-          </div>
-          {noteFiles.length === 0 ? (
-            <p className="quiz-muted">No notes available. Create a note first.</p>
-          ) : (
-            <div className="generate-quiz-file-list">
-              {noteFiles.map((path) => {
-                const checked = selected.includes(path);
-                const isDefault = path === defaultSourcePath;
-                return (
-                  <label
-                    key={path}
-                    className={`generate-quiz-file ${checked ? 'selected' : ''}`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      disabled={busy}
-                      onChange={() => toggle(path)}
-                    />
-                    <span className="generate-quiz-file-name">{noteTitle(path)}</span>
-                    <span className="generate-quiz-file-path">
-                      {path}
-                      {isDefault ? ' · current' : ''}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          )}
-        </div>
+          <Flex direction="column" gap="2">
+            <Flex justify="between" align="center">
+              <Text size="2" weight="medium">
+                Source notes
+              </Text>
+              <Text size="1" color="gray">
+                {selected.length} selected
+              </Text>
+            </Flex>
+            {noteFiles.length === 0 ? (
+              <Text size="2" color="gray">
+                No notes available. Create a note first.
+              </Text>
+            ) : (
+              <ScrollArea type="auto" scrollbars="vertical" style={{ maxHeight: 280 }}>
+                <Flex direction="column" gap="2" pr="2">
+                  {noteFiles.map((path) => {
+                    const checked = selected.includes(path);
+                    const isDefault = path === defaultSourcePath;
+                    return (
+                      <Flex
+                        key={path}
+                        asChild
+                        align="start"
+                        gap="3"
+                        p="2"
+                        className={`generate-quiz-file ${checked ? 'selected' : ''}`}
+                      >
+                        <label>
+                          <Checkbox
+                            checked={checked}
+                            disabled={busy}
+                            onCheckedChange={() => toggle(path)}
+                          />
+                          <Flex direction="column" gap="1">
+                            <Text size="2">{noteTitle(path)}</Text>
+                            <Text size="1" color="gray">
+                              {path}
+                              {isDefault ? ' · current' : ''}
+                            </Text>
+                          </Flex>
+                        </label>
+                      </Flex>
+                    );
+                  })}
+                </Flex>
+              </ScrollArea>
+            )}
+          </Flex>
 
-        <div className="mv-actions generate-quiz-actions">
-          <button
-            type="button"
-            className="mv-btn mv-btn-ghost"
-            disabled={busy}
-            onClick={onCancel}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="generate-quiz-submit"
-            disabled={busy || selected.length === 0}
-            onClick={submit}
-          >
-            <ClipboardList size={18} />
-            {busy ? 'Generating…' : 'Generate quiz'}
-          </button>
-        </div>
-      </div>
+          <Flex gap="3" justify="end">
+            <Button variant="soft" color="gray" disabled={busy} onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button
+              highContrast
+              disabled={busy || selected.length === 0}
+              loading={busy}
+              onClick={submit}
+            >
+              <ClipboardIcon />
+              Generate quiz
+            </Button>
+          </Flex>
+        </Flex>
+      </Card>
     </div>
   );
 }

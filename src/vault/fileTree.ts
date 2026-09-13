@@ -44,6 +44,15 @@ export function ensureFolderAncestors(
   return [...next].sort((a, b) => a.localeCompare(b));
 }
 
+/** Join a vault-relative parent folder with a folder name. */
+export function joinFolderPath(folder: string, name: string): string {
+  const cleaned = toPosixPath(name).replace(/^\/+|\/+$/g, '');
+  const base = cleaned.split('/').filter(Boolean).pop() ?? cleaned;
+  if (!base || base === '..' || base.startsWith('.')) return '';
+  const parent = toPosixPath(folder).replace(/^\/+|\/+$/g, '');
+  return parent ? `${parent}/${base}` : base;
+}
+
 /** Join a vault-relative folder with a note name → `Folder/Name.md`. */
 export function joinNotePath(folder: string, name: string): string {
   const cleaned = toPosixPath(name)

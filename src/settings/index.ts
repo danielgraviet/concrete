@@ -1,12 +1,11 @@
-export type { ThemeColors, ThemePack, ThemePackId, AppSettings } from './types';
+export type { Appearance, AppSettings, ThemePackId } from './types';
+export { DEFAULT_SETTINGS, isAppearance, resolveThemePack } from './types';
 export {
-  THEME_PACKS,
-  THEME_PACK_LIST,
   DEFAULT_THEME_PACK,
-  DEFAULT_THEME,
-  DEFAULT_SETTINGS,
+  THEME_PACKS,
+  getThemePack,
   isThemePackId,
-} from './types';
-export { applyTheme } from './applyTheme';
+  type ThemePack,
+} from './themePacks';
 export { SettingsStore, settingsStore } from './SettingsStore';
 export { SettingsPanel } from './SettingsPanel';

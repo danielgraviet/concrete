@@ -18,3 +18,9 @@ export {
 export type { SlashCommand, SlashCommandId } from './slash';
 export { quoteExitPlugin, QuoteExitComposer } from './quote';
 export { inlineCodeExitPlugin, InlineCodeExitComposer } from './inlineCode';
+export {
+  mathPlugin,
+  normalizeMathMarkdown,
+  normalizeDisplayMath,
+  preferOneLineDisplayMath,
+} from './math';

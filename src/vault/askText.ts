@@ -70,7 +70,10 @@ export function askText(
     actions.append(cancelBtn, okBtn);
     panel.append(label, input, actions);
     overlay.append(panel);
-    document.body.append(overlay);
+    // Mount under Radix Theme so --gray-* / --mv-* tokens resolve (body is outside Theme).
+    const host =
+      document.querySelector('.radix-themes') ?? document.body;
+    host.append(overlay);
     input.focus();
     input.select();
   });

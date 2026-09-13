@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import type { RenderStrategy } from './types';
+import { normalizeMathMarkdown } from '../../editor/math';
 
 export type ReactMarkdownRenderProps = {
   markdown: string;
@@ -18,13 +19,14 @@ export function ReactMarkdownView({
   markdown,
   className,
 }: ReactMarkdownRenderProps): ReactNode {
+  const source = normalizeMathMarkdown(markdown);
   return (
     <div className={className ?? 'md-preview'}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex]}
       >
-        {markdown}
+        {source}
       </ReactMarkdown>
     </div>
   );

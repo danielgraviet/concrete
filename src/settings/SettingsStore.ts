@@ -1,25 +1,24 @@
-import { applyTheme } from './applyTheme';
 import type { AppSettings, ThemePackId } from './types';
-import { DEFAULT_SETTINGS, DEFAULT_THEME_PACK, isThemePackId } from './types';
+import { DEFAULT_SETTINGS, resolveThemePack } from './types';
+import { isThemePackId } from './themePacks';
 import { resolveOpenRouterModelId } from '../ai/openRouterModels';
 
 const STORAGE_KEY = 'mv:settings';
-
-function normalizeTheme(raw: unknown): ThemePackId {
-  if (isThemePackId(raw)) return raw;
-  // Legacy per-color object → default pack
-  return DEFAULT_THEME_PACK;
-}
 
 function readStorage(): AppSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return structuredClone(DEFAULT_SETTINGS);
-    const parsed = JSON.parse(raw) as Partial<AppSettings> & { theme?: unknown };
+    const parsed = JSON.parse(raw) as Partial<AppSettings> & {
+      /** Legacy theme pack id from older builds. */
+      theme?: unknown;
+      /** Legacy dark/light toggle from Radix-only builds. */
+      appearance?: unknown;
+    };
     return {
       ...DEFAULT_SETTINGS,
       ...parsed,
-      theme: normalizeTheme(parsed.theme),
+      themePack: resolveThemePack(parsed),
       autosaveMs:
         typeof parsed.autosaveMs === 'number' ? parsed.autosaveMs : DEFAULT_SETTINGS.autosaveMs,
       providerId:
@@ -56,12 +55,18 @@ export class SettingsStore {
     for (const listener of this.listeners) listener(this.get());
   }
 
-  setThemePack(packId: ThemePackId): AppSettings {
-    const theme = isThemePackId(packId) ? packId : DEFAULT_THEME_PACK;
-    this.settings = { ...this.settings, theme };
-    applyTheme(this.settings.theme);
+  setThemePack(themePack: ThemePackId): AppSettings {
+    this.settings = {
+      ...this.settings,
+      themePack: isThemePackId(themePack) ? themePack : DEFAULT_SETTINGS.themePack,
+    };
     this.persist();
     return this.get();
+  }
+
+  /** @deprecated Use setThemePack */
+  setAppearance(appearance: 'dark' | 'light'): AppSettings {
+    return this.setThemePack(appearance === 'light' ? 'martian' : 'concrete');
   }
 
   setAutosaveMs(ms: number): AppSettings {
@@ -85,16 +90,13 @@ export class SettingsStore {
     return this.get();
   }
 
-  /** Load from storage and apply theme to the document. */
   hydrate(): AppSettings {
     this.settings = readStorage();
-    applyTheme(this.settings.theme);
     return this.get();
   }
 
   reset(): AppSettings {
     this.settings = structuredClone(DEFAULT_SETTINGS);
-    applyTheme(this.settings.theme);
     this.persist();
     return this.get();
   }

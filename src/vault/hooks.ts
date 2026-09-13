@@ -93,6 +93,26 @@ export function useVault(initialFiles: string[] = [], initialFolders: string[] =
     const currentRoot = rootRef.current;
     if (!currentRoot) throw new Error('No vault open');
     const next = await VaultService.rename(currentRoot, from, to);
+    const isFolder = !from.toLowerCase().endsWith('.md');
+    if (isFolder) {
+      setFolders((current) =>
+        current
+          .map((folder) => {
+            if (folder === from) return next;
+            if (folder.startsWith(`${from}/`)) return `${next}${folder.slice(from.length)}`;
+            return folder;
+          })
+          .sort((a, b) => a.localeCompare(b)),
+      );
+      setFiles((current) =>
+        current
+          .map((file) =>
+            file.startsWith(`${from}/`) ? `${next}${file.slice(from.length)}` : file,
+          )
+          .sort((a, b) => a.localeCompare(b)),
+      );
+      return next;
+    }
     setFiles((current) =>
       current
         .map((file) => (file === from ? next : file))
@@ -105,6 +125,16 @@ export function useVault(initialFiles: string[] = [], initialFolders: string[] =
     const currentRoot = rootRef.current;
     if (!currentRoot) throw new Error('No vault open');
     await VaultService.delete(currentRoot, name);
+    const isFolder = !name.toLowerCase().endsWith('.md');
+    if (isFolder) {
+      setFolders((current) =>
+        current.filter((folder) => folder !== name && !folder.startsWith(`${name}/`)),
+      );
+      setFiles((current) =>
+        current.filter((file) => file !== name && !file.startsWith(`${name}/`)),
+      );
+      return true;
+    }
     setFiles((current) => current.filter((file) => file !== name));
     return true;
   }, []);

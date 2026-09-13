@@ -1,24 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Button, Flex, IconButton, Text } from '@radix-ui/themes';
 import {
-  BookOpen,
-  ChevronDown,
-  ClipboardList,
-  FileText,
-  Folder,
-  FolderOpen,
-  FolderPlus,
-  Hash,
-  Maximize2,
+  ClipboardIcon,
+  Cross1Icon,
+  FilePlusIcon,
+  FileTextIcon,
+  GearIcon,
+  BadgeIcon,
+  PlusCircledIcon,
+  TrashIcon,
+} from '@radix-ui/react-icons';
+import {
+  ArrowLeftFromLine,
+  ArrowRightFromLine,
+  Bot,
+  Expand,
   Minimize2,
-  PanelLeftClose,
-  PanelLeftOpen,
-  PanelRightClose,
-  PanelRightOpen,
-  Plus,
-  Search,
-  Settings,
-  Sparkles,
-  Trash2,
 } from 'lucide-react';
 import { WysiwygEditor, useEditorController } from './editor';
 import {
@@ -27,11 +24,13 @@ import {
   canUseDiskVault,
   ensureFolderAncestors,
   FileTreeView,
+  joinFolderPath,
   joinNotePath,
   noteTitle,
   parentDir,
   useVault,
   VaultService,
+  type TreeItemKind,
 } from './vault';
 import { useBacklinks } from './graph';
 import { useSearch } from './search';
@@ -122,6 +121,10 @@ export default function App() {
   const vault = useVault(demoNotes, demoFolders);
   const [selected, setSelected] = useState('Welcome.md');
   const [activeFolder, setActiveFolder] = useState('');
+  const [treeFocus, setTreeFocus] = useState<{
+    kind: TreeItemKind;
+    path: string;
+  } | null>(null);
   const [contents, setContents] = useState<Record<string, string>>({ ...demoContent });
   const [query, setQuery] = useState('');
   const [rail, setRail] = useState<RailView>('files');
@@ -395,19 +398,24 @@ export default function App() {
   const select = (name: string) => {
     if (controller.isDirty) void controller.persistence.flush();
     setSelected(name);
-    setActiveFolder(parentDir(name));
+    setTreeFocus({ kind: 'file', path: name });
+    // Keep activeFolder as the last explicit folder/root click — don't
+    // inherit a note's parent (that forced "New folder" into ML etc.).
     const cached = contents[name] ?? demoContent[name];
     if (cached !== undefined) {
       controller.loadContent(cached);
     }
   };
 
+  /** Folder target for new notes: explicit selection, else sibling of current note. */
+  const noteTargetFolder = activeFolder || parentDir(selected);
+
   const finishNewNote = (relative: string, body?: string) => {
     const title = relative.split('/').pop()?.replace(/\.md$/i, '') ?? 'Untitled';
     const content = body ?? `# ${title}\n\n`;
     setContents((prev) => ({ ...prev, [relative]: content }));
     setSelected(relative);
-    setActiveFolder(parentDir(relative));
+    setTreeFocus({ kind: 'file', path: relative });
     controller.loadContent(content);
   };
 
@@ -427,10 +435,10 @@ export default function App() {
   const create = async () => {
     if (controller.isDirty) await controller.persistence.flush();
     const name = await askText(
-      activeFolder ? `New note in ${activeFolder}` : 'New note name',
+      noteTargetFolder ? `New note in ${noteTargetFolder}` : 'New note name',
     );
     if (!name) return;
-    const relative = joinNotePath(activeFolder, name);
+    const relative = joinNotePath(noteTargetFolder, name);
     if (!relative) return;
 
     if (canUseDiskVault(root)) {
@@ -549,54 +557,212 @@ export default function App() {
     setActiveFolder(relative);
   };
 
-  const renameSelected = async () => {
-    if (!selected) return;
-    const currentName = selected.split('/').pop()?.replace(/\.md$/i, '') ?? selected;
-    const next = window.prompt('Rename note', currentName);
-    if (!next) return;
-    const folder = parentDir(selected);
-    const target = joinNotePath(folder, next);
-    if (root) {
-      const renamed = await vault.rename(selected, target);
-      setContents((prev) => {
-        const copy = { ...prev };
-        copy[renamed] = copy[selected] ?? controller.content;
-        delete copy[selected];
-        return copy;
-      });
-      setSelected(renamed);
-      setActiveFolder(parentDir(renamed));
-    } else {
+  const renameTreeItem = async (
+    path: string,
+    kind: TreeItemKind,
+    nextName: string,
+  ) => {
+    const cleaned = nextName.trim();
+    if (!cleaned) return;
+
+    if (kind === 'folder') {
+      const parent = parentDir(path);
+      const target = joinFolderPath(parent, cleaned);
+      if (!target || target === path) return;
+      if (canUseDiskVault(root)) {
+        try {
+          const renamed = await vault.rename(path, target);
+          setContents((prev) => {
+            const copy: Record<string, string> = {};
+            for (const [key, value] of Object.entries(prev)) {
+              if (key === path || key.startsWith(`${path}/`)) {
+                copy[`${renamed}${key.slice(path.length)}`] = value;
+              } else {
+                copy[key] = value;
+              }
+            }
+            return copy;
+          });
+          if (selected === path || selected.startsWith(`${path}/`)) {
+            const nextSelected = `${renamed}${selected.slice(path.length)}`;
+            setSelected(nextSelected);
+          }
+          if (activeFolder === path || activeFolder.startsWith(`${path}/`)) {
+            setActiveFolder(`${renamed}${activeFolder.slice(path.length)}`);
+          }
+          setTreeFocus({ kind: 'folder', path: renamed });
+        } catch (error) {
+          console.error('Failed to rename folder', error);
+          window.alert(
+            error instanceof Error ? error.message : 'Could not rename that folder.',
+          );
+        }
+        return;
+      }
+      vault.setFolders((current) =>
+        current
+          .map((folder) => {
+            if (folder === path) return target;
+            if (folder.startsWith(`${path}/`)) return `${target}${folder.slice(path.length)}`;
+            return folder;
+          })
+          .sort((a, b) => a.localeCompare(b)),
+      );
       vault.setFiles((current) =>
-        current.map((f) => (f === selected ? target : f)).sort(),
+        current
+          .map((file) =>
+            file.startsWith(`${path}/`) ? `${target}${file.slice(path.length)}` : file,
+          )
+          .sort((a, b) => a.localeCompare(b)),
       );
       setContents((prev) => {
-        const copy = { ...prev };
-        copy[target] = copy[selected] ?? controller.content;
-        delete copy[selected];
+        const copy: Record<string, string> = {};
+        for (const [key, value] of Object.entries(prev)) {
+          if (key.startsWith(`${path}/`)) copy[`${target}${key.slice(path.length)}`] = value;
+          else copy[key] = value;
+        }
         return copy;
       });
-      setSelected(target);
-      setActiveFolder(parentDir(target));
+      if (selected.startsWith(`${path}/`)) {
+        setSelected(`${target}${selected.slice(path.length)}`);
+      }
+      if (activeFolder === path || activeFolder.startsWith(`${path}/`)) {
+        setActiveFolder(`${target}${activeFolder.slice(path.length)}`);
+      }
+      setTreeFocus({ kind: 'folder', path: target });
+      return;
     }
+
+    const folder = parentDir(path);
+    const target = joinNotePath(folder, cleaned);
+    if (!target || target === path) return;
+    if (canUseDiskVault(root)) {
+      try {
+        const renamed = await vault.rename(path, target);
+        setContents((prev) => {
+          const copy = { ...prev };
+          copy[renamed] = copy[path] ?? controller.content;
+          delete copy[path];
+          return copy;
+        });
+        if (selected === path) setSelected(renamed);
+        setTreeFocus({ kind: 'file', path: renamed });
+      } catch (error) {
+        console.error('Failed to rename note', error);
+        window.alert(
+          error instanceof Error ? error.message : 'Could not rename that note.',
+        );
+      }
+      return;
+    }
+    vault.setFiles((current) =>
+      current.map((f) => (f === path ? target : f)).sort(),
+    );
+    setContents((prev) => {
+      const copy = { ...prev };
+      copy[target] = copy[path] ?? controller.content;
+      delete copy[path];
+      return copy;
+    });
+    if (selected === path) setSelected(target);
+    setTreeFocus({ kind: 'file', path: target });
+  };
+
+  const deleteTreeItem = async (item: { kind: TreeItemKind; path: string }) => {
+    const { kind, path } = item;
+    if (!path) return;
+    const label = kind === 'folder' ? path : noteTitle(path);
+    const message =
+      kind === 'folder'
+        ? `Delete folder “${label}” and everything inside it?`
+        : `Delete “${label}”?`;
+    if (!window.confirm(message)) return;
+
+    if (canUseDiskVault(root)) {
+      try {
+        await vault.delete(path);
+      } catch (error) {
+        console.error('Failed to delete', error);
+        window.alert(
+          error instanceof Error ? error.message : 'Could not delete that item.',
+        );
+        return;
+      }
+    } else if (kind === 'folder') {
+      vault.setFolders((current) =>
+        current.filter((folder) => folder !== path && !folder.startsWith(`${path}/`)),
+      );
+      vault.setFiles((current) =>
+        current.filter((file) => file !== path && !file.startsWith(`${path}/`)),
+      );
+    } else {
+      vault.setFiles((current) => current.filter((f) => f !== path));
+    }
+
+    setContents((prev) => {
+      const copy = { ...prev };
+      if (kind === 'folder') {
+        for (const key of Object.keys(copy)) {
+          if (key === path || key.startsWith(`${path}/`)) delete copy[key];
+        }
+      } else {
+        delete copy[path];
+      }
+      return copy;
+    });
+
+    if (kind === 'folder') {
+      if (activeFolder === path || activeFolder.startsWith(`${path}/`)) {
+        setActiveFolder('');
+      }
+      if (selected === path || selected.startsWith(`${path}/`)) {
+        const remaining = files.filter(
+          (f) => f !== path && !f.startsWith(`${path}/`),
+        );
+        setSelected(remaining[0] ?? '');
+      }
+    } else if (selected === path) {
+      const remaining = files.filter((f) => f !== path);
+      setSelected(remaining[0] ?? '');
+    }
+
+    setTreeFocus(null);
   };
 
   const deleteSelected = async () => {
-    if (!selected) return;
-    if (!window.confirm(`Delete ${selected}?`)) return;
-    if (root) await vault.delete(selected);
-    else vault.setFiles((current) => current.filter((f) => f !== selected));
-    setContents((prev) => {
-      const copy = { ...prev };
-      delete copy[selected];
-      return copy;
-    });
-    const remaining = files.filter((f) => f !== selected);
-    setSelected(remaining[0] ?? '');
+    const item = treeFocus ?? (selected ? { kind: 'file' as const, path: selected } : null);
+    if (!item) return;
+    await deleteTreeItem(item);
   };
 
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const meta = event.metaKey || event.ctrlKey;
+      if (!meta || (event.key !== 'Backspace' && event.key !== 'Delete')) return;
+
+      const target = event.target as HTMLElement | null;
+      const typing =
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        Boolean(target?.isContentEditable);
+      if (typing) return;
+
+      const item =
+        treeFocus ?? (selected ? { kind: 'file' as const, path: selected } : null);
+      if (!item?.path) return;
+
+      const focusEl = (document.activeElement as HTMLElement | null) ?? target;
+      const inTree = Boolean(focusEl?.closest?.('.sidebar, .file-tree'));
+      if (!inTree && !treeFocus) return;
+
+      event.preventDefault();
+      void deleteTreeItem(item);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [treeFocus, selected]);
+
   const saved = !controller.isDirty;
-  const vaultLabel = root ? root.split('/').pop() : 'Starter vault';
   const shellClass = [
     'app-shell',
     layout.focusMode ? 'focus-mode' : '',
@@ -608,72 +774,92 @@ export default function App() {
 
   return (
     <div className={shellClass}>
-      <header className="topbar">
-        <div className="brand">
-          <BookOpen size={17} />
-          <span>Markdown Vault</span>
-        </div>
-        <div className="vault-name">
-          {vaultLabel} <ChevronDown size={14} />
-        </div>
-      </header>
-
       <aside className="rail" aria-label="Primary">
-        <button
+        <IconButton
           type="button"
-          className={`rail-button ${rail === 'files' && layout.sidebarOpen && !layout.focusMode ? 'active' : ''}`}
-          title="Files"
+          size="2"
+          variant={rail === 'files' && layout.sidebarOpen && !layout.focusMode ? 'soft' : 'ghost'}
+          color="gray"
+          highContrast
+          aria-label="Files"
           onClick={() => selectRail('files')}
         >
-          <FileText size={19} />
-        </button>
-        <button
+          <FileTextIcon width={18} height={18} />
+        </IconButton>
+        <IconButton
           type="button"
-          className={`rail-button ${rail === 'tags' && layout.sidebarOpen && !layout.focusMode ? 'active' : ''}`}
-          title="Tags"
+          size="2"
+          variant={rail === 'tags' && layout.sidebarOpen && !layout.focusMode ? 'soft' : 'ghost'}
+          color="gray"
+          highContrast
+          aria-label="Tags"
           onClick={() => selectRail('tags')}
         >
-          <Hash size={19} />
-        </button>
-        <button
+          <BadgeIcon width={18} height={18} />
+        </IconButton>
+        <IconButton
           type="button"
-          className={`rail-button ${rail === 'ai' || aiChatOpen ? 'active' : ''}`}
-          title="Tutor"
+          size="2"
+          variant={rail === 'ai' || aiChatOpen ? 'soft' : 'ghost'}
+          color="gray"
+          highContrast
+          aria-label="Tutor"
           onClick={() => selectRail('ai')}
         >
-          <Sparkles size={19} />
-        </button>
+          <Bot size={18} />
+        </IconButton>
         <div className="rail-spacer" />
-        <button
+        <IconButton
           type="button"
-          className={`rail-button ${layout.focusMode ? 'active' : ''}`}
-          title={layout.focusMode ? 'Exit focus mode' : 'Focus mode'}
+          size="2"
+          variant={layout.focusMode ? 'soft' : 'ghost'}
+          color="gray"
+          highContrast
+          aria-label={layout.focusMode ? 'Exit focus mode' : 'Focus mode'}
           onClick={toggleFocusMode}
         >
-          {layout.focusMode ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-        </button>
-        <button
+          {layout.focusMode ? (
+            <Minimize2 size={18} />
+          ) : (
+            <Expand size={18} />
+          )}
+        </IconButton>
+        <IconButton
           type="button"
-          className="rail-button"
-          title="Settings"
+          size="2"
+          variant="ghost"
+          color="gray"
+          highContrast
+          aria-label="Settings"
           onClick={() => setOverlay('settings')}
         >
-          <Settings size={19} />
-        </button>
+          <GearIcon width={18} height={18} />
+        </IconButton>
       </aside>
 
       <aside className="sidebar" aria-hidden={!layout.sidebarOpen || layout.focusMode}>
         {rail === 'tags' ? (
           <>
-            <div className="sidebar-heading">
-              <span>TAGS</span>
-              <button type="button" title="Collapse sidebar" onClick={() => setSidebarOpen(false)}>
-                <PanelLeftClose size={15} />
-              </button>
-            </div>
+            <Flex className="sidebar-heading" align="center" justify="between" px="3">
+              <Text size="1" color="gray" weight="bold">
+                TAGS
+              </Text>
+              <IconButton
+                type="button"
+                size="1"
+                variant="ghost"
+                color="gray"
+                aria-label="Collapse sidebar"
+                onClick={() => setSidebarOpen(false)}
+              >
+                <Cross1Icon />
+              </IconButton>
+            </Flex>
             <div className="file-tree tag-list">
               {allTags.length === 0 ? (
-                <div className="empty-inline">No tags yet</div>
+                <Text size="2" color="gray" mx="3">
+                  No tags yet
+                </Text>
               ) : (
                 allTags.map((tag) => (
                   <button
@@ -682,9 +868,11 @@ export default function App() {
                     key={tag}
                     onClick={() => setQuery(`#${tag}`)}
                   >
-                    <Hash size={14} />
+                    <BadgeIcon width={14} height={14} />
                     <span>{tag}</span>
-                    <small className="tag-count">{meta.getNotesWithTag(tag).length}</small>
+                    <Text size="1" color="gray" className="tag-count">
+                      {meta.getNotesWithTag(tag).length}
+                    </Text>
                   </button>
                 ))
               )}
@@ -692,66 +880,71 @@ export default function App() {
           </>
         ) : (
           <>
-            <div className="sidebar-heading">
-              <span>FILE EXPLORER</span>
-              <div className="sidebar-heading-actions">
-                <button type="button" title="New folder" onClick={createFolder}>
-                  <FolderPlus size={16} />
-                </button>
-                <button
+            <div
+              className="sidebar-heading sidebar-heading-minimal"
+              onClick={(event) => {
+                // Clicking the actions strip (not a button) targets vault root.
+                if (event.target === event.currentTarget) setActiveFolder('');
+              }}
+            >
+              <Flex
+                className="sidebar-heading-actions"
+                justify="center"
+                gap="2"
+                onClick={(event) => {
+                  if (event.target === event.currentTarget) setActiveFolder('');
+                }}
+              >
+                <IconButton
                   type="button"
-                  title={activeFolder ? `New note in ${activeFolder}` : 'New note'}
+                  size="2"
+                  variant="ghost"
+                  color="gray"
+                  highContrast
+                  aria-label="New folder"
+                  onClick={createFolder}
+                >
+                  <PlusCircledIcon width={16} height={16} />
+                </IconButton>
+                <IconButton
+                  type="button"
+                  size="2"
+                  variant="ghost"
+                  color="gray"
+                  highContrast
+                  aria-label={
+                    noteTargetFolder ? `New note in ${noteTargetFolder}` : 'New note'
+                  }
                   onClick={create}
                 >
-                  <Plus size={16} />
-                </button>
-                <button type="button" title="Delete note" onClick={deleteSelected}>
-                  <Trash2 size={15} />
-                </button>
-                <button type="button" title="Collapse sidebar" onClick={() => setSidebarOpen(false)}>
-                  <PanelLeftClose size={15} />
-                </button>
-              </div>
-            </div>
-            <button
-              type="button"
-              className="generate-quiz-sidebar-btn"
-              onClick={createQuiz}
-              disabled={generatingQuiz}
-            >
-              <ClipboardList size={16} />
-              {generatingQuiz ? 'Generating quiz…' : 'Generate quiz'}
-            </button>
-            <button type="button" className="open-vault" onClick={openVault}>
-              <FolderOpen size={15} /> {root ? 'Change vault' : 'Open a vault'}
-            </button>
-            {activeFolder ? (
-              <div className="active-folder-chip">
-                <Folder size={13} />
-                <span>{activeFolder}</span>
-                <button type="button" onClick={() => setActiveFolder('')} title="Clear folder target">
-                  ×
-                </button>
-              </div>
-            ) : null}
-            <div className="search">
-              <Search size={15} />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search notes..."
-              />
+                  <FilePlusIcon width={16} height={16} />
+                </IconButton>
+                <IconButton
+                  type="button"
+                  size="2"
+                  variant="ghost"
+                  color="gray"
+                  highContrast
+                  aria-label="Delete note"
+                  onClick={deleteSelected}
+                >
+                  <TrashIcon width={15} height={15} />
+                </IconButton>
+              </Flex>
             </div>
             <FileTreeView
               files={files}
               folders={vault.folders}
               selected={selected}
               activeFolder={activeFolder}
-              vaultLabel={vaultLabel ?? 'Vault'}
               filterPaths={filterPaths}
               onSelectFile={select}
-              onSelectFolder={setActiveFolder}
-              onRenameFile={() => void renameSelected()}
+              onSelectFolder={(path) => {
+                setActiveFolder(path);
+                setTreeFocus(path ? { kind: 'folder', path } : null);
+              }}
+              onRename={renameTreeItem}
+              onDelete={(path, kind) => void deleteTreeItem({ path, kind })}
             />
           </>
         )}
@@ -764,17 +957,29 @@ export default function App() {
       <main className="editor">
         <div className="tabs">
           {!layout.focusMode && (
-            <button
+            <IconButton
               type="button"
-              className="pane-toggle"
-              title={layout.sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+              size="2"
+              variant="ghost"
+              color="gray"
+              highContrast
+              ml="2"
+              aria-label={layout.sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
               onClick={() => setSidebarOpen(!layout.sidebarOpen)}
             >
-              {layout.sidebarOpen ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
-            </button>
+              {layout.sidebarOpen ? (
+                <ArrowLeftFromLine size={16} />
+              ) : (
+                <ArrowRightFromLine size={16} />
+              )}
+            </IconButton>
           )}
           <div className="tab active" title={selected}>
-            {isQuizPath(selected) ? <ClipboardList size={14} /> : <FileText size={14} />}
+            {isQuizPath(selected) ? (
+              <ClipboardIcon width={14} height={14} />
+            ) : (
+              <FileTextIcon width={14} height={14} />
+            )}
             {(selected.split('/').pop() ?? selected).replace(/\.md$/i, '') || 'Untitled'}{' '}
             {!saved && <span className="dirty">•</span>}
           </div>
@@ -786,37 +991,48 @@ export default function App() {
               ))}
             </div>
           )}
-          <button
-            type="button"
-            className={`pane-toggle ${layout.focusMode ? 'active' : ''}`}
-            title={layout.focusMode ? 'Exit focus mode (Esc)' : 'Focus mode (⌘⇧F)'}
-            onClick={toggleFocusMode}
-          >
-            {layout.focusMode ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-          </button>
-          {!layout.focusMode && (
-            <button
+          <Flex className="tabs-actions" align="center" gap="3" pr="3">
+            <IconButton
               type="button"
-              className="pane-toggle"
-              title={layout.rightOpen ? 'Hide right panel' : 'Show right panel'}
-              onClick={() => setRightOpen(!layout.rightOpen)}
+              size="2"
+              variant={layout.focusMode ? 'soft' : 'ghost'}
+              color="gray"
+              highContrast
+              aria-label={layout.focusMode ? 'Exit focus mode (Esc)' : 'Focus mode (⌘⇧F)'}
+              onClick={toggleFocusMode}
             >
-              {layout.rightOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
-            </button>
-          )}
-          <span className="mode-label">{isQuizPath(selected) ? 'Quiz' : 'Markdown'}</span>
-          {!isQuizPath(selected) && selected ? (
-            <button
-              type="button"
-              className="generate-quiz-tab-btn"
-              title={`Generate quiz from ${noteTitle(selected)}`}
-              disabled={generatingQuiz}
-              onClick={createQuiz}
-            >
-              <ClipboardList size={15} />
-              {generatingQuiz ? 'Generating…' : 'Generate quiz'}
-            </button>
-          ) : null}
+              {layout.focusMode ? <Minimize2 size={16} /> : <Expand size={16} />}
+            </IconButton>
+            {!layout.focusMode && (
+              <IconButton
+                type="button"
+                size="2"
+                variant="ghost"
+                color="gray"
+                highContrast
+                aria-label={layout.rightOpen ? 'Hide right panel' : 'Show right panel'}
+                onClick={() => setRightOpen(!layout.rightOpen)}
+              >
+                {layout.rightOpen ? (
+                  <ArrowRightFromLine size={16} />
+                ) : (
+                  <ArrowLeftFromLine size={16} />
+                )}
+              </IconButton>
+            )}
+            {!isQuizPath(selected) && selected ? (
+              <Button
+                size="1"
+                highContrast
+                disabled={generatingQuiz}
+                loading={generatingQuiz}
+                onClick={createQuiz}
+              >
+                <ClipboardIcon />
+                Generate quiz
+              </Button>
+            ) : null}
+          </Flex>
         </div>
         <div className="editor-wrap">
           {isQuizPath(selected) ? (
@@ -863,13 +1079,20 @@ export default function App() {
       <aside className="right-panel" aria-hidden={!layout.rightOpen || layout.focusMode}>
         <div className="panel-title-row">
           <div className="panel-title">BACKLINKS</div>
-          <button type="button" className="pane-toggle" title="Collapse panel" onClick={() => setRightOpen(false)}>
-            <PanelRightClose size={15} />
-          </button>
+          <IconButton
+            type="button"
+            size="1"
+            variant="ghost"
+            color="gray"
+            aria-label="Collapse panel"
+            onClick={() => setRightOpen(false)}
+          >
+            <ArrowRightFromLine size={15} />
+          </IconButton>
         </div>
         {backlinks.length === 0 ? (
           <div className="empty-panel">
-            <Hash size={18} />
+            <BadgeIcon width={18} height={18} />
             <span>No backlinks yet</span>
             <small>Links to this note will appear here.</small>
           </div>
@@ -882,7 +1105,7 @@ export default function App() {
                 key={hit.path}
                 onClick={() => select(hit.path)}
               >
-                <FileText size={14} />
+                <FileTextIcon width={14} height={14} />
                 <span>{hit.title}</span>
               </button>
             ))}
@@ -913,11 +1136,6 @@ export default function App() {
           }}
           onConfirm={(result) => void confirmGenerateQuiz(result)}
         />
-      )}
-      {layout.focusMode && (
-        <button type="button" className="focus-exit" onClick={toggleFocusMode} title="Exit focus mode">
-          <Minimize2 size={14} /> Exit focus
-        </button>
       )}
 
       {overlay === 'settings' && (

@@ -25,6 +25,7 @@ import type { EditorCommandHandler } from './types';
 import { quoteExitPlugin } from './quote';
 import { inlineCodeExitPlugin } from './inlineCode';
 import { slashMenuPlugin } from './slash';
+import { mathPlugin, normalizeMathMarkdown, preferOneLineDisplayMath } from './math';
 
 export type WysiwygEditorProps = {
   /** Stable id for the open document — remounts/syncs when it changes. */
@@ -81,6 +82,7 @@ export function createDefaultWysiwygPlugins(): NonNullable<MDXEditorProps['plugi
     }),
     imagePlugin(),
     markdownShortcutPlugin(),
+    mathPlugin(),
     slashMenuPlugin(),
     quoteExitPlugin(),
     inlineCodeExitPlugin(),
@@ -114,13 +116,17 @@ export const WysiwygEditor = forwardRef<WysiwygEditorHandle, WysiwygEditorProps>
 
     useImperativeHandle(ref, () => ({
       focus: () => editorRef.current?.focus(),
-      getMarkdown: () => editorRef.current?.getMarkdown() ?? markdownRef.current,
-      setMarkdown: (value: string) => editorRef.current?.setMarkdown(value),
+      getMarkdown: () => {
+        const raw = editorRef.current?.getMarkdown() ?? markdownRef.current;
+        return preferOneLineDisplayMath(raw);
+      },
+      setMarkdown: (value: string) =>
+        editorRef.current?.setMarkdown(normalizeMathMarkdown(value)),
     }));
 
     useLayoutEffect(() => {
       if (!documentId) return;
-      editorRef.current?.setMarkdown(markdownRef.current);
+      editorRef.current?.setMarkdown(normalizeMathMarkdown(markdownRef.current));
     }, [documentId]);
 
     const plugins = useMemo(() => {
@@ -129,13 +135,20 @@ export const WysiwygEditor = forwardRef<WysiwygEditorHandle, WysiwygEditorProps>
       return extraPlugins ? [...base, ...extraPlugins] : base;
     }, [pluginsOverride, extraPlugins]);
 
+    const initialMarkdown = useMemo(
+      () => normalizeMathMarkdown(markdown),
+      // Seed once per document mount; live edits flow through onChange.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [documentId],
+    );
+
     return (
       <MDXEditor
         key={documentId ?? 'editor'}
         ref={editorRef}
         className={className}
-        markdown={markdown}
-        onChange={onChange}
+        markdown={initialMarkdown}
+        onChange={(next) => onChange?.(preferOneLineDisplayMath(next))}
         onBlur={onBlur}
         readOnly={readOnly}
         placeholder={placeholder}
