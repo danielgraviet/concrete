@@ -64,12 +64,18 @@ function createWindow() {
     minWidth: 960,
     minHeight: 640,
     backgroundColor: '#191919',
+    title: 'Concrete',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true
     }
   });
-  mainWindow.loadURL('http://localhost:5173');
+
+  if (app.isPackaged) {
+    mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'));
+  } else {
+    mainWindow.loadURL('http://localhost:5173');
+  }
 }
 
 /** Resolve `name` under `root` and reject path escape. */
@@ -313,7 +319,7 @@ ipcMain.handle('ai:ping', async () => {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
       'HTTP-Referer': 'https://github.com/markdown-vault',
-      'X-Title': 'Markdown Vault',
+      'X-Title': 'Concrete',
     },
     body: JSON.stringify({
       model,
@@ -386,7 +392,7 @@ ipcMain.handle('ai:chatCompletions', async (_, payload = {}) => {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
       'HTTP-Referer': 'https://github.com/markdown-vault',
-      'X-Title': 'Markdown Vault',
+      'X-Title': 'Concrete',
     },
     body: JSON.stringify(body),
   });

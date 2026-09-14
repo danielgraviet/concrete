@@ -22,6 +22,7 @@ out/
 .vscode/
 
 # Electron packaged artifacts
+release/
 *.dmg
 *.zip
 *.app

@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Concrete — knowledge you can build on</title>
+    <meta
+      name="description"
+      content="Concrete is a local Markdown vault for Mac. Notes, quizzes, and AI — knowledge you can build on."
+    />
+    <meta property="og:title" content="Concrete" />
+    <meta
+      property="og:description"
+      content="Knowledge you can build on. A local Markdown vault for Mac."
+    />
+    <link rel="icon" href="icon.png" type="image/png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Manrope:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #1a1a18;
+        --bg-2: #242422;
+        --slab: #3a3a36;
+        --slab-2: #4e4e48;
+        --slab-3: #63635c;
+        --fog: #c8c6bf;
+        --paper: #eceae4;
+        --ink: #0e0e0c;
+        --mute: #8a8880;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--paper);
+        font-family: Manrope, ui-sans-serif, system-ui, sans-serif;
+        background:
+          radial-gradient(1200px 700px at 80% 10%, #2e2e2a 0%, transparent 55%),
+          radial-gradient(900px 600px at 10% 90%, #22221e 0%, transparent 50%),
+          linear-gradient(165deg, #141412 0%, #1c1c19 45%, #121210 100%);
+        overflow-x: hidden;
+      }
+
+      body::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        opacity: 0.35;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+        mix-blend-mode: overlay;
+        z-index: 1;
+      }
+
+      .wrap {
+        position: relative;
+        z-index: 2;
+      }
+
+      /* —— Hero: one composition —— */
+      .hero {
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: 1.05fr 0.95fr;
+        align-items: stretch;
+        gap: 0;
+      }
+
+      .hero-copy {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: clamp(2rem, 6vw, 5.5rem);
+        max-width: 40rem;
+      }
+
+      .brand {
+        margin: 0 0 1.25rem;
+        font-family: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
+        font-weight: 800;
+        font-size: clamp(3.5rem, 9vw, 6.5rem);
+        line-height: 0.92;
+        letter-spacing: -0.04em;
+        color: var(--paper);
+        opacity: 0;
+        transform: translateY(18px);
+        animation: rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.1s forwards;
+      }
+
+      .headline {
+        margin: 0 0 0.85rem;
+        font-family: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
+        font-weight: 500;
+        font-size: clamp(1.35rem, 2.6vw, 1.85rem);
+        line-height: 1.25;
+        letter-spacing: -0.02em;
+        color: var(--fog);
+        opacity: 0;
+        transform: translateY(18px);
+        animation: rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.28s forwards;
+      }
+
+      .lede {
+        margin: 0 0 2rem;
+        max-width: 28rem;
+        font-size: 1.05rem;
+        line-height: 1.55;
+        color: var(--mute);
+        opacity: 0;
+        transform: translateY(18px);
+        animation: rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.42s forwards;
+      }
+
+      .cta-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem 1rem;
+        align-items: center;
+        opacity: 0;
+        transform: translateY(18px);
+        animation: rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.55s forwards;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.85rem 1.35rem;
+        border-radius: 2px;
+        font-family: Manrope, sans-serif;
+        font-weight: 600;
+        font-size: 0.95rem;
+        text-decoration: none;
+        transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease;
+      }
+
+      .btn-primary {
+        background: var(--paper);
+        color: var(--ink);
+      }
+
+      .btn-primary:hover {
+        transform: translateY(-2px);
+        background: #fff;
+      }
+
+      .btn-ghost {
+        color: var(--fog);
+        border-bottom: 1px solid #5a5a54;
+        padding: 0.85rem 0.15rem;
+        border-radius: 0;
+      }
+
+      .btn-ghost:hover {
+        color: var(--paper);
+        border-bottom-color: var(--paper);
+      }
+
+      /* Dominant visual plane — stacked slabs */
+      .hero-visual {
+        position: relative;
+        min-height: 100vh;
+        overflow: hidden;
+        background:
+          linear-gradient(180deg, #2a2a26 0%, #1f1f1c 50%, #161614 100%);
+      }
+
+      .hero-visual::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          90deg,
+          #141412 0%,
+          transparent 18%,
+          transparent 100%
+        );
+        pointer-events: none;
+      }
+
+      .slabs {
+        position: absolute;
+        inset: 8% 8% 8% 12%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: clamp(0.7rem, 1.8vw, 1.15rem);
+      }
+
+      .slab {
+        height: clamp(3.5rem, 9vh, 5.75rem);
+        border-radius: 4px;
+        background: linear-gradient(180deg, var(--slab-2), var(--slab));
+        box-shadow:
+          inset 0 1px 0 #6a6a62,
+          inset 0 -2px 0 #2a2a26,
+          0 10px 28px #0006;
+        transform: translateX(40px);
+        opacity: 0;
+        animation: slide-in 1s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      }
+
+      .slab:nth-child(1) {
+        width: 92%;
+        animation-delay: 0.35s;
+        background: linear-gradient(180deg, var(--slab-3), var(--slab-2));
+      }
+      .slab:nth-child(2) {
+        width: 78%;
+        margin-left: 8%;
+        animation-delay: 0.48s;
+      }
+      .slab:nth-child(3) {
+        width: 88%;
+        margin-left: 2%;
+        animation-delay: 0.6s;
+        background: linear-gradient(180deg, #585852, #3f3f3a);
+      }
+      .slab:nth-child(4) {
+        width: 70%;
+        margin-left: 14%;
+        animation-delay: 0.72s;
+      }
+      .slab:nth-child(5) {
+        width: 84%;
+        margin-left: 5%;
+        animation-delay: 0.84s;
+        background: linear-gradient(180deg, #6a6a62, #454540);
+      }
+
+      @keyframes rise {
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @keyframes slide-in {
+        to {
+          opacity: 1;
+          transform: translateX(0);
+        }
+      }
+
+      /* One job: open the Mac build */
+      .install {
+        padding: clamp(3.5rem, 8vw, 6rem) clamp(2rem, 6vw, 5.5rem);
+        border-top: 1px solid #2e2e2a;
+        background: #121210;
+      }
+
+      .install h2 {
+        margin: 0 0 0.6rem;
+        font-family: 'Bricolage Grotesque', sans-serif;
+        font-size: clamp(1.5rem, 3vw, 2rem);
+        font-weight: 700;
+        letter-spacing: -0.03em;
+      }
+
+      .install p {
+        margin: 0 0 1.25rem;
+        max-width: 36rem;
+        color: var(--mute);
+        line-height: 1.55;
+      }
+
+      .install ol {
+        margin: 0;
+        padding-left: 1.2rem;
+        max-width: 36rem;
+        color: var(--fog);
+        line-height: 1.7;
+      }
+
+      .install code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.88em;
+        background: #1e1e1b;
+        padding: 0.12em 0.4em;
+        border-radius: 3px;
+        color: var(--paper);
+      }
+
+      footer {
+        padding: 1.5rem clamp(2rem, 6vw, 5.5rem) 2.5rem;
+        color: var(--mute);
+        font-size: 0.85rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem 1.5rem;
+        justify-content: space-between;
+        border-top: 1px solid #22221e;
+      }
+
+      footer a {
+        color: var(--fog);
+        text-decoration: none;
+      }
+
+      footer a:hover {
+        color: var(--paper);
+      }
+
+      @media (max-width: 860px) {
+        .hero {
+          grid-template-columns: 1fr;
+          min-height: auto;
+        }
+
+        .hero-copy {
+          min-height: 70vh;
+          padding-bottom: 2rem;
+        }
+
+        .hero-visual {
+          min-height: 48vh;
+        }
+
+        .hero-visual::after {
+          background: linear-gradient(
+            180deg,
+            #141412 0%,
+            transparent 22%,
+            transparent 100%
+          );
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .brand,
+        .headline,
+        .lede,
+        .cta-row,
+        .slab {
+          animation: none;
+          opacity: 1;
+          transform: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="brand">Concrete</p>
+          <h1 class="headline">Knowledge you can build on.</h1>
+          <p class="lede">
+            A local Markdown vault for Mac — notes, quizzes, and AI that stay on
+            your machine.
+          </p>
+          <div class="cta-row">
+            <a
+              class="btn btn-primary"
+              href="https://github.com/danielgraviet/markdown-vault/releases/latest"
+            >
+              Download for Mac
+            </a>
+            <a
+              class="btn btn-ghost"
+              href="https://github.com/danielgraviet/markdown-vault"
+            >
+              View source
+            </a>
+          </div>
+        </div>
+        <div class="hero-visual" aria-hidden="true">
+          <div class="slabs">
+            <div class="slab"></div>
+            <div class="slab"></div>
+            <div class="slab"></div>
+            <div class="slab"></div>
+            <div class="slab"></div>
+          </div>
+        </div>
+      </header>
+
+      <section class="install" id="install">
+        <h2>Open it on a new Mac</h2>
+        <p>
+          Early builds are unsigned. After you download the DMG from Releases:
+        </p>
+        <ol>
+          <li>Open the DMG and drag <strong>Concrete</strong> into Applications.</li>
+          <li>Right-click the app → <strong>Open</strong> → <strong>Open</strong> again.</li>
+          <li>
+            If macOS blocks it: System Settings → Privacy &amp; Security →
+            <strong>Open Anyway</strong>.
+          </li>
+        </ol>
+      </section>
+
+      <footer>
+        <span>Concrete · local-first Markdown vault</span>
+        <a href="https://github.com/danielgraviet/markdown-vault">GitHub</a>
+      </footer>
+    </div>
+  </body>
+</html>

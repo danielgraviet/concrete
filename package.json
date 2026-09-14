@@ -1,12 +1,17 @@
 {
   "name": "markdown-vault",
   "version": "0.1.0",
+  "description": "Concrete — a local Markdown vault for knowledge you can build on",
+  "author": "Daniel Graviet",
   "private": true,
   "type": "module",
   "main": "electron.cjs",
   "scripts": {
     "dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && electron .\"",
-    "build": "tsc && vite build && electron-builder",
+    "build": "tsc && vite build",
+    "pack:mac": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --arm64",
+    "pack:mac:intel": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --x64",
+    "pack:mac:universal": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --universal",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -18,8 +23,6 @@
     "@radix-ui/themes": "^3.3.0",
     "@vitejs/plugin-react": "latest",
     "chokidar": "^5.0.0",
-    "electron": "latest",
-    "electron-builder": "latest",
     "katex": "^0.18.7",
     "lucide-react": "^1.45.0",
     "react": "latest",
@@ -33,18 +36,56 @@
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "concurrently": "latest",
+    "electron": "latest",
+    "electron-builder": "latest",
     "typescript": "latest",
     "vite": "latest",
     "wait-on": "latest"
   },
   "build": {
-    "appId": "com.markdownvault.app",
-    "productName": "Markdown Vault",
+    "appId": "com.concrete.app",
+    "productName": "Concrete",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
     "files": [
       "dist/**",
       "electron.cjs",
       "preload.cjs",
       "package.json"
-    ]
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "identity": null
+    },
+    "dmg": {
+      "title": "Concrete",
+      "backgroundColor": "#f2f1ef",
+      "contents": [
+        {
+          "x": 140,
+          "y": 180,
+          "type": "file"
+        },
+        {
+          "x": 400,
+          "y": 180,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    }
   }
 }
