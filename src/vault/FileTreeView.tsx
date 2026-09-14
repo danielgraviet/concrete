@@ -121,7 +121,12 @@ function FolderBranch({
             tabIndex={0}
             role="treeitem"
             aria-selected={isActive}
-            onClick={() => onSelectFolder(isActive ? '' : node.path)}
+            onClick={() => {
+              // The whole folder row is a disclosure control; keep selecting
+              // the folder as the target for new notes while toggling it.
+              onSelectFolder(node.path);
+              onToggle(node.path);
+            }}
             onKeyDown={(event) => {
               if (isRenaming) return;
               if (event.key === 'Enter') {

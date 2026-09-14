@@ -3,6 +3,7 @@
 .mode-toggle{border:0;background:transparent;color:#aaa;padding:0 14px;cursor:pointer;font:inherit}.mode-toggle:hover{color:#fff}.markdown-preview{max-width:760px;margin:0 auto;padding:0 0 120px;color:#d6d6d6;font-size:16px;line-height:1.75}.markdown-preview h1,.markdown-preview h2,.markdown-preview h3{color:#f0f0f0;line-height:1.25;margin:0 0 18px}.markdown-preview h1{font-size:32px}.markdown-preview h2{font-size:24px;margin-top:34px}.markdown-preview h3{font-size:18px;margin-top:26px}.markdown-preview p{margin:0 0 18px}.markdown-preview blockquote{border-left:3px solid #a3a3a3;color:#aaa;margin:18px 0;padding:4px 18px}.markdown-preview code{background:#292929;border-radius:4px;color:#e4c888;padding:2px 5px}.markdown-preview pre{background:#222;border:1px solid #333;border-radius:6px;padding:14px;overflow:auto}.markdown-preview pre code{background:none;padding:0}.markdown-preview a{color:#a3a3a3}.markdown-preview li{margin:5px 0}.markdown-preview table{border-collapse:collapse}.markdown-preview td,.markdown-preview th{border:1px solid #444;padding:6px 10px}
 .wysiwyg{height:auto;min-height:100%;background:transparent!important;color:#d6d6d6}.wysiwyg .mdxeditor{height:auto;min-height:100%;background:transparent;color:#d6d6d6;overflow:visible}.wysiwyg .mdxeditor-toolbar{display:none}.wysiwyg .mdxeditor-root-contenteditable{padding:0 0 160px;max-width:760px;margin:0 auto;min-height:100%;height:auto!important;overflow:visible!important;font:16px/1.75 Inter,ui-sans-serif,system-ui,sans-serif}.wysiwyg .mdxeditor-root-contenteditable h1{font-size:32px;color:#f0f0f0}.wysiwyg .mdxeditor-root-contenteditable h2{font-size:24px;color:#f0f0f0}.wysiwyg .mdxeditor-root-contenteditable blockquote{border-left-color:#a3a3a3;color:#aaa}
 .wysiwyg .mdxeditor-root-contenteditable,.wysiwyg .mdxeditor-root-contenteditable p,.wysiwyg .mdxeditor-root-contenteditable li,.wysiwyg .mdxeditor-root-contenteditable ul,.wysiwyg .mdxeditor-root-contenteditable ol{color:#d6d6d6}.wysiwyg .mdxeditor-root-contenteditable li::marker{color:var(--mv-accent,#a3a3a3)}.wysiwyg .mdxeditor-root-contenteditable input{accent-color:var(--mv-accent,#a3a3a3)}
+.wysiwyg .mdxeditor-root-contenteditable [class*="tableColumnEditorTrigger"],.wysiwyg .mdxeditor-root-contenteditable [class*="tableRowEditorTrigger"]{display:none!important}
 .wysiwyg .mdxeditor-root-contenteditable code,.wysiwyg .mdxeditor-root-contenteditable pre,.wysiwyg .mdxeditor-root-contenteditable pre code{color:#e6c98a;background:#252525}.wysiwyg .mdxeditor-root-contenteditable pre{border:1px solid #3a3a3a;border-radius:6px;padding:14px}
 .wysiwyg .mdxeditor-root-contenteditable code,.wysiwyg .mdxeditor-root-contenteditable pre,.wysiwyg .mdxeditor-root-contenteditable pre code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#e06c75;background:transparent}.wysiwyg .mdxeditor-root-contenteditable pre{border:0;padding:0}
 .wysiwyg .mdxeditor-root-contenteditable pre,.wysiwyg .mdxeditor-root-contenteditable pre code,.wysiwyg .mdxeditor-root-contenteditable code{background:transparent!important;background-color:transparent!important;border:0!important;box-shadow:none!important;color:#e06c75!important;font-family:ui-monospace,SFMono-Regular,Menlo,monospace!important}.wysiwyg .mdxeditor-root-contenteditable pre{padding:0!important}
@@ -10,6 +11,7 @@
 .wysiwyg{--baseBg:transparent!important;--basePageBg:transparent!important;--baseText:#d6d6d6!important;--baseBorder:#3a3a3a!important;--baseBase:#191919;--accentSolid:#a3a3a3;--accentSolidHover:#b5b5b5;--accentBorder:#a3a3a3;--accentBorderHover:#b5b5b5;--accentBgActive:rgba(163,163,163,.22);--accentText:#a3a3a3}.wysiwyg ._code_6j9u9_52{background-color:transparent!important;color:#e06c75!important;font-family:ui-monospace,SFMono-Regular,Menlo,monospace!important}
 .typeahead-popover{position:fixed;z-index:1000;width:280px;max-height:320px;overflow:auto;background:var(--mv-surface-2,#292929);border:1px solid var(--mv-border,#454545);color:var(--mv-text,#ddd);box-shadow:0 12px 30px #000a;border-radius:7px;padding:6px}
 .slash-menu button.selected,.slash-menu button[aria-selected="true"]{background:var(--accent-4,#3a3a3a)}
+.find-bar{position:sticky;top:0;z-index:4;display:flex;align-items:center;gap:8px;width:min(420px,100%);margin:0 0 18px auto;padding:6px 8px;background:var(--mv-surface);border:1px solid var(--mv-border);border-radius:6px;box-shadow:0 8px 20px #0003;color:var(--mv-muted);font-size:11px}.find-bar input{min-width:0;flex:1;border:0;outline:0;background:transparent;color:var(--mv-text);font:inherit}.find-bar button{border:0;background:transparent;color:var(--mv-muted);font-size:18px;line-height:1;cursor:pointer}.find-bar button:hover{color:var(--mv-text)}
 
 /* Concrete theme tokens — bridge layout CSS to Radix Themes */
 :root,
@@ -206,6 +208,59 @@
   background: #f0f0f0;
 }
 
+/* Settings inputs: the autosave unit must remain legible inside the field. */
+.theme-pack-concrete .rt-TextFieldRoot,
+.theme-pack-default .rt-TextFieldRoot{
+  background:#fff;
+  color:#111;
+}
+.theme-pack-concrete .rt-TextFieldRoot input,
+.theme-pack-default .rt-TextFieldRoot input{
+  background:#fff;
+  color:#111;
+}
+.theme-pack-concrete .rt-TextFieldRoot .rt-Text,
+.theme-pack-default .rt-TextFieldRoot .rt-Text{
+  color:#555;
+}
+.theme-pack-martian .rt-TextFieldRoot,
+.theme-pack-martian .rt-TextFieldRoot input{
+  background:#fff;
+  color:#0c0c0c;
+}
+.theme-pack-martian .rt-TextFieldRoot .rt-Text{color:#5b5b5b}
+
+/* Concrete is a light theme: keep the tutor bubble and controls readable. */
+.theme-pack-concrete .ai-orb-panel{
+  background:#fff;
+  color:#111;
+  border-color:var(--mv-border);
+  box-shadow:0 18px 40px #00000022;
+}
+.theme-pack-concrete .ai-orb-panel-head{
+  color:#111;
+  border-color:var(--mv-border);
+}
+.theme-pack-concrete .ai-orb-empty{color:#666}
+.theme-pack-concrete .ai-orb-bubble.assistant{
+  background:#f0f0f0;
+  border-color:#d8d8d8;
+  color:#111;
+}
+.theme-pack-concrete .ai-orb-bubble.muted{color:#666}
+.theme-pack-concrete .ai-orb-form{border-color:var(--mv-border)}
+.theme-pack-concrete .ai-orb-form input{
+  background:#fff;
+  color:#111;
+  border-color:var(--mv-border);
+}
+.theme-pack-concrete .ai-orb-form button{
+  background:#111;
+  color:#fff;
+  border-color:#111;
+}
+.theme-pack-concrete .ai-orb-form button:hover{background:#333}
+
 .theme-pack-concrete .quiz-take,
 .theme-pack-concrete .quiz-edit,
 .theme-pack-concrete .quiz-grade{
@@ -381,6 +436,17 @@
 .theme-pack-martian .wysiwyg .mdxeditor-root-contenteditable blockquote{
   border-left-color: var(--mv-accent);
   color: var(--mv-muted);
+}
+.theme-pack-martian .wysiwyg [class*="listItemUnchecked"]:before{
+  border-color:#cfcfcf!important;
+  background:#fff!important;
+}
+.theme-pack-martian .wysiwyg [class*="listItemChecked"]:before{
+  border-color:#ff563f!important;
+  background:#ff563f!important;
+}
+.theme-pack-martian .wysiwyg [class*="listItemChecked"]:after{
+  border-color:#fff!important;
 }
 .theme-pack-martian .slash-menu,
 .theme-pack-martian .typeahead-popover{
@@ -1270,6 +1336,8 @@ body{
 }
 .active-folder-chip button:hover{color:#eee}
 .tab.active span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px}
+.tab{width:300px;min-width:300px;max-width:300px;overflow:hidden;align-items:center;line-height:1;white-space:nowrap}
+.tab-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1}
 
 .folder-chevron,
 .folder-select{
@@ -1460,8 +1528,9 @@ body{
   align-self:flex-start;
   background:#292929;
   border:1px solid #353535;
+  color:var(--mv-text,#d6d6d6);
 }
-.ai-orb-bubble.muted{color:#888;font-style:italic}
+.ai-orb-bubble.muted{color:var(--mv-muted,#888);font-style:italic}
 .ai-orb-form{
   display:flex;
   gap:6px;
@@ -1492,6 +1561,37 @@ body{
 .ai-orb-form button:hover{background:#3d3d3d}
 .ai-orb-form button:disabled{opacity:.45;cursor:default}
 .app-shell.focus-mode .ai-orb-root{bottom:28px;right:22px}
+
+/* Martian uses a light chat surface; keep tutor text at readable contrast. */
+.theme-pack-martian .ai-orb-panel{
+  background:#fff;
+  color:#0c0c0c;
+  border-color:var(--mv-border);
+  box-shadow:0 18px 40px #00000022;
+}
+.theme-pack-martian .ai-orb-panel-head{
+  color:#0c0c0c;
+  border-color:var(--mv-border);
+}
+.theme-pack-martian .ai-orb-empty{color:#5b5b5b}
+.theme-pack-martian .ai-orb-bubble.assistant{
+  background:#f3f3f3;
+  border-color:#dedede;
+  color:#0c0c0c;
+}
+.theme-pack-martian .ai-orb-bubble.muted{color:#5b5b5b}
+.theme-pack-martian .ai-orb-form{border-color:var(--mv-border)}
+.theme-pack-martian .ai-orb-form input{
+  background:#fff;
+  color:#0c0c0c;
+  border-color:var(--mv-border);
+}
+.theme-pack-martian .ai-orb-form button{
+  background:#0c0c0c;
+  color:#fff;
+  border-color:#0c0c0c;
+}
+.theme-pack-martian .ai-orb-form button:hover{background:#333}
 
 /* Code block chrome — language select must be readable + scrollable */
 .wysiwyg [class*="codeMirrorWrapper"]{

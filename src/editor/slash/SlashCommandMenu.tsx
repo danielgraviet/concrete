@@ -27,6 +27,7 @@ import {
   insertImage$,
   insertMarkdown$,
   insertThematicBreak$,
+  insertTable$,
 } from '@mdxeditor/editor';
 import { $insertNodeToNearestRoot } from '@lexical/utils';
 import { handoffSlashToAi } from '../../ai/slashHandoff';
@@ -113,6 +114,7 @@ function applySlashCommand(
     insertThematicBreak: () => void;
     insertMarkdown: (md: string) => void;
     insertImage: (params: { src: string; altText?: string }) => void;
+    insertTable: (params: { rows?: number; columns?: number }) => void;
   },
 ) {
   switch (id) {
@@ -168,6 +170,10 @@ function applySlashCommand(
       helpers.insertImage({ src, altText });
       break;
     }
+    case 'table':
+      // Three rows includes the Markdown header row, leaving two body rows.
+      helpers.insertTable({ rows: 3, columns: 3 });
+      break;
     case 'divider':
       helpers.insertThematicBreak();
       break;
@@ -187,6 +193,7 @@ export function SlashCommandMenu() {
   const insertThematicBreak = usePublisher(insertThematicBreak$);
   const insertMarkdown = usePublisher(insertMarkdown$);
   const insertImage = usePublisher(insertImage$);
+  const insertTable = usePublisher(insertTable$);
 
   const options = menu ? filterSlashCommands(menu.query) : [];
 
@@ -201,12 +208,13 @@ export function SlashCommandMenu() {
           insertThematicBreak: () => insertThematicBreak(),
           insertMarkdown,
           insertImage,
+          insertTable,
         });
         editor.focus();
         applyingRef.current = false;
       });
     },
-    [editor, insertImage, insertMarkdown, insertThematicBreak],
+    [editor, insertImage, insertMarkdown, insertTable, insertThematicBreak],
   );
 
   const runAiHandoff = useCallback(

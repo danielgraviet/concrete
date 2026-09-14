@@ -8,6 +8,7 @@ import {
   codeBlockPlugin,
   codeMirrorPlugin,
   imagePlugin,
+  tablePlugin,
   markdownShortcutPlugin,
   type MDXEditorMethods,
   type MDXEditorProps,
@@ -81,6 +82,7 @@ export function createDefaultWysiwygPlugins(): NonNullable<MDXEditorProps['plugi
       },
     }),
     imagePlugin(),
+    tablePlugin(),
     markdownShortcutPlugin(),
     mathPlugin(),
     slashMenuPlugin(),
@@ -124,9 +126,16 @@ export const WysiwygEditor = forwardRef<WysiwygEditorHandle, WysiwygEditorProps>
         editorRef.current?.setMarkdown(normalizeMathMarkdown(value)),
     }));
 
-    useLayoutEffect(() => {
+  useLayoutEffect(() => {
       if (!documentId) return;
       editorRef.current?.setMarkdown(normalizeMathMarkdown(markdownRef.current));
+      // The editor-wrap element is reused between notes. Reset its scroll
+      // position so a newly opened document never inherits the prior note's
+      // vertical offset.
+      const editorWrap = editorRef.current
+        ? document.querySelector<HTMLElement>('.editor-wrap')
+        : null;
+      if (editorWrap) editorWrap.scrollTop = 0;
     }, [documentId]);
 
     const plugins = useMemo(() => {

@@ -11,6 +11,7 @@ export type SlashCommandId =
   | 'math'
   | 'mathBlock'
   | 'image'
+  | 'table'
   | 'divider';
 
 export type SlashCommand = {
@@ -119,6 +120,14 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     keywords: ['picture', 'photo'],
     symbol: '▣',
     hint: 'Embed an image by URL',
+  },
+  {
+    id: 'table',
+    title: 'Table',
+    aliases: ['table', 'tbl'],
+    keywords: ['grid', 'rows', 'columns'],
+    symbol: '▦',
+    hint: 'Insert a 3-column table',
   },
   {
     id: 'divider',

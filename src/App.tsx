@@ -16,6 +16,8 @@ import {
   Bot,
   Expand,
   Minimize2,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { WysiwygEditor, useEditorController } from './editor';
 import {
@@ -33,6 +35,15 @@ import {
   type TreeItemKind,
 } from './vault';
 import { useBacklinks } from './graph';
+
+const MAX_TAB_TITLE_CHARS = 32;
+
+function tabTitleFor(path: string): string {
+  const title = (path.split('/').pop() ?? path).replace(/\.md$/i, '') || 'Untitled';
+  return title.length > MAX_TAB_TITLE_CHARS
+    ? `${title.slice(0, MAX_TAB_TITLE_CHARS - 1)}…`
+    : title;
+}
 import { useSearch } from './search';
 import { MetaService } from './meta';
 import {
@@ -127,6 +138,9 @@ export default function App() {
   } | null>(null);
   const [contents, setContents] = useState<Record<string, string>>({ ...demoContent });
   const [query, setQuery] = useState('');
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState('');
+  const findInputRef = useRef<HTMLInputElement>(null);
   const [rail, setRail] = useState<RailView>('files');
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [aiChatOpen, setAiChatOpen] = useState(false);
@@ -162,6 +176,12 @@ export default function App() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const meta = event.metaKey || event.ctrlKey;
+      if (meta && !event.shiftKey && event.key.toLowerCase() === 'f') {
+        event.preventDefault();
+        setFindOpen(true);
+        requestAnimationFrame(() => findInputRef.current?.focus());
+        return;
+      }
       if (meta && event.shiftKey && event.key.toLowerCase() === 'f') {
         event.preventDefault();
         toggleFocusMode();
@@ -763,6 +783,16 @@ export default function App() {
   }, [treeFocus, selected]);
 
   const saved = !controller.isDirty;
+  const findMatches = findQuery.trim()
+    ? (controller.content.toLowerCase().match(new RegExp(findQuery.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) ?? []).length
+    : 0;
+  useEffect(() => {
+    if (!findOpen || !findQuery.trim()) return;
+    const timer = window.setTimeout(() => {
+      (window as Window & { find?: (text: string, caseSensitive?: boolean, backwards?: boolean) => boolean }).find?.(findQuery, false, false);
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [findOpen, findQuery, selected]);
   const shellClass = [
     'app-shell',
     layout.focusMode ? 'focus-mode' : '',
@@ -980,7 +1010,10 @@ export default function App() {
             ) : (
               <FileTextIcon width={14} height={14} />
             )}
-            {(selected.split('/').pop() ?? selected).replace(/\.md$/i, '') || 'Untitled'}{' '}
+            <span className="tab-title" title={selected}>
+              {tabTitleFor(selected)}
+            </span>
+            {' '}
             {!saved && <span className="dirty">•</span>}
           </div>
           <div className="tab-spacer" />
@@ -1035,6 +1068,58 @@ export default function App() {
           </Flex>
         </div>
         <div className="editor-wrap">
+          {findOpen ? (
+            <div className="find-bar" role="search">
+              <input
+                ref={findInputRef}
+                value={findQuery}
+                placeholder="Find in file"
+                aria-label="Find in current file"
+                onChange={(event) => setFindQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  event.stopPropagation();
+                  if (event.key === 'Escape') {
+                    event.preventDefault();
+                    setFindOpen(false);
+                  } else if (event.key === 'Enter') {
+                    event.preventDefault();
+                    (window as Window & { find?: (text: string, caseSensitive?: boolean, backwards?: boolean) => boolean }).find?.(
+                      findQuery,
+                      false,
+                      event.shiftKey,
+                    );
+                    requestAnimationFrame(() => findInputRef.current?.focus());
+                  }
+                }}
+              />
+              <span>{findMatches ? `${findMatches} match${findMatches === 1 ? '' : 'es'}` : 'No matches'}</span>
+              <button
+                type="button"
+                aria-label="Previous match"
+                title="Previous match (Shift+Enter)"
+                onClick={() => {
+                  findInputRef.current?.focus();
+                  (window as Window & { find?: (text: string, caseSensitive?: boolean, backwards?: boolean) => boolean }).find?.(findQuery, false, true);
+                  findInputRef.current?.focus();
+                }}
+              >
+                <ChevronUp size={14} />
+              </button>
+              <button
+                type="button"
+                aria-label="Next match"
+                title="Next match (Enter)"
+                onClick={() => {
+                  findInputRef.current?.focus();
+                  (window as Window & { find?: (text: string, caseSensitive?: boolean, backwards?: boolean) => boolean }).find?.(findQuery, false, false);
+                  findInputRef.current?.focus();
+                }}
+              >
+                <ChevronDown size={14} />
+              </button>
+              <button type="button" onClick={() => setFindOpen(false)} aria-label="Close find">×</button>
+            </div>
+          ) : null}
           {isQuizPath(selected) ? (
             <QuizShell
               documentPath={selected}
