@@ -1020,7 +1020,7 @@ export default function App() {
           {!isQuizPath(selected) && noteTags.length > 0 && (
             <div className="note-tags">
               {noteTags.map((t) => (
-                <span key={t}>#{t}</span>
+                <span key={t}>{t}</span>
               ))}
             </div>
           )}
