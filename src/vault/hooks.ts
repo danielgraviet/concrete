@@ -41,7 +41,7 @@ export function useVault(initialFiles: string[] = [], initialFolders: string[] =
     return result;
   }, []);
 
-  /** Open the default on-disk vault (Documents/Markdown Vault). */
+  /** Open the default on-disk vault (Documents/Concrete). */
   const openDefault = useCallback(async () => {
     if (typeof window === 'undefined' || typeof window.vault?.ensureDefault !== 'function') {
       return null;

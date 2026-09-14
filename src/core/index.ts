@@ -1,4 +1,4 @@
-/** Public domain API for Markdown Vault. */
+/** Public domain API for Concrete. */
 
 export type {
   BlockType,

@@ -1,5 +1,5 @@
 /**
- * Token-efficient tutor voice for Markdown Vault.
+ * Token-efficient tutor voice for Concrete.
  * Style rules apply to live providers and mock replies.
  */
 export const TEACHER_SYSTEM_PROMPT = `You are a practical tutor inside a Markdown note vault.

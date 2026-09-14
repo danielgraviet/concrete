@@ -241,7 +241,7 @@ export default function App() {
     return () => setSlashAiHandler(null);
   }, []);
 
-  // Persist into Documents/Markdown Vault so creates/edits survive restarts.
+  // Persist into Documents/Concrete so creates/edits survive restarts.
   useEffect(() => {
     if (vault.root) return;
     let cancelled = false;

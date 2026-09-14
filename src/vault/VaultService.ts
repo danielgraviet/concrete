@@ -50,7 +50,7 @@ export const VaultService = {
     return api.mkdir(root, name);
   },
 
-  /** Create/open Documents/Markdown Vault and start watching it. */
+  /** Create/open Documents/Concrete and start watching it. */
   ensureDefault(): Promise<VaultOpenResult> {
     const api = requireVault();
     if (typeof api.ensureDefault !== 'function') {

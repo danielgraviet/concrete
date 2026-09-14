@@ -149,7 +149,7 @@ export function useEditorController(
 
     // Window-event bridge for future Command / menu integration
     window.dispatchEvent(
-      new CustomEvent('markdown-vault:editor-command', { detail: command }),
+      new CustomEvent('concrete:editor-command', { detail: command }),
     );
     return false;
   }, []);

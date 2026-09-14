@@ -318,7 +318,7 @@ ipcMain.handle('ai:ping', async () => {
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://github.com/markdown-vault',
+      'HTTP-Referer': 'https://github.com/danielgraviet/concrete',
       'X-Title': 'Concrete',
     },
     body: JSON.stringify({
@@ -391,7 +391,7 @@ ipcMain.handle('ai:chatCompletions', async (_, payload = {}) => {
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://github.com/markdown-vault',
+      'HTTP-Referer': 'https://github.com/danielgraviet/concrete',
       'X-Title': 'Concrete',
     },
     body: JSON.stringify(body),
@@ -462,9 +462,19 @@ const STARTER_SEED = [
   },
 ];
 
-/** Open (or create) the default on-disk vault under Documents/Markdown Vault. */
+/** Prefer Documents/Concrete; keep using Documents/Markdown Vault if that already exists. */
+function defaultVaultRoot() {
+  const documents = app.getPath('documents');
+  const preferred = path.join(documents, 'Concrete');
+  const legacy = path.join(documents, 'Markdown Vault');
+  if (fsSync.existsSync(preferred)) return preferred;
+  if (fsSync.existsSync(legacy)) return legacy;
+  return preferred;
+}
+
+/** Open (or create) the default on-disk vault under Documents/Concrete. */
 ipcMain.handle('vault:ensureDefault', async () => {
-  const root = path.join(app.getPath('documents'), 'Markdown Vault');
+  const root = defaultVaultRoot();
   await fs.mkdir(root, { recursive: true });
   const existing = await listVaultEntries(root);
   if (existing.files.length === 0) {

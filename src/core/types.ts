@@ -1,4 +1,4 @@
-/** Shared domain types for Markdown Vault. */
+/** Shared domain types for Concrete. */
 
 export type BlockType =
   | 'document'

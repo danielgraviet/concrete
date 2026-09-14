@@ -11,7 +11,7 @@
 .typeahead-popover{position:fixed;z-index:1000;width:280px;max-height:320px;overflow:auto;background:var(--mv-surface-2,#292929);border:1px solid var(--mv-border,#454545);color:var(--mv-text,#ddd);box-shadow:0 12px 30px #000a;border-radius:7px;padding:6px}
 .slash-menu button.selected,.slash-menu button[aria-selected="true"]{background:var(--accent-4,#3a3a3a)}
 
-/* Markdown Vault theme tokens — bridge layout CSS to Radix Themes */
+/* Concrete theme tokens — bridge layout CSS to Radix Themes */
 :root,
 .radix-themes{
   --mv-bg: var(--color-background);
