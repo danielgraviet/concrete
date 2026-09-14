@@ -31,6 +31,11 @@ import { mathPlugin, normalizeMathMarkdown, preferOneLineDisplayMath } from './m
 export type WysiwygEditorProps = {
   /** Stable id for the open document — remounts/syncs when it changes. */
   documentId?: string;
+  /**
+   * Bump when markdown was changed outside the editor (agent / disk reload)
+   * so MDXEditor picks up the new source without remounting.
+   */
+  contentRevision?: number;
   markdown: string;
   onChange?: (markdown: string) => void;
   onBlur?: () => void;
@@ -100,6 +105,7 @@ export const WysiwygEditor = forwardRef<WysiwygEditorHandle, WysiwygEditorProps>
   function WysiwygEditor(
     {
       documentId,
+      contentRevision = 0,
       markdown,
       onChange,
       onBlur,
@@ -126,7 +132,7 @@ export const WysiwygEditor = forwardRef<WysiwygEditorHandle, WysiwygEditorProps>
         editorRef.current?.setMarkdown(normalizeMathMarkdown(value)),
     }));
 
-  useLayoutEffect(() => {
+    useLayoutEffect(() => {
       if (!documentId) return;
       editorRef.current?.setMarkdown(normalizeMathMarkdown(markdownRef.current));
       // The editor-wrap element is reused between notes. Reset its scroll
@@ -137,6 +143,12 @@ export const WysiwygEditor = forwardRef<WysiwygEditorHandle, WysiwygEditorProps>
         : null;
       if (editorWrap) editorWrap.scrollTop = 0;
     }, [documentId]);
+
+    // External reloads (Codex / watcher) — same documentId, new disk content.
+    useLayoutEffect(() => {
+      if (!documentId || contentRevision <= 0) return;
+      editorRef.current?.setMarkdown(normalizeMathMarkdown(markdownRef.current));
+    }, [contentRevision, documentId]);
 
     const plugins = useMemo(() => {
       if (pluginsOverride) return pluginsOverride;

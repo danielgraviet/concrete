@@ -11,12 +11,16 @@ export type { ThemePackId } from './themePacks';
 /** @deprecated Prefer ThemePackId — kept for reading legacy localStorage. */
 export type Appearance = 'dark' | 'light';
 
+export type AgentProviderId = 'off' | 'codex';
+
 export type AppSettings = {
   themePack: ThemePackId;
   autosaveMs: number;
   providerId: string;
   /** OpenRouter model id when provider is openrouter. */
   openRouterModelId: string;
+  /** BYO coding agent: off | codex */
+  agentProviderId: AgentProviderId;
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -24,7 +28,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autosaveMs: 800,
   providerId: 'mock',
   openRouterModelId: 'deepseek/deepseek-v4-flash-0731',
+  agentProviderId: 'off',
 };
+
+export function isAgentProviderId(value: unknown): value is AgentProviderId {
+  return value === 'off' || value === 'codex';
+}
+
+export function resolveAgentProviderId(value: unknown): AgentProviderId {
+  return isAgentProviderId(value) ? value : DEFAULT_SETTINGS.agentProviderId;
+}
 
 export function isAppearance(value: unknown): value is Appearance {
   return value === 'dark' || value === 'light';

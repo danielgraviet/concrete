@@ -76,7 +76,45 @@ interface Window {
     chatCompletions: (
       request: AiChatCompletionsRequest,
     ) => Promise<AiChatCompletionsResult>;
+    agentStatus: () => Promise<AiAgentStatus>;
+    agentRun: (request: AiAgentRunRequest) => Promise<AiAgentRunResult>;
+    agentCancel: () => Promise<boolean>;
+    onAgentProgress: (
+      callback: (event: AiAgentProgressEvent) => void,
+    ) => () => void;
+    onSetTheme: (
+      callback: (payload: { themePack: string }) => void,
+    ) => () => void;
   };
+  /** Electron system pasteboard (plain text for terminals / other apps). */
+  systemClipboard?: {
+    writeText: (text: string) => Promise<boolean>;
+  };
+}
+
+interface AiAgentStatus {
+  available: boolean;
+  authenticated: boolean;
+  cliPath: string | null;
+  message: string;
+}
+
+interface AiAgentRunRequest {
+  vaultRoot: string;
+  notePath?: string | null;
+  prompt: string;
+}
+
+interface AiAgentRunResult {
+  ok: boolean;
+  finalResponse: string;
+  threadId: string | null;
+  changedPaths: string[];
+}
+
+interface AiAgentProgressEvent {
+  kind: string;
+  text: string;
 }
 
 declare module '*.css';

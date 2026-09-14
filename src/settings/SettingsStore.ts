@@ -1,5 +1,9 @@
-import type { AppSettings, ThemePackId } from './types';
-import { DEFAULT_SETTINGS, resolveThemePack } from './types';
+import type { AgentProviderId, AppSettings, ThemePackId } from './types';
+import {
+  DEFAULT_SETTINGS,
+  resolveAgentProviderId,
+  resolveThemePack,
+} from './types';
 import { isThemePackId } from './themePacks';
 import { resolveOpenRouterModelId } from '../ai/openRouterModels';
 
@@ -24,6 +28,7 @@ function readStorage(): AppSettings {
       providerId:
         typeof parsed.providerId === 'string' ? parsed.providerId : DEFAULT_SETTINGS.providerId,
       openRouterModelId: resolveOpenRouterModelId(parsed.openRouterModelId),
+      agentProviderId: resolveAgentProviderId(parsed.agentProviderId),
     };
   } catch {
     return structuredClone(DEFAULT_SETTINGS);
@@ -85,6 +90,15 @@ export class SettingsStore {
     this.settings = {
       ...this.settings,
       openRouterModelId: resolveOpenRouterModelId(modelId),
+    };
+    this.persist();
+    return this.get();
+  }
+
+  setAgentProviderId(agentProviderId: AgentProviderId): AppSettings {
+    this.settings = {
+      ...this.settings,
+      agentProviderId: resolveAgentProviderId(agentProviderId),
     };
     this.persist();
     return this.get();

@@ -3,6 +3,7 @@ import { Theme } from '@radix-ui/themes';
 import type { ReactNode } from 'react';
 import {
   getThemePack,
+  isThemePackId,
   settingsStore,
   type ThemePackId,
 } from './settings';
@@ -22,6 +23,17 @@ export function AppTheme({ children }: Props) {
 
   useEffect(() => {
     return settingsStore.subscribe((next) => setPackId(next.themePack));
+  }, []);
+
+  useEffect(() => {
+    const api = window.ai;
+    if (!api?.onSetTheme) return undefined;
+    return api.onSetTheme((payload) => {
+      const next = payload?.themePack;
+      if (isThemePackId(next)) {
+        settingsStore.setThemePack(next);
+      }
+    });
   }, []);
 
   const pack = getThemePack(packId);

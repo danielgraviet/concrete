@@ -83,6 +83,11 @@ export class MathNode extends DecoratorNode<JSX.Element> {
     return true;
   }
 
+  /** So Cmd+C / clipboard plain-text includes the LaTeX source. */
+  getTextContent(): string {
+    return this.__inline ? `$${this.__value}$` : `$$${this.__value}$$`;
+  }
+
   getValue(): string {
     return this.__value;
   }

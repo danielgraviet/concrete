@@ -150,6 +150,10 @@ export default function App() {
   const [layout, setLayout] = useState<LayoutState>(() => loadLayout());
   const [generateQuizOpen, setGenerateQuizOpen] = useState(false);
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
+  const [agentEnabled, setAgentEnabled] = useState(
+    () => settingsStore.get().agentProviderId === 'codex',
+  );
+  const [editorRevision, setEditorRevision] = useState(0);
 
   const openAiChat = (seed?: string) => {
     if (seed?.trim()) setAiSeedPrompt(seed.trim());
@@ -187,14 +191,21 @@ export default function App() {
         toggleFocusMode();
         return;
       }
-      if (event.key === 'Escape' && layout.focusMode) {
-        event.preventDefault();
-        setLayout((current) => ({ ...current, focusMode: false }));
+      if (event.key === 'Escape') {
+        if (overlay === 'settings') {
+          event.preventDefault();
+          setOverlay(null);
+          return;
+        }
+        if (layout.focusMode) {
+          event.preventDefault();
+          setLayout((current) => ({ ...current, focusMode: false }));
+        }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [layout.focusMode]);
+  }, [layout.focusMode, overlay]);
 
   const selectRail = (next: RailView) => {
     if (next === 'ai') {
@@ -226,10 +237,12 @@ export default function App() {
 
   useEffect(() => {
     const settings = settingsStore.hydrate();
+    setAgentEnabled(settings.agentProviderId === 'codex');
     aiClient.setProvider(
       resolveAiProvider(settings.providerId, settings.openRouterModelId),
     );
     const unsub = settingsStore.subscribe((next) => {
+      setAgentEnabled(next.agentProviderId === 'codex');
       aiClient.setProvider(
         resolveAiProvider(next.providerId, next.openRouterModelId),
       );
@@ -337,14 +350,18 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload only on note/vault change
   }, [root, selected]);
 
-  // External file changes for the open note
+  // External file changes for the open note (including Codex agent edits)
   useEffect(() => {
     if (!root) return;
     return VaultService.onWatch((event) => {
       if (event.root !== root || event.type !== 'change' || event.path !== selected) return;
       void VaultService.read(root, event.path).then((text) => {
         setContents((prev) => ({ ...prev, [event.path]: text }));
-        if (!controller.isDirty) controller.loadContent(text);
+        if (!controller.isDirty) {
+          controller.loadContent(text);
+          controller.markSaved();
+          setEditorRevision((n) => n + 1);
+        }
       });
     });
   }, [root, selected, controller]);
@@ -1013,7 +1030,6 @@ export default function App() {
             <span className="tab-title" title={selected}>
               {tabTitleFor(selected)}
             </span>
-            {' '}
             {!saved && <span className="dirty">•</span>}
           </div>
           <div className="tab-spacer" />
@@ -1135,6 +1151,7 @@ export default function App() {
             <WysiwygEditor
               className="wysiwyg"
               documentId={selected}
+              contentRevision={editorRevision}
               markdown={controller.content}
               onChange={(value) => {
                 controller.setContent(value);
@@ -1147,10 +1164,28 @@ export default function App() {
         <AiOrb
           client={aiClient}
           noteContext={truncateNoteContext(controller.content)}
+          notePath={selected}
+          vaultRoot={root}
+          agentEnabled={agentEnabled}
           open={aiChatOpen}
           onOpenChange={setAiChatOpen}
           seedPrompt={aiSeedPrompt}
           onSeedConsumed={() => setAiSeedPrompt(null)}
+          onBeforeAgentRun={async () => {
+            if (controller.isDirty) await controller.persistence.flush();
+          }}
+          onAfterAgentRun={async () => {
+            if (!root || !selected) return;
+            try {
+              const text = await VaultService.read(root, selected);
+              setContents((prev) => ({ ...prev, [selected]: text }));
+              controller.loadContent(text);
+              controller.markSaved();
+              setEditorRevision((n) => n + 1);
+            } catch {
+              // Watcher may still pick up the change.
+            }
+          }}
         />
         <footer className="statusbar">
           <span>{controller.content.length} characters</span>
@@ -1224,16 +1259,29 @@ export default function App() {
       )}
 
       {overlay === 'settings' && (
-        <div className="mv-overlay" role="dialog">
-          <SettingsPanel
-            store={settingsStore}
-            providerOptions={[
-              { id: 'openrouter', label: 'OpenRouter' },
-              { id: 'mock', label: 'Mock AI' },
-              { id: 'local-echo', label: 'Local Echo' },
-            ]}
-            onClose={() => setOverlay(null)}
-          />
+        <div
+          className="mv-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Settings"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setOverlay(null);
+          }}
+        >
+          <div
+            className="mv-settings-panel-shell"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <SettingsPanel
+              store={settingsStore}
+              providerOptions={[
+                { id: 'openrouter', label: 'OpenRouter' },
+                { id: 'mock', label: 'Mock AI' },
+                { id: 'local-echo', label: 'Local Echo' },
+              ]}
+              onClose={() => setOverlay(null)}
+            />
+          </div>
         </div>
       )}
       {quizCards && (

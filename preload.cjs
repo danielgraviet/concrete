@@ -39,4 +39,28 @@ contextBridge.exposeInMainWorld('ai', {
   status: () => ipcRenderer.invoke('ai:status'),
   ping: () => ipcRenderer.invoke('ai:ping'),
   chatCompletions: (payload) => ipcRenderer.invoke('ai:chatCompletions', payload),
+  agentStatus: () => ipcRenderer.invoke('ai:agentStatus'),
+  agentRun: (payload) => ipcRenderer.invoke('ai:agentRun', payload),
+  agentCancel: () => ipcRenderer.invoke('ai:agentCancel'),
+  onAgentProgress: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('ai:agentProgress', listener);
+    return () => {
+      ipcRenderer.removeListener('ai:agentProgress', listener);
+    };
+  },
+  onSetTheme: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('concrete:setTheme', listener);
+    return () => {
+      ipcRenderer.removeListener('concrete:setTheme', listener);
+    };
+  },
+});
+
+/** Sync renderer copies onto the macOS pasteboard for other apps / terminals. */
+contextBridge.exposeInMainWorld('systemClipboard', {
+  writeText: (text) => ipcRenderer.invoke('clipboard:writeText', text),
 });

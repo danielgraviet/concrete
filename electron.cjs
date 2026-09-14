@@ -1,12 +1,68 @@
-const { app, BrowserWindow, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, clipboard } = require('electron');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const chokidar = require('chokidar');
 
 let mainWindow = null;
 let watcher = null;
 let watchedRoot = null;
+
+/** @type {{ url: string, token: string } | null} */
+let concreteBridgeInfo = null;
+/** Latest vault/note context for MCP tool handlers. */
+let concreteToolContext = {
+  vaultRoot: null,
+  notePath: null,
+  openRouterModel: null,
+};
+
+/** Native Edit roles so Cmd+C / Cmd+V work in the renderer. */
+function setupAppMenu() {
+  const isMac = process.platform === 'darwin';
+  const template = [
+    ...(isMac
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: 'about' },
+              { type: 'separator' },
+              { role: 'services' },
+              { type: 'separator' },
+              { role: 'hide' },
+              { role: 'hideOthers' },
+              { role: 'unhide' },
+              { type: 'separator' },
+              { role: 'quit' },
+            ],
+          },
+        ]
+      : []),
+    {
+      label: 'File',
+      submenu: [isMac ? { role: 'close' } : { role: 'quit' }],
+    },
+    { role: 'editMenu' },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
+    { role: 'windowMenu' },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
 
 /** Load repo-root `.env` into process.env.
  *  File values win over inherited shell env so stale OPENROUTER_* keys
@@ -51,11 +107,70 @@ function loadDotEnv() {
 
 loadDotEnv();
 
+ipcMain.handle('clipboard:writeText', (_event, text) => {
+  if (typeof text !== 'string' || !text) return false;
+  // Plain text only — terminals (Cursor, iTerm, etc.) ignore HTML-only pasteboards.
+  clipboard.writeText(text);
+  return true;
+});
+
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 /** Cheap OpenAI model kept for ai:ping smoke tests. */
 const PING_OPENROUTER_MODEL = 'openai/gpt-4o-mini';
 /** Default completion model when the renderer omits one. */
 const DEFAULT_OPENROUTER_MODEL = 'deepseek/deepseek-v4-flash-0731';
+
+async function ensureConcreteBridge() {
+  if (concreteBridgeInfo) return concreteBridgeInfo;
+  const bridge = await import(
+    pathToFileURL(path.join(__dirname, 'concreteBridge.mjs')).href
+  );
+  concreteBridgeInfo = await bridge.startConcreteBridge({
+    getMainWindow: () => mainWindow,
+    getContext: () => ({
+      vaultRoot: concreteToolContext.vaultRoot || watchedRoot,
+      notePath: concreteToolContext.notePath,
+      openRouterModel:
+        concreteToolContext.openRouterModel || DEFAULT_OPENROUTER_MODEL,
+    }),
+    BrowserWindow,
+  });
+  console.log('[concrete] tool bridge on', concreteBridgeInfo.url);
+  return concreteBridgeInfo;
+}
+
+function buildConcreteMcpConfig() {
+  if (!concreteBridgeInfo) return null;
+  const mcpPath = path.join(__dirname, 'concreteMcp.mjs');
+  const unpacked = mcpPath.includes(`${path.sep}app.asar${path.sep}`)
+    ? mcpPath.replace(
+        `${path.sep}app.asar${path.sep}`,
+        `${path.sep}app.asar.unpacked${path.sep}`,
+      )
+    : mcpPath;
+
+  const env = {
+    CONCRETE_BRIDGE_URL: concreteBridgeInfo.url,
+    CONCRETE_BRIDGE_TOKEN: concreteBridgeInfo.token,
+  };
+
+  // Prefer a real Node binary so ESM deps resolve cleanly (dev + most Mac setups).
+  for (const candidate of ['/opt/homebrew/bin/node', '/usr/local/bin/node']) {
+    if (fsSync.existsSync(candidate)) {
+      return { command: candidate, args: [unpacked], env };
+    }
+  }
+
+  return {
+    // Packaged fallback: Electron-as-Node (deps must be asarUnpack'd).
+    command: process.execPath,
+    args: [unpacked],
+    env: {
+      ...env,
+      ELECTRON_RUN_AS_NODE: '1',
+    },
+  };
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -76,6 +191,24 @@ function createWindow() {
   } else {
     mainWindow.loadURL('http://localhost:5173');
   }
+
+  mainWindow.webContents.on('context-menu', (_event, params) => {
+    const items = [];
+    if (params.isEditable) {
+      items.push(
+        { role: 'cut', enabled: params.editFlags.canCut },
+        { role: 'copy', enabled: params.editFlags.canCopy },
+        { role: 'paste', enabled: params.editFlags.canPaste },
+        { type: 'separator' },
+        { role: 'selectAll', enabled: params.editFlags.canSelectAll },
+      );
+    } else if (params.selectionText) {
+      items.push({ role: 'copy', enabled: params.editFlags.canCopy });
+    }
+    if (items.length > 0) {
+      Menu.buildFromTemplate(items).popup({ window: mainWindow });
+    }
+  });
 }
 
 /** Resolve `name` under `root` and reject path escape. */
@@ -305,6 +438,59 @@ ipcMain.handle('ai:status', async () => {
   };
 });
 
+async function loadCodexAgent() {
+  return import(pathToFileURL(path.join(__dirname, 'codexAgent.mjs')).href);
+}
+
+ipcMain.handle('ai:agentStatus', async () => {
+  try {
+    const agent = await loadCodexAgent();
+    return await agent.getAgentStatus();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      available: false,
+      authenticated: false,
+      cliPath: null,
+      message: `Codex agent failed to load: ${message}`,
+    };
+  }
+});
+
+ipcMain.handle('ai:agentRun', async (event, payload) => {
+  await ensureConcreteBridge();
+  const agent = await loadCodexAgent();
+  const vaultRoot =
+    typeof payload?.vaultRoot === 'string' ? payload.vaultRoot.trim() : '';
+  const notePath =
+    typeof payload?.notePath === 'string' ? payload.notePath.trim() : null;
+  concreteToolContext = {
+    vaultRoot: vaultRoot || watchedRoot,
+    notePath: notePath || null,
+    openRouterModel: DEFAULT_OPENROUTER_MODEL,
+  };
+  return agent.runAgentTurn(
+    {
+      ...(payload ?? {}),
+      concreteMcp: buildConcreteMcpConfig(),
+    },
+    (progress) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send('ai:agentProgress', progress);
+      }
+    },
+  );
+});
+
+ipcMain.handle('ai:agentCancel', async () => {
+  try {
+    const agent = await loadCodexAgent();
+    return agent.cancelAgentTurn();
+  } catch {
+    return false;
+  }
+});
+
 /** Minimal smoke test: cheap model, one short completion. */
 ipcMain.handle('ai:ping', async () => {
   const apiKey = process.env.OPENROUTER_API_KEY?.trim();
@@ -493,11 +679,22 @@ ipcMain.handle('vault:ensureDefault', async () => {
   return { root, files, folders };
 });
 
-app.whenReady().then(createWindow);
+app.whenReady().then(async () => {
+  setupAppMenu();
+  createWindow();
+  try {
+    await ensureConcreteBridge();
+  } catch (error) {
+    console.error('[concrete] failed to start tool bridge', error);
+  }
+});
 app.on('window-all-closed', () => {
   void stopWatch();
   if (process.platform !== 'darwin') app.quit();
 });
 app.on('before-quit', () => {
   void stopWatch();
+});
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes';
 import type { SettingsStore } from './SettingsStore';
-import type { AppSettings, ThemePackId } from './types';
+import type { AgentProviderId, AppSettings, ThemePackId } from './types';
 import { THEME_PACKS } from './themePacks';
 import { OPENROUTER_MODEL_OPTIONS } from '../ai/openRouterModels';
 
@@ -24,15 +24,42 @@ export function SettingsPanel({
   onClose,
 }: Props) {
   const [settings, setSettings] = useState<AppSettings>(() => store.get());
+  const [agentStatus, setAgentStatus] = useState<string | null>(null);
 
   useEffect(() => store.subscribe(setSettings), [store]);
+
+  useEffect(() => {
+    if (settings.agentProviderId !== 'codex') {
+      setAgentStatus(null);
+      return;
+    }
+    let cancelled = false;
+    void window.ai?.agentStatus?.()
+      .then((status) => {
+        if (!cancelled) setAgentStatus(status.message);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setAgentStatus(error instanceof Error ? error.message : 'Codex status failed');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [settings.agentProviderId]);
 
   return (
     <Flex direction="column" gap="4" className="mv-settings-panel">
       <Flex align="center" justify="between">
         <Heading size="3">Settings</Heading>
         {onClose ? (
-          <Button variant="ghost" color="gray" onClick={onClose}>
+          <Button
+            type="button"
+            variant="soft"
+            color="gray"
+            highContrast
+            onClick={() => onClose()}
+          >
             Close
           </Button>
         ) : null}
@@ -95,7 +122,7 @@ export function SettingsPanel({
 
       <Flex direction="column" gap="2">
         <Text size="2" weight="medium">
-          AI
+          Tutor AI
         </Text>
         <Select.Root
           value={settings.providerId}
@@ -124,6 +151,32 @@ export function SettingsPanel({
               ))}
             </Select.Content>
           </Select.Root>
+        ) : null}
+      </Flex>
+
+      <Flex direction="column" gap="2">
+        <Text size="2" weight="medium">
+          Agent
+        </Text>
+        <Text size="1" color="gray">
+          Bring-your-own Codex edits notes on disk
+        </Text>
+        <Select.Root
+          value={settings.agentProviderId}
+          onValueChange={(value) =>
+            store.setAgentProviderId(value as AgentProviderId)
+          }
+        >
+          <Select.Trigger placeholder="Agent" />
+          <Select.Content>
+            <Select.Item value="off">Off</Select.Item>
+            <Select.Item value="codex">Codex (BYO)</Select.Item>
+          </Select.Content>
+        </Select.Root>
+        {agentStatus ? (
+          <Text size="1" color="gray">
+            {agentStatus}
+          </Text>
         ) : null}
       </Flex>
 

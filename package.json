@@ -19,18 +19,22 @@
     "@codemirror/state": "^6.7.4",
     "@codemirror/view": "^6.43.11",
     "@mdxeditor/editor": "^4.2.4",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@openai/codex-sdk": "^0.154.0",
     "@radix-ui/react-icons": "^1.3.2",
     "@radix-ui/themes": "^3.3.0",
     "@vitejs/plugin-react": "latest",
     "chokidar": "^5.0.0",
     "katex": "^0.18.7",
     "lucide-react": "^1.45.0",
+    "marked": "^18.0.13",
     "react": "latest",
     "react-dom": "latest",
     "react-markdown": "^10.1.0",
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
-    "remark-math": "^6.0.0"
+    "remark-math": "^6.0.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/react": "latest",
@@ -53,7 +57,16 @@
       "dist/**",
       "electron.cjs",
       "preload.cjs",
+      "codexAgent.mjs",
+      "concreteBridge.mjs",
+      "concreteMcp.mjs",
       "package.json"
+    ],
+    "asarUnpack": [
+      "concreteMcp.mjs",
+      "node_modules/@modelcontextprotocol/**",
+      "node_modules/zod/**",
+      "node_modules/marked/**"
     ],
     "mac": {
       "category": "public.app-category.productivity",

@@ -108,18 +108,11 @@ export function MathEditor({ value, inline, nodeKey }: Props) {
   return (
     <span
       className={inline ? 'mv-math-render inline' : 'mv-math-render block'}
-      role="button"
-      tabIndex={0}
       title="Double-click to edit LaTeX"
       onDoubleClick={(event) => {
         event.preventDefault();
+        event.stopPropagation();
         setEditing(true);
-      }}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === 'F2') {
-          event.preventDefault();
-          setEditing(true);
-        }
       }}
     >
       {error ? (
