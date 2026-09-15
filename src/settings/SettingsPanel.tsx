@@ -14,6 +14,7 @@ type Props = {
   store: SettingsStore;
   vaultRoot?: string | null;
   onOpenVault?: () => void;
+  onImportObsidian?: () => void;
   onReplayOnboarding?: () => void;
   providerOptions?: { id: string; label: string }[];
   onClose?: () => void;
@@ -25,7 +26,8 @@ type SettingsSection =
   | 'quiz'
   | 'ai'
   | 'agent'
-  | 'vault';
+  | 'vault'
+  | 'activity';
 
 /**
  * Settings panel — theme packs + AI controls.
@@ -34,6 +36,7 @@ export function SettingsPanel({
   store,
   vaultRoot,
   onOpenVault,
+  onImportObsidian,
   onReplayOnboarding,
   providerOptions = [
     { id: 'openrouter', label: 'OpenRouter' },
@@ -46,23 +49,35 @@ export function SettingsPanel({
   const [agentStatus, setAgentStatus] = useState<string | null>(null);
   const [openRouterKey, setOpenRouterKey] = useState('');
   const [keyStatus, setKeyStatus] = useState<string | null>(null);
+  const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
   const [section, setSection] = useState<SettingsSection>('appearance');
+  const [activity, setActivity] = useState<Array<Record<string, unknown>>>([]);
 
   useEffect(() => store.subscribe(setSettings), [store]);
 
   useEffect(() => {
-    if (settings.agentProviderId !== 'codex') {
+    if (!window.ai?.status) return;
+    void window.ai.status().then(setAiStatus).catch(() => setAiStatus(null));
+  }, []);
+
+  useEffect(() => {
+    if (section !== 'activity' || !window.ai?.activity) return;
+    void window.ai.activity().then(setActivity).catch(() => setActivity([]));
+  }, [section]);
+
+  useEffect(() => {
+    if (settings.agentProviderId === 'off') {
       setAgentStatus(null);
       return;
     }
     let cancelled = false;
-    void window.ai?.agentStatus?.()
+    void window.ai?.agentStatus?.({ agentProviderId: settings.agentProviderId })
       .then((status) => {
         if (!cancelled) setAgentStatus(status.message);
       })
       .catch((error) => {
         if (!cancelled) {
-          setAgentStatus(error instanceof Error ? error.message : 'Codex status failed');
+          setAgentStatus(error instanceof Error ? error.message : 'Agent status failed');
         }
       });
     return () => {
@@ -95,6 +110,7 @@ export function SettingsPanel({
           ['ai', 'Tutor AI'],
           ['agent', 'Agent'],
           ['vault', 'Vault'],
+          ['activity', 'AI Activity'],
         ] as const).map(([id, label]) => (
           <button
             key={id}
@@ -235,7 +251,7 @@ export function SettingsPanel({
         </Select.Root>
 
         <Text size="2" weight="medium">
-          Custom rubric
+          Open-answer grading rubric
         </Text>
         <TextField.Root
           value={settings.quiz.customRubric}
@@ -266,9 +282,19 @@ export function SettingsPanel({
         </Select.Root>
         {settings.providerId === 'openrouter' ? (
           <>
+            {aiStatus?.configured ? (
+              <Text size="1" color="green">
+                ✓ API key already set{aiStatus.keySuffix ? ` (ending …${aiStatus.keySuffix})` : ''} — ready to go.
+                {' '}Enter a new key below only if you want to replace it.
+              </Text>
+            ) : (
+              <Text size="1" color="gray">
+                No API key configured yet. Add one below, or set OPENROUTER_API_KEY in the project .env.
+              </Text>
+            )}
             <TextField.Root
               type="password"
-              placeholder="OpenRouter API key"
+              placeholder={aiStatus?.configured ? 'Replace saved key (optional)' : 'OpenRouter API key'}
               value={openRouterKey}
               onChange={(event) => setOpenRouterKey(event.target.value)}
             />
@@ -280,6 +306,7 @@ export function SettingsPanel({
                 onClick={() => {
                   void window.ai?.setApiKey(openRouterKey.trim()).then((status) => {
                     setOpenRouterKey('');
+                    setAiStatus(status);
                     setKeyStatus(status.configured ? 'OpenRouter key saved.' : 'Key cleared.');
                   }).catch((error) => setKeyStatus(error instanceof Error ? error.message : 'Could not save key.'));
                 }}
@@ -315,7 +342,7 @@ export function SettingsPanel({
           Agent
         </Text>
         <Text size="1" color="gray">
-          Bring-your-own Codex edits notes on disk
+          Bring-your-own agent edits notes on disk, using your own Codex or Claude Code login.
         </Text>
         <Select.Root
           value={settings.agentProviderId}
@@ -327,6 +354,7 @@ export function SettingsPanel({
           <Select.Content>
             <Select.Item value="off">Off</Select.Item>
             <Select.Item value="codex">Codex (BYO)</Select.Item>
+            <Select.Item value="claude">Claude (BYO)</Select.Item>
           </Select.Content>
         </Select.Root>
         {agentStatus ? (
@@ -344,6 +372,14 @@ export function SettingsPanel({
         <Button
           type="button"
           variant="soft"
+          onClick={onImportObsidian}
+          disabled={!onImportObsidian}
+        >
+          Import Obsidian Vault
+        </Button>
+        <Button
+          type="button"
+          variant="soft"
           color="gray"
           onClick={onReplayOnboarding}
           disabled={!onReplayOnboarding}
@@ -353,6 +389,29 @@ export function SettingsPanel({
         <Text size="1" color="gray">
           Walk through how Concrete compares to Notion and Obsidian.
         </Text>
+      </Flex>
+
+      <Flex direction="column" gap="2" className={`mv-settings-group ${section === 'activity' ? 'active' : ''}`}>
+        <Text size="2" weight="medium">AI Activity</Text>
+        <Text size="1" color="gray">Recent API calls, prompts, responses, timing, and usage.</Text>
+        <Flex gap="2">
+          <Button type="button" variant="soft" onClick={() => window.ai?.activity?.().then(setActivity)}>
+            Refresh
+          </Button>
+          <Button type="button" variant="soft" color="gray" onClick={() => window.ai?.activityClear?.().then(() => setActivity([]))}>
+            Clear log
+          </Button>
+        </Flex>
+        <div className="mv-ai-activity-list">
+          {activity.length === 0 ? <Text size="1" color="gray">No API calls recorded yet.</Text> : activity.map((event, index) => (
+            <details key={`${String(event.requestId ?? index)}`}>
+              <summary>
+                {String(event.operation ?? 'request')} · {String(event.status ?? '')} · {event.durationMs ? `${String(event.durationMs)}ms` : '—'}
+              </summary>
+              <pre>{JSON.stringify(event, null, 2)}</pre>
+            </details>
+          ))}
+        </div>
       </Flex>
 
       <Button variant="soft" color="gray" onClick={() => store.reset()}>

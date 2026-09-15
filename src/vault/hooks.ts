@@ -15,6 +15,7 @@ import { filterWatchByRoot, subscribeVaultWatch } from './watch';
 export function useVault(initialFiles: string[] = [], initialFolders: string[] = []) {
   const [root, setRoot] = useState<string | null>(null);
   const [files, setFiles] = useState<string[]>(initialFiles);
+  const [pdfFiles, setPdfFiles] = useState<string[]>([]);
   const [folders, setFolders] = useState<string[]>(initialFolders);
   const rootRef = useRef(root);
   rootRef.current = root;
@@ -22,8 +23,13 @@ export function useVault(initialFiles: string[] = [], initialFolders: string[] =
   useEffect(() => {
     if (!root) return;
     const handler = filterWatchByRoot(root, (event: VaultWatchEvent) => {
+      const isPdf = event.path.toLowerCase().endsWith('.pdf');
       if (event.type === 'add' || event.type === 'change' || event.type === 'unlink') {
-        setFiles((current) => applyWatchToFileList(current, event));
+        if (isPdf) {
+          setPdfFiles((current) => applyWatchToFileList(current, event));
+        } else {
+          setFiles((current) => applyWatchToFileList(current, event));
+        }
       }
       if (event.type === 'addDir' || event.type === 'unlinkDir') {
         setFolders((current) => applyWatchToFolderList(current, event));
@@ -37,6 +43,7 @@ export function useVault(initialFiles: string[] = [], initialFolders: string[] =
     if (!result) return null;
     setRoot(result.root);
     setFiles(result.files);
+    setPdfFiles(result.pdfFiles ?? []);
     setFolders(result.folders ?? []);
     return result;
   }, []);
@@ -49,6 +56,7 @@ export function useVault(initialFiles: string[] = [], initialFolders: string[] =
     const result = await VaultService.ensureDefault();
     setRoot(result.root);
     setFiles(result.files);
+    setPdfFiles(result.pdfFiles ?? []);
     setFolders(result.folders ?? []);
     return result;
   }, []);
@@ -59,15 +67,17 @@ export function useVault(initialFiles: string[] = [], initialFolders: string[] =
     if (!result) return null;
     setRoot(result.root);
     setFiles(result.files);
+    setPdfFiles(result.pdfFiles ?? []);
     setFolders(result.folders ?? []);
     return result;
   }, []);
 
   const refresh = useCallback(async () => {
     const currentRoot = rootRef.current;
-    if (!currentRoot) return { files: [], folders: [] };
+    if (!currentRoot) return { files: [], pdfFiles: [], folders: [] };
     const next = await VaultService.list(currentRoot);
     setFiles(next.files);
+    setPdfFiles(next.pdfFiles ?? []);
     setFolders(next.folders);
     return next;
   }, []);
@@ -103,7 +113,10 @@ export function useVault(initialFiles: string[] = [], initialFolders: string[] =
     const currentRoot = rootRef.current;
     if (!currentRoot) throw new Error('No vault open');
     const next = await VaultService.rename(currentRoot, from, to);
-    const isFolder = !from.toLowerCase().endsWith('.md');
+    const lower = from.toLowerCase();
+    const isMd = lower.endsWith('.md');
+    const isPdf = lower.endsWith('.pdf');
+    const isFolder = !isMd && !isPdf;
     if (isFolder) {
       setFolders((current) =>
         current
@@ -121,9 +134,17 @@ export function useVault(initialFiles: string[] = [], initialFolders: string[] =
           )
           .sort((a, b) => a.localeCompare(b)),
       );
+      setPdfFiles((current) =>
+        current
+          .map((file) =>
+            file.startsWith(`${from}/`) ? `${next}${file.slice(from.length)}` : file,
+          )
+          .sort((a, b) => a.localeCompare(b)),
+      );
       return next;
     }
-    setFiles((current) =>
+    const setList = isPdf ? setPdfFiles : setFiles;
+    setList((current) =>
       current
         .map((file) => (file === from ? next : file))
         .sort((a, b) => a.localeCompare(b)),
@@ -135,7 +156,10 @@ export function useVault(initialFiles: string[] = [], initialFolders: string[] =
     const currentRoot = rootRef.current;
     if (!currentRoot) throw new Error('No vault open');
     await VaultService.delete(currentRoot, name);
-    const isFolder = !name.toLowerCase().endsWith('.md');
+    const lower = name.toLowerCase();
+    const isMd = lower.endsWith('.md');
+    const isPdf = lower.endsWith('.pdf');
+    const isFolder = !isMd && !isPdf;
     if (isFolder) {
       setFolders((current) =>
         current.filter((folder) => folder !== name && !folder.startsWith(`${name}/`)),
@@ -143,9 +167,13 @@ export function useVault(initialFiles: string[] = [], initialFolders: string[] =
       setFiles((current) =>
         current.filter((file) => file !== name && !file.startsWith(`${name}/`)),
       );
+      setPdfFiles((current) =>
+        current.filter((file) => file !== name && !file.startsWith(`${name}/`)),
+      );
       return true;
     }
-    setFiles((current) => current.filter((file) => file !== name));
+    const setList = isPdf ? setPdfFiles : setFiles;
+    setList((current) => current.filter((file) => file !== name));
     return true;
   }, []);
 
@@ -164,8 +192,10 @@ export function useVault(initialFiles: string[] = [], initialFolders: string[] =
   return {
     root,
     files,
+    pdfFiles,
     folders,
     setFiles,
+    setPdfFiles,
     setFolders,
     open,
     openDefault,

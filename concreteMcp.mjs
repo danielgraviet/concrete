@@ -108,7 +108,7 @@ server.registerTool(
   {
     title: 'Export note to PDF',
     description:
-      'Export a vault markdown note to PDF under Exports/. Use when the user asks for a PDF of a note.',
+      'Export a vault markdown note to PDF, saved next to the source note. Use when the user asks for a PDF of a note.',
     inputSchema: {
       note_path: z
         .string()
@@ -117,7 +117,7 @@ server.registerTool(
   },
   async ({ note_path }) => {
     const result = await callTool('export_note_pdf', { note_path });
-    return okText(`PDF saved to ${result.path || 'Exports/'}.`, result);
+    return okText(`PDF saved to ${result.path || note_path}.`, result);
   },
 );
 

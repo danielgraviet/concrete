@@ -83,6 +83,7 @@ export type QuestionGrade = {
   score: number;
   maxScore: number;
   feedback: string;
+  correctAnswer?: string;
 };
 
 export type GradeReport = {

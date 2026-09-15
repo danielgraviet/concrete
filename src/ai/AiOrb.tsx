@@ -1,12 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BotMessageSquare } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkBreaks from 'remark-breaks';
+import remarkGfm from 'remark-gfm';
 import type { AiClient } from './AiClient';
+import type { AgentProviderId } from '../settings/types';
+
+/** Renders chat text as markdown (bold/italics/code/lists/links) with soft line breaks. */
+function ChatMarkdown({ text }: { text: string }) {
+  return (
+    <div className="ai-orb-markdown">
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{text}</ReactMarkdown>
+    </div>
+  );
+}
 
 type ChatMessage = {
   id: string;
   role: 'user' | 'assistant' | 'log';
   text: string;
   kind?: string;
+  /** Vault-relative PDF paths produced by this turn (Open / Reveal actions). */
+  pdfPaths?: string[];
 };
 
 export type OrbMode = 'tutor' | 'agent';
@@ -16,8 +31,8 @@ type Props = {
   noteContext: string;
   notePath: string;
   vaultRoot: string | null;
-  /** Settings → Agent → Codex (BYO). */
-  agentEnabled: boolean;
+  /** Settings → Agent → off | codex | claude (BYO). */
+  agentProviderId: AgentProviderId;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** When set, open the panel and send this prompt once (tutor mode). */
@@ -40,7 +55,7 @@ export function AiOrb({
   noteContext,
   notePath,
   vaultRoot,
-  agentEnabled,
+  agentProviderId,
   open,
   onOpenChange,
   seedPrompt = null,
@@ -48,6 +63,8 @@ export function AiOrb({
   onBeforeAgentRun,
   onAfterAgentRun,
 }: Props) {
+  const agentEnabled = agentProviderId !== 'off';
+  const agentLabel = agentProviderId === 'claude' ? 'Claude' : 'Codex';
   const [mode, setMode] = useState<OrbMode>('tutor');
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -109,7 +126,7 @@ export function AiOrb({
           {
             id: newId(),
             role: 'assistant',
-            text: 'Agent is off. Enable Codex (BYO) in Settings → Agent.',
+            text: 'Agent is off. Enable Codex or Claude (BYO) in Settings → Agent.',
           },
         ]);
         setInput('');
@@ -123,7 +140,7 @@ export function AiOrb({
           {
             id: newId(),
             role: 'assistant',
-            text: 'Open a vault first so Codex has a folder to edit.',
+            text: `Open a vault first so ${agentLabel} has a folder to edit.`,
           },
         ]);
         setInput('');
@@ -155,24 +172,29 @@ export function AiOrb({
       try {
         await onBeforeAgentRun?.();
         appendLog(
-          notePath ? `Starting on ${notePath}…` : 'Starting Codex…',
+          notePath ? `Starting on ${notePath}…` : `Starting ${agentLabel}…`,
           'status',
         );
         const result = await window.ai.agentRun({
           vaultRoot,
           notePath: notePath || null,
           prompt,
+          agentProviderId: agentProviderId === 'claude' ? 'claude' : 'codex',
         });
         const changed =
           result.changedPaths?.length > 0
             ? `\n\nChanged: ${result.changedPaths.join(', ')}`
             : '';
+        const pdfPaths = (result.changedPaths ?? []).filter((p) =>
+          p.toLowerCase().endsWith('.pdf'),
+        );
         setMessages((prev) => [
           ...prev,
           {
             id: newId(),
             role: 'assistant',
             text: `${result.finalResponse || 'Done.'}${changed}`,
+            pdfPaths: pdfPaths.length > 0 ? pdfPaths : undefined,
           },
         ]);
         await onAfterAgentRun?.();
@@ -186,6 +208,8 @@ export function AiOrb({
     },
     [
       agentEnabled,
+      agentLabel,
+      agentProviderId,
       appendLog,
       busy,
       notePath,
@@ -268,8 +292,8 @@ export function AiOrb({
               <p className="ai-orb-empty">
                 {mode === 'agent'
                   ? agentEnabled
-                    ? 'Ask Codex to edit this note (add sections, rewrite, expand).'
-                    : 'Enable Codex (BYO) in Settings → Agent to edit notes.'
+                    ? `Ask ${agentLabel} to edit this note (add sections, rewrite, expand).`
+                    : 'Enable Codex or Claude (BYO) in Settings → Agent to edit notes.'
                   : 'Ask about this note or Markdown. Short answers only.'}
               </p>
             ) : (
@@ -284,7 +308,34 @@ export function AiOrb({
                         : 'assistant'
                   }`}
                 >
-                  {msg.text}
+                  {msg.role === 'log' ? msg.text : <ChatMarkdown text={msg.text} />}
+                  {msg.pdfPaths?.length ? (
+                    <div className="ai-orb-pdf-actions">
+                      {msg.pdfPaths.map((pdfPath) => (
+                        <div key={pdfPath} className="ai-orb-pdf-action-row">
+                          <span className="ai-orb-pdf-name">{pdfPath}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!vaultRoot) return;
+                              void window.vault?.openPath(vaultRoot, pdfPath);
+                            }}
+                          >
+                            Open PDF
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!vaultRoot) return;
+                              void window.vault?.revealInFolder(vaultRoot, pdfPath);
+                            }}
+                          >
+                            Reveal in Finder
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               ))
             )}

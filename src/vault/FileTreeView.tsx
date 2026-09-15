@@ -4,10 +4,11 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   ClipboardIcon,
+  FileIcon,
   FileTextIcon,
   ArchiveIcon,
 } from '@radix-ui/react-icons';
-import { buildFileTree, isQuizFileName, noteTitle } from './fileTree';
+import { buildFileTree, isPdfFileName, isQuizFileName, noteTitle } from './fileTree';
 import type { VaultFolderNode, VaultTreeNode } from './types';
 
 export type TreeItemKind = 'file' | 'folder';
@@ -120,6 +121,15 @@ function FolderBranch({
             style={{ paddingLeft: 8 + depth * 14 }}
             tabIndex={0}
             role="treeitem"
+            onDragOver={(event) => {
+              if (event.dataTransfer.types.includes('text/plain')) event.preventDefault();
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              const source = event.dataTransfer.getData('text/plain');
+              if (source) onCommitRename(source, 'file', `${node.path}/${source.split('/').pop()}`);
+            }}
             aria-selected={isActive}
             onClick={() => {
               // The whole folder row is a disclosure control; keep selecting
@@ -262,6 +272,7 @@ function TreeNode({
 
   const isSelected = selected === node.path;
   const isQuiz = isQuizFileName(node.name);
+  const isPdf = isPdfFileName(node.name);
   const isRenaming = renaming?.kind === 'file' && renaming.path === node.path;
   const label = noteTitle(node.path);
 
@@ -270,7 +281,12 @@ function TreeNode({
       <ContextMenu.Trigger>
         <button
           type="button"
-          className={`file-row ${isSelected ? 'selected' : ''} ${isQuiz ? 'quiz-file' : ''}`}
+          className={`file-row ${isSelected ? 'selected' : ''} ${isQuiz ? 'quiz-file' : ''} ${isPdf ? 'pdf-file' : ''}`}
+          draggable={!isRenaming}
+          onDragStart={(event) => {
+            event.dataTransfer.setData('text/plain', node.path);
+            event.dataTransfer.effectAllowed = 'move';
+          }}
           style={{ paddingLeft: 28 + depth * 14 }}
           onClick={() => onSelectFile(node.path)}
           onKeyDown={(event) => {
@@ -284,6 +300,8 @@ function TreeNode({
         >
           {isQuiz ? (
             <ClipboardIcon width={14} height={14} className="quiz-file-icon" />
+          ) : isPdf ? (
+            <FileIcon width={14} height={14} className="pdf-file-icon" />
           ) : (
             <FileTextIcon width={14} height={14} />
           )}
@@ -294,7 +312,7 @@ function TreeNode({
               onCancel={onCancelRename}
             />
           ) : (
-            <Text size="2" as="span">
+            <Text size="2" as="span" className="file-row-label">
               {label}
             </Text>
           )}
@@ -415,6 +433,14 @@ export function FileTreeView({
       onClick={(event) => {
         // Empty sidebar / tree chrome → create target is vault root.
         if (event.target === event.currentTarget) onSelectFolder('');
+      }}
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.includes('text/plain')) event.preventDefault();
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        const source = event.dataTransfer.getData('text/plain');
+        if (source) commitRename(source, 'file', `@root/${source.split('/').pop() ?? source}`);
       }}
     >
       {tree.children.map((child) => (

@@ -11,7 +11,7 @@ export type { ThemePackId } from './themePacks';
 /** @deprecated Prefer ThemePackId — kept for reading legacy localStorage. */
 export type Appearance = 'dark' | 'light';
 
-export type AgentProviderId = 'off' | 'codex';
+export type AgentProviderId = 'off' | 'codex' | 'claude';
 
 export type QuizDifficulty = 'easy' | 'medium' | 'hard';
 
@@ -30,7 +30,7 @@ export type AppSettings = {
   providerId: string;
   /** OpenRouter model id when provider is openrouter. */
   openRouterModelId: string;
-  /** BYO coding agent: off | codex */
+  /** BYO coding agent: off | codex | claude */
   agentProviderId: AgentProviderId;
   quiz: QuizGenerationSettings;
 };
@@ -40,20 +40,21 @@ export const DEFAULT_QUIZ_SETTINGS: QuizGenerationSettings = {
   clozeCount: 1,
   openCount: 1,
   difficulty: 'medium',
-  customRubric: '',
+  customRubric:
+    'Score correctness and conceptual understanding. Give partial credit for mostly correct answers, and require the key ideas from the reference answer. Be concise and explain what is missing.',
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
   themePack: DEFAULT_THEME_PACK,
   autosaveMs: 800,
   providerId: 'mock',
-  openRouterModelId: 'deepseek/deepseek-v4-flash-0731',
+  openRouterModelId: 'openai/gpt-4o-mini',
   agentProviderId: 'off',
   quiz: { ...DEFAULT_QUIZ_SETTINGS },
 };
 
 export function isAgentProviderId(value: unknown): value is AgentProviderId {
-  return value === 'off' || value === 'codex';
+  return value === 'off' || value === 'codex' || value === 'claude';
 }
 
 export function resolveAgentProviderId(value: unknown): AgentProviderId {

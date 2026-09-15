@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu, clipboard } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, clipboard, shell } = require('electron');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
@@ -11,6 +11,25 @@ let watchedRoot = null;
 
 const AI_SETTINGS_PATH = path.join(app.getPath('userData'), 'ai-settings.json');
 const APP_STATE_PATH = path.join(app.getPath('userData'), 'app-state.json');
+const AI_ACTIVITY_PATH = path.join(app.getPath('userData'), 'ai-activity.jsonl');
+
+async function recordAiActivity(event) {
+  try {
+    await fs.mkdir(path.dirname(AI_ACTIVITY_PATH), { recursive: true });
+    await fs.appendFile(AI_ACTIVITY_PATH, `${JSON.stringify(event)}\n`, { mode: 0o600 });
+  } catch (error) {
+    console.warn('Unable to record AI activity:', error?.message ?? error);
+  }
+}
+
+async function readAiActivity() {
+  try {
+    const lines = (await fs.readFile(AI_ACTIVITY_PATH, 'utf8')).trim().split('\n').filter(Boolean);
+    return lines.slice(-200).flatMap((line) => {
+      try { return [JSON.parse(line)]; } catch { return []; }
+    }).reverse();
+  } catch { return []; }
+}
 
 function savedVaultPath() {
   try {
@@ -143,7 +162,9 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 /** Cheap OpenAI model kept for ai:ping smoke tests. */
 const PING_OPENROUTER_MODEL = 'openai/gpt-4o-mini';
 /** Default completion model when the renderer omits one. */
-const DEFAULT_OPENROUTER_MODEL = 'deepseek/deepseek-v4-flash-0731';
+// Keep the default on a broadly available model; unavailable model IDs leave
+// the tutor stuck behind the renderer's "Thinking…" state.
+const DEFAULT_OPENROUTER_MODEL = 'openai/gpt-4o-mini';
 
 async function ensureConcreteBridge() {
   if (concreteBridgeInfo) return concreteBridgeInfo;
@@ -316,16 +337,57 @@ function ensureMdExtension(name) {
   return name.toLowerCase().endsWith('.md') ? name : `${name}.md`;
 }
 
+/** Non-markdown files the vault tree also displays (read-only-ish: open/reveal/rename/delete). */
+const DISPLAYED_EXTENSIONS = new Set(['.md', '.pdf']);
+
+function displayedExtension(name) {
+  const ext = path.extname(name).toLowerCase();
+  return DISPLAYED_EXTENSIONS.has(ext) ? ext : null;
+}
+
 const SKIP_DIRS = new Set(['.git', 'node_modules', '.obsidian', '.trash', '.vault']);
 const MAX_VAULT_FILES = 10000;
+const OBSIDIAN_IMPORT_MARKER = '.concrete-obsidian-imported';
+
+/** Copy an Obsidian vault's user files into Concrete without replacing existing work. */
+async function importObsidianVault(sourceRoot, destinationRoot, markerName = OBSIDIAN_IMPORT_MARKER) {
+  const marker = path.join(destinationRoot, markerName);
+  if (!fsSync.existsSync(sourceRoot) || fsSync.existsSync(marker)) return false;
+
+  async function copyDirectory(sourceDir, destinationDir) {
+    const entries = await fs.readdir(sourceDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name === OBSIDIAN_IMPORT_MARKER) continue;
+      if (entry.isDirectory() && (SKIP_DIRS.has(entry.name) || entry.name.startsWith('.'))) continue;
+      const source = path.join(sourceDir, entry.name);
+      const destination = path.join(destinationDir, entry.name);
+      if (entry.isDirectory()) {
+        await fs.mkdir(destination, { recursive: true });
+        await copyDirectory(source, destination);
+      } else if (entry.isFile()) {
+        await fs.mkdir(path.dirname(destination), { recursive: true });
+        try {
+          await fs.copyFile(source, destination, fsSync.constants.COPYFILE_EXCL);
+        } catch (error) {
+          if (error?.code !== 'EEXIST') throw error;
+        }
+      }
+    }
+  }
+
+  await copyDirectory(sourceRoot, destinationRoot);
+  await fs.writeFile(marker, 'Imported from Documents/Obsidian Vault\n');
+  return true;
+}
 
 /**
- * Recursively list markdown files and folders (including empty folders).
- * @returns {{ files: string[], folders: string[] }}
+ * Recursively list markdown notes, exported PDFs, and folders (including empty folders).
+ * @returns {{ files: string[], pdfFiles: string[], folders: string[] }}
  */
 async function listVaultEntries(root) {
   const resolvedRoot = path.resolve(root);
   const files = [];
+  const pdfFiles = [];
   const folders = [];
 
   async function walk(dir, relBase) {
@@ -343,8 +405,15 @@ async function listVaultEntries(root) {
         await walk(path.join(dir, entry.name), nextRel);
         continue;
       }
-      if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.md')) continue;
-      files.push(relBase ? `${relBase}/${entry.name}` : entry.name);
+      if (!entry.isFile()) continue;
+      const ext = entry.name.toLowerCase().endsWith('.md')
+        ? '.md'
+        : entry.name.toLowerCase().endsWith('.pdf')
+          ? '.pdf'
+          : null;
+      if (!ext) continue;
+      const rel = relBase ? `${relBase}/${entry.name}` : entry.name;
+      (ext === '.md' ? files : pdfFiles).push(rel);
       if (files.length > MAX_VAULT_FILES) {
         throw new Error(`Vault contains more than ${MAX_VAULT_FILES.toLocaleString()} Markdown files and cannot be opened.`);
       }
@@ -353,8 +422,9 @@ async function listVaultEntries(root) {
 
   await walk(resolvedRoot, '');
   files.sort((a, b) => a.localeCompare(b));
+  pdfFiles.sort((a, b) => a.localeCompare(b));
   folders.sort((a, b) => a.localeCompare(b));
-  return { files, folders };
+  return { files, pdfFiles, folders };
 }
 
 async function stopWatch() {
@@ -400,15 +470,15 @@ async function startWatch(root) {
   };
 
   watcher.on('add', (filePath) => {
-    if (!toPosix(filePath).toLowerCase().endsWith('.md')) return;
+    if (!displayedExtension(filePath)) return;
     send('add', filePath);
   });
   watcher.on('change', (filePath) => {
-    if (!toPosix(filePath).toLowerCase().endsWith('.md')) return;
+    if (!displayedExtension(filePath)) return;
     send('change', filePath);
   });
   watcher.on('unlink', (filePath) => {
-    if (!toPosix(filePath).toLowerCase().endsWith('.md')) return;
+    if (!displayedExtension(filePath)) return;
     send('unlink', filePath);
   });
   watcher.on('addDir', (dirPath) => send('addDir', dirPath));
@@ -420,10 +490,10 @@ ipcMain.handle('vault:open', async () => {
   if (result.canceled || !result.filePaths[0]) return null;
   const root = path.resolve(result.filePaths[0]);
   try {
-    const { files, folders } = await listVaultEntries(root);
+    const { files, pdfFiles, folders } = await listVaultEntries(root);
     await startWatch(root);
     await saveVaultPath(root);
-    return { root, files, folders };
+    return { root, files, pdfFiles, folders };
   } catch (error) {
     await stopWatch();
     const message = error instanceof Error ? error.message : String(error);
@@ -432,12 +502,25 @@ ipcMain.handle('vault:open', async () => {
 });
 
 ipcMain.handle('vault:restore', async () => {
-  const root = savedVaultPath();
+  let root = savedVaultPath();
   if (!root) return null;
   try {
-    const { files, folders } = await listVaultEntries(root);
+    if (path.basename(root) === 'Markdown Vault') {
+      root = defaultVaultRoot();
+      await fs.mkdir(root, { recursive: true });
+      await importObsidianVault(path.join(app.getPath('documents'), 'Markdown Vault'), root, '.concrete-legacy-imported');
+      await saveVaultPath(root);
+    }
+    // Existing Concrete users should also receive the one-time Obsidian import.
+    if (path.resolve(root) === path.resolve(defaultVaultRoot())) {
+      if (path.basename(root) === 'Concrete') {
+        await importObsidianVault(path.join(app.getPath('documents'), 'Markdown Vault'), root, '.concrete-legacy-imported');
+      }
+      await importObsidianVault(path.join(app.getPath('documents'), 'Obsidian Vault'), root);
+    }
+    const { files, pdfFiles, folders } = await listVaultEntries(root);
     await startWatch(root);
-    return { root, files, folders };
+    return { root, files, pdfFiles, folders };
   } catch (error) {
     console.error('[vault] restore failed; clearing saved vault', error);
     await stopWatch();
@@ -452,8 +535,8 @@ ipcMain.handle('vault:clearSaved', async () => {
   return true;
 });
 ipcMain.handle('vault:list', async (_, root) => {
-  const { files, folders } = await listVaultEntries(root);
-  return { files, folders };
+  const { files, pdfFiles, folders } = await listVaultEntries(root);
+  return { files, pdfFiles, folders };
 });
 
 ipcMain.handle('vault:read', async (_, root, name) => {
@@ -513,9 +596,17 @@ ipcMain.handle('vault:rename', async (_, root, from, to) => {
     return toPaths.relative;
   }
 
-  const safeTo = ensureMdExtension(toRaw);
-  assertMarkdown(from);
-  assertMarkdown(safeTo);
+  const ext = displayedExtension(from);
+  if (!ext) throw new Error('Only .md and .pdf files are allowed');
+  const safeTo =
+    ext === '.md'
+      ? ensureMdExtension(toRaw)
+      : toRaw.toLowerCase().endsWith(ext)
+        ? toRaw
+        : `${toRaw}${ext}`;
+  if (displayedExtension(safeTo) !== ext) {
+    throw new Error(`Cannot change ${ext} file to a different type`);
+  }
   const toPaths = resolveWithinRoot(root, safeTo);
   await fs.mkdir(path.dirname(toPaths.resolved), { recursive: true });
   await fs.rename(fromPaths.resolved, toPaths.resolved);
@@ -529,7 +620,7 @@ ipcMain.handle('vault:delete', async (_, root, name) => {
     await fs.rm(resolved, { recursive: true, force: true });
     return true;
   }
-  assertMarkdown(name);
+  if (!displayedExtension(name)) throw new Error('Only .md and .pdf files are allowed');
   await fs.unlink(resolved);
   return true;
 });
@@ -541,6 +632,19 @@ ipcMain.handle('vault:watchStart', async (_, root) => {
 
 ipcMain.handle('vault:watchStop', async () => {
   await stopWatch();
+  return true;
+});
+
+ipcMain.handle('vault:openPath', async (_, root, name) => {
+  const { resolved } = resolveWithinRoot(root, name);
+  const error = await shell.openPath(resolved);
+  if (error) throw new Error(error);
+  return true;
+});
+
+ipcMain.handle('vault:revealInFolder', async (_, root, name) => {
+  const { resolved } = resolveWithinRoot(root, name);
+  shell.showItemInFolder(resolved);
   return true;
 });
 
@@ -569,13 +673,29 @@ ipcMain.handle('ai:setApiKey', async (_, apiKey) => {
   };
 });
 
-async function loadCodexAgent() {
-  return import(pathToFileURL(path.join(__dirname, 'codexAgent.mjs')).href);
+const AGENT_MODULES = {
+  codex: 'codexAgent.mjs',
+  claude: 'claudeAgent.mjs',
+};
+
+/** Provider id of the agent module last used for run/status, so cancel targets the right one. */
+let lastAgentProviderId = 'codex';
+
+function resolveAgentProviderId(payload) {
+  const id = typeof payload?.agentProviderId === 'string' ? payload.agentProviderId : null;
+  return id && AGENT_MODULES[id] ? id : 'codex';
 }
 
-ipcMain.handle('ai:agentStatus', async () => {
+async function loadAgentModule(providerId) {
+  const file = AGENT_MODULES[providerId] || AGENT_MODULES.codex;
+  return import(pathToFileURL(path.join(__dirname, file)).href);
+}
+
+ipcMain.handle('ai:agentStatus', async (_event, payload) => {
+  const providerId = resolveAgentProviderId(payload);
+  lastAgentProviderId = providerId;
   try {
-    const agent = await loadCodexAgent();
+    const agent = await loadAgentModule(providerId);
     return await agent.getAgentStatus();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -583,14 +703,16 @@ ipcMain.handle('ai:agentStatus', async () => {
       available: false,
       authenticated: false,
       cliPath: null,
-      message: `Codex agent failed to load: ${message}`,
+      message: `Agent failed to load: ${message}`,
     };
   }
 });
 
 ipcMain.handle('ai:agentRun', async (event, payload) => {
   await ensureConcreteBridge();
-  const agent = await loadCodexAgent();
+  const providerId = resolveAgentProviderId(payload);
+  lastAgentProviderId = providerId;
+  const agent = await loadAgentModule(providerId);
   const vaultRoot =
     typeof payload?.vaultRoot === 'string' ? payload.vaultRoot.trim() : '';
   const notePath =
@@ -615,7 +737,7 @@ ipcMain.handle('ai:agentRun', async (event, payload) => {
 
 ipcMain.handle('ai:agentCancel', async () => {
   try {
-    const agent = await loadCodexAgent();
+    const agent = await loadAgentModule(lastAgentProviderId);
     return agent.cancelAgentTurn();
   } catch {
     return false;
@@ -680,15 +802,31 @@ ipcMain.handle('ai:ping', async () => {
 });
 
 ipcMain.handle('ai:chatCompletions', async (_, payload = {}) => {
+  const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const startedAt = Date.now();
+  const operation = typeof payload.operation === 'string' ? payload.operation : 'chat_completion';
+  // Write a start event before network work so even crashes, timeouts, and
+  // malformed provider responses remain visible in the activity log.
+  await recordAiActivity({
+    requestId,
+    operation,
+    startedAt,
+    status: 'started',
+    model: payload.model ?? DEFAULT_OPENROUTER_MODEL,
+    metadata: payload.metadata ?? null,
+  });
   const apiKey = configuredApiKey();
   if (!apiKey) {
-    throw new Error(
+    const error = new Error(
       'OPENROUTER_API_KEY is missing. Add it to the project .env and restart Electron.',
     );
+    await recordAiActivity({ requestId, operation, startedAt, durationMs: Date.now() - startedAt, status: 'error', error: error.message });
+    throw error;
   }
 
   const messages = Array.isArray(payload.messages) ? payload.messages : [];
   if (messages.length === 0) {
+    await recordAiActivity({ requestId, operation, startedAt, durationMs: Date.now() - startedAt, status: 'error', error: 'chatCompletions requires messages' });
     throw new Error('chatCompletions requires messages');
   }
 
@@ -749,11 +887,29 @@ ipcMain.handle('ai:chatCompletions', async (_, payload = {}) => {
     throw new Error('OpenRouter returned an empty completion');
   }
 
+  const activity = {
+    requestId, operation, startedAt, completedAt: Date.now(), durationMs: Date.now() - startedAt,
+    status: 'success', model: data.model ?? body.model,
+    temperature: body.temperature, maxTokens: body.max_tokens,
+    promptChars: messages.reduce((sum, message) => sum + String(message.content).length, 0),
+    responseChars: content.length, usage: data.usage ?? null,
+    metadata: payload.metadata ?? null,
+    messages: payload.capture === 'full' ? messages : messages.map((message) => ({ ...message, content: String(message.content).slice(0, 500) })),
+    responsePreview: content.slice(0, 1000),
+  };
+  await recordAiActivity(activity);
   return {
     content,
     model: data.model ?? body.model,
     usage: data.usage ?? null,
+    requestId,
   };
+});
+
+ipcMain.handle('ai:activity', () => readAiActivity());
+ipcMain.handle('ai:activityClear', async () => {
+  try { await fs.unlink(AI_ACTIVITY_PATH); } catch {}
+  return true;
 });
 
 const STARTER_SEED = [
@@ -779,14 +935,10 @@ const STARTER_SEED = [
   },
 ];
 
-/** Prefer Documents/Concrete; keep using Documents/Markdown Vault if that already exists. */
+/** Concrete is the canonical default vault; legacy folders are merged into it. */
 function defaultVaultRoot() {
   const documents = app.getPath('documents');
-  const preferred = path.join(documents, 'Concrete');
-  const legacy = path.join(documents, 'Markdown Vault');
-  if (fsSync.existsSync(preferred)) return preferred;
-  if (fsSync.existsSync(legacy)) return legacy;
-  return preferred;
+  return path.join(documents, 'Concrete');
 }
 
 async function ensureDefaultVaultDirectory() {
@@ -797,6 +949,10 @@ async function ensureDefaultVaultDirectory() {
 ipcMain.handle('vault:ensureDefault', async () => {
   const root = defaultVaultRoot();
   await fs.mkdir(root, { recursive: true });
+  if (path.basename(root) === 'Concrete') {
+    await importObsidianVault(path.join(app.getPath('documents'), 'Markdown Vault'), root, '.concrete-legacy-imported');
+  }
+  await importObsidianVault(path.join(app.getPath('documents'), 'Obsidian Vault'), root);
   const existing = await listVaultEntries(root);
   if (existing.files.length === 0) {
     for (const seed of STARTER_SEED) {
@@ -809,10 +965,21 @@ ipcMain.handle('vault:ensureDefault', async () => {
       }
     }
   }
-  const { files, folders } = await listVaultEntries(root);
+  const { files, pdfFiles, folders } = await listVaultEntries(root);
   await startWatch(root);
   await saveVaultPath(root);
-  return { root, files, folders };
+  return { root, files, pdfFiles, folders };
+});
+
+ipcMain.handle('vault:importObsidian', async (_, root) => {
+  const destination = path.resolve(typeof root === 'string' ? root : '');
+  if (!destination || destination === path.parse(destination).root) throw new Error('Invalid vault root');
+  await fs.mkdir(destination, { recursive: true });
+  await importObsidianVault(path.join(app.getPath('documents'), 'Obsidian Vault'), destination);
+  const { files, pdfFiles, folders } = await listVaultEntries(destination);
+  await startWatch(destination);
+  await saveVaultPath(destination);
+  return { root: destination, files, pdfFiles, folders };
 });
 
 app.whenReady().then(async () => {

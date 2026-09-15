@@ -34,6 +34,9 @@ export function QuizGradeView({ report, onRetake, onEdit }: Props) {
               </span>
             </div>
             <p>{item.feedback}</p>
+            {item.correctAnswer ? (
+              <p className="quiz-correct-answer"><strong>Correct answer:</strong> {item.correctAnswer}</p>
+            ) : null}
           </li>
         ))}
       </ul>

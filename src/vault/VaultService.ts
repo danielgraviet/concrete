@@ -59,12 +59,30 @@ export const VaultService = {
     return api.ensureDefault();
   },
 
+  importObsidian(root: string): Promise<VaultOpenResult> {
+    const api = requireVault();
+    if (typeof api.importObsidian !== 'function') {
+      throw new Error('Obsidian import requires an Electron restart');
+    }
+    return api.importObsidian(root);
+  },
+
   rename(root: string, from: string, to: string): Promise<string> {
     return requireVault().rename(root, from, to);
   },
 
   delete(root: string, name: string): Promise<boolean> {
     return requireVault().delete(root, name);
+  },
+
+  /** Opens a vault-relative file with the OS default app (e.g. a PDF viewer). */
+  openPath(root: string, name: string): Promise<boolean> {
+    return requireVault().openPath(root, name);
+  },
+
+  /** Reveals a vault-relative file in Finder / Explorer. */
+  revealInFolder(root: string, name: string): Promise<boolean> {
+    return requireVault().revealInFolder(root, name);
   },
 
   watchStart(root: string): Promise<boolean> {

@@ -27,6 +27,7 @@ import { quoteExitPlugin } from './quote';
 import { inlineCodeExitPlugin } from './inlineCode';
 import { slashMenuPlugin } from './slash';
 import { mathPlugin, normalizeMathMarkdown, preferOneLineDisplayMath } from './math';
+import { arrowPlugin } from './arrow';
 
 export type WysiwygEditorProps = {
   /** Stable id for the open document — remounts/syncs when it changes. */
@@ -90,6 +91,7 @@ export function createDefaultWysiwygPlugins(): NonNullable<MDXEditorProps['plugi
     tablePlugin(),
     markdownShortcutPlugin(),
     mathPlugin(),
+    arrowPlugin(),
     slashMenuPlugin(),
     quoteExitPlugin(),
     inlineCodeExitPlugin(),

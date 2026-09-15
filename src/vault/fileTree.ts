@@ -17,6 +17,11 @@ export function isQuizFileName(name: string): boolean {
   return /^Quiz /.test(base.replace(/\.md$/i, ''));
 }
 
+/** True for exported PDFs shown alongside notes in the tree. */
+export function isPdfFileName(name: string): boolean {
+  return toPosixPath(name).toLowerCase().endsWith('.pdf');
+}
+
 /** Sort rank: folders first, then notes, quizzes last. */
 function treeSortRank(node: VaultTreeNode): number {
   if (node.type === 'folder') return 0;
@@ -61,6 +66,18 @@ export function joinNotePath(folder: string, name: string): string {
   const base = cleaned.split('/').filter(Boolean).pop() ?? cleaned;
   if (!base) return '';
   const file = `${base}.md`;
+  const parent = toPosixPath(folder).replace(/^\/+|\/+$/g, '');
+  return parent ? `${parent}/${file}` : file;
+}
+
+/** Join a vault-relative folder with a PDF name → `Folder/Name.pdf`. */
+export function joinPdfPath(folder: string, name: string): string {
+  const cleaned = toPosixPath(name)
+    .replace(/\.pdf$/i, '')
+    .replace(/^\/+|\/+$/g, '');
+  const base = cleaned.split('/').filter(Boolean).pop() ?? cleaned;
+  if (!base) return '';
+  const file = `${base}.pdf`;
   const parent = toPosixPath(folder).replace(/^\/+|\/+$/g, '');
   return parent ? `${parent}/${file}` : file;
 }

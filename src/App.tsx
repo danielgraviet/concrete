@@ -27,8 +27,10 @@ import {
   canUseDiskVault,
   ensureFolderAncestors,
   FileTreeView,
+  isPdfFileName,
   joinFolderPath,
   joinNotePath,
+  joinPdfPath,
   noteTitle,
   parentDir,
   useVault,
@@ -72,6 +74,7 @@ import {
   type GenerateQuizDialogResult,
 } from './quiz';
 import { settingsStore, SettingsPanel } from './settings';
+import type { AgentProviderId } from './settings';
 import { ProductTour } from './onboarding';
 
 
@@ -165,8 +168,8 @@ export default function App() {
   >({ status: 'idle' });
   const generatingQuiz = quizJob.status === 'running';
   const quizJobRef = useRef(0);
-  const [agentEnabled, setAgentEnabled] = useState(
-    () => settingsStore.get().agentProviderId === 'codex',
+  const [agentProviderId, setAgentProviderId] = useState<AgentProviderId>(
+    () => settingsStore.get().agentProviderId,
   );
   const [editorRevision, setEditorRevision] = useState(0);
 
@@ -243,6 +246,7 @@ export default function App() {
 
   const root = vault.root;
   const files = vault.files;
+  const pdfFiles = vault.pdfFiles;
 
   const cardStore = useMemo(() => new CardStore(root ?? ''), [root]);
   const reviewQueue = useMemo(
@@ -252,12 +256,12 @@ export default function App() {
 
   useEffect(() => {
     const settings = settingsStore.hydrate();
-    setAgentEnabled(settings.agentProviderId === 'codex');
+    setAgentProviderId(settings.agentProviderId);
     aiClient.setProvider(
       resolveAiProvider(settings.providerId, settings.openRouterModelId),
     );
     const unsub = settingsStore.subscribe((next) => {
-      setAgentEnabled(next.agentProviderId === 'codex');
+      setAgentProviderId(next.agentProviderId);
       aiClient.setProvider(
         resolveAiProvider(next.providerId, next.openRouterModelId),
       );
@@ -376,7 +380,10 @@ export default function App() {
       if (event.root !== root || event.type !== 'change' || event.path !== selected) return;
       void VaultService.read(root, event.path).then((text) => {
         setContents((prev) => ({ ...prev, [event.path]: text }));
-        if (!controller.isDirty) {
+        // Chokidar also reports our own autosaves. Re-loading identical
+        // content through MDXEditor resets Lexical's selection and scroll
+        // position, which makes the cursor jump to the top while typing.
+        if (!controller.isDirty && text !== controller.content) {
           controller.loadContent(text);
           controller.markSaved();
           setEditorRevision((n) => n + 1);
@@ -458,7 +465,28 @@ export default function App() {
     setOnboardingStep(1);
   };
 
+  const importObsidianVault = async () => {
+    try {
+      const result = root
+        ? await VaultService.importObsidian(root)
+        : await vault.openDefault();
+      if (!result) return;
+      setContents({});
+      setActiveFolder('');
+      setSelected(result.files[0] ?? '');
+      setOnboardingStep(1);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Could not import the Obsidian vault.');
+    }
+  };
+
   const select = (name: string) => {
+    if (isPdfFileName(name)) {
+      // PDFs aren't editable notes — open them in the OS default viewer instead.
+      if (root) void VaultService.openPath(root, name);
+      setTreeFocus({ kind: 'file', path: name });
+      return;
+    }
     if (controller.isDirty) void controller.persistence.flush();
     setSelected(name);
     setTreeFocus({ kind: 'file', path: name });
@@ -587,6 +615,15 @@ export default function App() {
         openCount: quizSettings.openCount,
         difficulty: quizSettings.difficulty,
         customRubric: quizSettings.customRubric.trim() || undefined,
+      });
+      // Models sometimes satisfy the requested composition twice. Enforce the
+      // user's counts before saving so the quiz cannot silently grow.
+      const limits = { mcq: quizSettings.mcqCount, cloze: quizSettings.clozeCount, open: quizSettings.openCount };
+      const used = { mcq: 0, cloze: 0, open: 0 };
+      doc.questions = doc.questions.filter((question) => {
+        if (used[question.type] >= limits[question.type]) return false;
+        used[question.type] += 1;
+        return true;
       });
       doc.title = titled;
       doc.source = primary;
@@ -735,8 +772,35 @@ export default function App() {
       return;
     }
 
+    if (isPdfFileName(path)) {
+      const folder = parentDir(path);
+      const target = cleaned.startsWith('@root/')
+        ? cleaned.slice('@root/'.length)
+        : cleaned.includes('/') ? cleaned : joinPdfPath(folder, cleaned);
+      if (!target || target === path) return;
+      if (canUseDiskVault(root)) {
+        try {
+          const renamed = await vault.rename(path, target);
+          setTreeFocus({ kind: 'file', path: renamed });
+        } catch (error) {
+          console.error('Failed to rename PDF', error);
+          window.alert(
+            error instanceof Error ? error.message : 'Could not rename that PDF.',
+          );
+        }
+        return;
+      }
+      vault.setPdfFiles((current) =>
+        current.map((f) => (f === path ? target : f)).sort(),
+      );
+      setTreeFocus({ kind: 'file', path: target });
+      return;
+    }
+
     const folder = parentDir(path);
-    const target = joinNotePath(folder, cleaned);
+    const target = cleaned.startsWith('@root/')
+      ? cleaned.slice('@root/'.length)
+      : cleaned.includes('/') ? cleaned : joinNotePath(folder, cleaned);
     if (!target || target === path) return;
     if (canUseDiskVault(root)) {
       try {
@@ -1062,7 +1126,7 @@ export default function App() {
               </Flex>
             </div>
             <FileTreeView
-              files={files}
+              files={pdfFiles.length > 0 ? [...files, ...pdfFiles] : files}
               folders={vault.folders}
               selected={selected}
               activeFolder={activeFolder}
@@ -1248,7 +1312,7 @@ export default function App() {
           noteContext={truncateNoteContext(controller.content)}
           notePath={selected}
           vaultRoot={root}
-          agentEnabled={agentEnabled}
+          agentProviderId={agentProviderId}
           open={aiChatOpen}
           onOpenChange={setAiChatOpen}
           seedPrompt={aiSeedPrompt}
@@ -1443,6 +1507,18 @@ export default function App() {
                     <Button
                       type="button"
                       variant="soft"
+                      onClick={() => {
+                        void importObsidianVault().then(() => {
+                          localStorage.setItem('mv:onboarding-complete', '1');
+                          setOnboarding(false);
+                        });
+                      }}
+                    >
+                      Import Obsidian Vault
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="soft"
                       color="gray"
                       onClick={() => {
                         setOnboardingMode('tour');
@@ -1494,6 +1570,7 @@ export default function App() {
               store={settingsStore}
               vaultRoot={root}
               onOpenVault={() => { void openVault().then(() => setOverlay(null)); }}
+              onImportObsidian={() => { void importObsidianVault().then(() => setOverlay(null)); }}
               onReplayOnboarding={() => {
                 setOverlay(null);
                 setOnboardingMode('tour');

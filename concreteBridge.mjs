@@ -305,11 +305,11 @@ async function handleExportNotePdf(args) {
 <body>${bodyHtml}</body>
 </html>`;
 
-  const exportDir = path.join(vaultRoot, 'Exports');
-  await fs.mkdir(exportDir, { recursive: true });
+  const folder = parentDir(relative);
+  const exportDir = folder ? path.join(vaultRoot, folder) : vaultRoot;
   const pdfName = `${title}.pdf`;
   const pdfAbsolute = path.join(exportDir, pdfName);
-  const pdfRelative = `Exports/${pdfName}`;
+  const pdfRelative = folder ? `${folder}/${pdfName}` : pdfName;
 
   const win = new state.BrowserWindow({
     show: false,

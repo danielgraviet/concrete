@@ -10,11 +10,14 @@ export interface VaultWatchEvent {
 export interface VaultOpenResult {
   root: string;
   files: string[];
+  /** Non-markdown files also shown in the tree (currently exported PDFs). */
+  pdfFiles: string[];
   folders: string[];
 }
 
 export interface VaultListResult {
   files: string[];
+  pdfFiles: string[];
   folders: string[];
 }
 

@@ -1,5 +1,4 @@
 import type { MdastImportVisitor, LexicalExportVisitor } from '@mdxeditor/editor';
-import { $createParagraphNode } from 'lexical';
 import { $createMathNode, $isMathNode, type MathNode } from './MathNode';
 import { sanitizeLatexEquals } from './normalizeMathMarkdown';
 
@@ -27,13 +26,12 @@ export const MdastInlineMathVisitor: MdastImportVisitor<InlineMathMdast> = {
 /** `$$...$$` flow math → display KaTeX node (wrapped in a paragraph) */
 export const MdastMathVisitor: MdastImportVisitor<MathMdast> = {
   testNode: 'math',
-  visitNode({ mdastNode, lexicalParent }) {
+  visitNode({ mdastNode, actions }) {
     const math = $createMathNode(sanitizeLatexEquals(mdastNode.value), false);
-    const paragraph = $createParagraphNode();
-    paragraph.append(math);
-    // Flow math always lands as its own paragraph under root / current parent.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (lexicalParent as any).append(paragraph);
+    // A block MathNode is itself a valid top-level Lexical node. Wrapping it
+    // in a paragraph causes MDXEditor to retain the importer-created wrapper,
+    // which renders as duplicate math blocks.
+    actions.addAndStepInto(math);
   },
 };
 

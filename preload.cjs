@@ -11,11 +11,14 @@ contextBridge.exposeInMainWorld('vault', {
   create: (root, name) => ipcRenderer.invoke('vault:create', root, name),
   mkdir: (root, name) => ipcRenderer.invoke('vault:mkdir', root, name),
   ensureDefault: () => ipcRenderer.invoke('vault:ensureDefault'),
+  importObsidian: (root) => ipcRenderer.invoke('vault:importObsidian', root),
   restore: () => ipcRenderer.invoke('vault:restore'),
   rename: (root, from, to) => ipcRenderer.invoke('vault:rename', root, from, to),
   delete: (root, name) => ipcRenderer.invoke('vault:delete', root, name),
   watchStart: (root) => ipcRenderer.invoke('vault:watchStart', root),
   watchStop: () => ipcRenderer.invoke('vault:watchStop'),
+  openPath: (root, name) => ipcRenderer.invoke('vault:openPath', root, name),
+  revealInFolder: (root, name) => ipcRenderer.invoke('vault:revealInFolder', root, name),
   onWatch: (callback) => {
     if (typeof callback !== 'function') return () => {};
     const listener = (_event, payload) => callback(payload);
@@ -41,7 +44,9 @@ contextBridge.exposeInMainWorld('ai', {
   setApiKey: (apiKey) => ipcRenderer.invoke('ai:setApiKey', apiKey),
   ping: () => ipcRenderer.invoke('ai:ping'),
   chatCompletions: (payload) => ipcRenderer.invoke('ai:chatCompletions', payload),
-  agentStatus: () => ipcRenderer.invoke('ai:agentStatus'),
+  activity: () => ipcRenderer.invoke('ai:activity'),
+  activityClear: () => ipcRenderer.invoke('ai:activityClear'),
+  agentStatus: (payload) => ipcRenderer.invoke('ai:agentStatus', payload),
   agentRun: (payload) => ipcRenderer.invoke('ai:agentRun', payload),
   agentCancel: () => ipcRenderer.invoke('ai:agentCancel'),
   onAgentProgress: (callback) => {

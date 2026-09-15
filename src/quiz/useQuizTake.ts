@@ -75,7 +75,20 @@ export function useQuizTake(markdown: string, documentPath: string, client: AiCl
         responses,
         rubric: quiz.rubric,
       });
-      setState((prev) => ({ ...prev, phase: 'graded', report }));
+      const enrichedReport = {
+        ...report,
+        perQuestion: report.perQuestion.map((item) => {
+          const question = quiz.questions.find((q) => q.id === item.questionId);
+          if (!question || item.score >= item.maxScore) return item;
+          const correctAnswer = question.type === 'mcq'
+            ? question.options.filter((option) => option.correct).map((option) => option.text).join(', ')
+            : question.type === 'cloze'
+              ? question.answers.join(', ')
+              : question.answer;
+          return { ...item, correctAnswer };
+        }),
+      };
+      setState((prev) => ({ ...prev, phase: 'graded', report: enrichedReport }));
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Grading failed';
       setState((prev) => ({ ...prev, phase: 'taking', error: message }));

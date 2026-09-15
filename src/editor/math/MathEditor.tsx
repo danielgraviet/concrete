@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
+import { ContextMenu } from '@radix-ui/themes';
 import { $getNodeByKey, type NodeKey } from 'lexical';
 import katex from 'katex';
 import { $isMathNode } from './MathNode';
@@ -105,21 +106,33 @@ export function MathEditor({ value, inline, nodeKey }: Props) {
     error = err instanceof Error ? err.message : 'Invalid math';
   }
 
+  const remove = () => {
+    editor.update(() => {
+      const node = $getNodeByKey(nodeKey);
+      if ($isMathNode(node)) node.remove();
+    });
+  };
+
   return (
-    <span
-      className={inline ? 'mv-math-render inline' : 'mv-math-render block'}
-      title="Double-click to edit LaTeX"
-      onDoubleClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        setEditing(true);
-      }}
-    >
-      {error ? (
-        <span className="mv-math-error">{error}</span>
-      ) : (
-        <span dangerouslySetInnerHTML={{ __html: html }} />
-      )}
-    </span>
+    <ContextMenu.Root>
+      <ContextMenu.Trigger>
+        <span
+          className={inline ? 'mv-math-render inline' : 'mv-math-render block'}
+          title="Double-click to edit LaTeX"
+          onDoubleClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setEditing(true);
+          }}
+        >
+          {error ? <span className="mv-math-error">{error}</span> : <span dangerouslySetInnerHTML={{ __html: html }} />}
+        </span>
+      </ContextMenu.Trigger>
+      <ContextMenu.Content size="1" variant="soft">
+        <ContextMenu.Item color="red" onSelect={remove}>
+          Delete equation
+        </ContextMenu.Item>
+      </ContextMenu.Content>
+    </ContextMenu.Root>
   );
 }
