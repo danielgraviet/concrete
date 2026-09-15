@@ -93,6 +93,11 @@ export class OpenRouterProvider implements AiProvider {
       source: request.source ?? request.sources?.[0],
       sources: request.sources,
       types: request.types,
+      mcqCount: request.mcqCount,
+      clozeCount: request.clozeCount,
+      openCount: request.openCount,
+      difficulty: request.difficulty,
+      customRubric: request.customRubric,
     });
 
     const result = await ai.chatCompletions({

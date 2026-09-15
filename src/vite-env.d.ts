@@ -62,6 +62,7 @@ interface Window {
     create: (root: string, name: string) => Promise<string>;
     mkdir: (root: string, name: string) => Promise<string>;
     ensureDefault: () => Promise<VaultOpenResult>;
+    restore: () => Promise<VaultOpenResult | null>;
     rename: (root: string, from: string, to: string) => Promise<string>;
     delete: (root: string, name: string) => Promise<boolean>;
     watchStart: (root: string) => Promise<boolean>;
@@ -72,6 +73,7 @@ interface Window {
   /** OpenRouter bridge — key stays in Electron main. */
   ai?: {
     status: () => Promise<AiStatus>;
+    setApiKey: (apiKey: string) => Promise<AiStatus>;
     ping: () => Promise<AiPingResult>;
     chatCompletions: (
       request: AiChatCompletionsRequest,

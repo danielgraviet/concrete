@@ -39,7 +39,7 @@ Open-ended prompt.
 Reference answer for the grader.
 
 Hard rules:
-1. Include a mix of mcq, cloze, and open (default 2 mcq, 1 cloze, 1 open unless the user asks otherwise).
+1. Follow the requested counts for mcq, cloze, and open exactly when given.
 2. MCQ options must NOT start with A), B), C), D) or similar letters. Plain option text only.
 3. Exactly one [x] correct option per MCQ unless the stem clearly requires multi-select.
 4. Do not make the correct MCQ option the longest option by default. Vary lengths.
@@ -47,7 +47,8 @@ Hard rules:
 6. Ground every item in the provided note context when present. Do not invent unrelated topics.
 7. Cloze answers inside {{ }} must be short (1-5 words).
 8. Rubric must be a single quoted line in frontmatter.
-9. Title must start with "Quiz ".`;
+9. Title must start with "Quiz ".
+10. Match the requested difficulty (easy = recall, medium = application, hard = transfer / edge cases).`;
 
 export function buildQuizGenerationUserPrompt(input: {
   topic: string;
@@ -55,24 +56,55 @@ export function buildQuizGenerationUserPrompt(input: {
   source?: string;
   sources?: string[];
   types?: string[];
+  mcqCount?: number;
+  clozeCount?: number;
+  openCount?: number;
+  difficulty?: 'easy' | 'medium' | 'hard';
+  customRubric?: string;
 }): string {
   const topic = input.topic.trim() || 'Untitled';
+  const mcqCount = Math.max(0, input.mcqCount ?? 0);
+  const clozeCount = Math.max(0, input.clozeCount ?? 0);
+  const openCount = Math.max(0, input.openCount ?? 0);
+  const hasCounts = mcqCount + clozeCount + openCount > 0;
   const types =
     input.types && input.types.length > 0
       ? input.types.join(', ')
-      : 'mcq, cloze, open';
+      : hasCounts
+        ? [
+            mcqCount > 0 ? 'mcq' : null,
+            clozeCount > 0 ? 'cloze' : null,
+            openCount > 0 ? 'open' : null,
+          ]
+            .filter(Boolean)
+            .join(', ')
+        : 'mcq, cloze, open';
   const sources =
     input.sources && input.sources.length > 0
       ? input.sources
       : input.source
         ? [input.source]
         : [];
+  const difficulty = input.difficulty || 'medium';
 
   const parts = [
     `Create a quiz titled "Quiz ${topic.replace(/^Quiz\s+/i, '')}".`,
     `Question types to include: ${types}.`,
+    `Difficulty: ${difficulty}.`,
     'Base every question on the source note(s) below. Prefer retrieval and application over trivia.',
   ];
+
+  if (hasCounts) {
+    parts.push(
+      `Exact composition: ${mcqCount} mcq, ${clozeCount} cloze, ${openCount} open (total ${mcqCount + clozeCount + openCount}).`,
+    );
+  }
+
+  if (input.customRubric?.trim()) {
+    parts.push(
+      `Set frontmatter rubric exactly to: "${input.customRubric.trim().replace(/"/g, "'")}"`,
+    );
+  }
 
   if (sources.length === 1) {
     parts.push(`Set frontmatter source to: ${sources[0]}`);

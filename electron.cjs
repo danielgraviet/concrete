@@ -9,6 +9,31 @@ let mainWindow = null;
 let watcher = null;
 let watchedRoot = null;
 
+const AI_SETTINGS_PATH = path.join(app.getPath('userData'), 'ai-settings.json');
+const APP_STATE_PATH = path.join(app.getPath('userData'), 'app-state.json');
+
+function savedVaultPath() {
+  try {
+    const state = JSON.parse(fsSync.readFileSync(APP_STATE_PATH, 'utf8'));
+    return typeof state.lastVaultPath === 'string' ? state.lastVaultPath : null;
+  } catch { return null; }
+}
+
+async function saveVaultPath(root) {
+  await fs.mkdir(path.dirname(APP_STATE_PATH), { recursive: true });
+  await fs.writeFile(APP_STATE_PATH, JSON.stringify({ lastVaultPath: root }), { mode: 0o600 });
+}
+
+function configuredApiKey() {
+  try {
+    const saved = JSON.parse(fsSync.readFileSync(AI_SETTINGS_PATH, 'utf8'));
+    if (typeof saved.openRouterApiKey === 'string' && saved.openRouterApiKey.trim()) {
+      return saved.openRouterApiKey.trim();
+    }
+  } catch {}
+  return process.env.OPENROUTER_API_KEY?.trim() ?? '';
+}
+
 /** @type {{ url: string, token: string } | null} */
 let concreteBridgeInfo = null;
 /** Latest vault/note context for MCP tool handlers. */
@@ -149,27 +174,78 @@ function buildConcreteMcpConfig() {
       )
     : mcpPath;
 
-  const env = {
+  if (!fsSync.existsSync(unpacked)) {
+    console.error('[concrete] MCP entry missing:', unpacked);
+    return null;
+  }
+
+  // Persist bridge creds for CLI fallback (agent shell).
+  const bridgeFile = path.join(app.getPath('temp'), 'concrete-bridge.json');
+  try {
+    fsSync.writeFileSync(
+      bridgeFile,
+      JSON.stringify({
+        url: concreteBridgeInfo.url,
+        token: concreteBridgeInfo.token,
+      }),
+      { mode: 0o600 },
+    );
+  } catch (error) {
+    console.error('[concrete] failed to write bridge file', error);
+  }
+
+  const pathPrefix = '/opt/homebrew/bin:/usr/local/bin';
+  // Keep this small — Codex flattens env into CLI --config flags (argv limits).
+  const mergedEnv = {
+    PATH: `${pathPrefix}:${process.env.PATH || ''}`,
+    HOME: process.env.HOME || '',
+    TMPDIR: process.env.TMPDIR || '',
+    USER: process.env.USER || '',
+    LANG: process.env.LANG || 'en_US.UTF-8',
     CONCRETE_BRIDGE_URL: concreteBridgeInfo.url,
     CONCRETE_BRIDGE_TOKEN: concreteBridgeInfo.token,
+    CONCRETE_BRIDGE_FILE: bridgeFile,
   };
 
-  // Prefer a real Node binary so ESM deps resolve cleanly (dev + most Mac setups).
+  const cliPathRaw = path.join(__dirname, 'concreteToolCli.mjs');
+  const cliPath = cliPathRaw.includes(`${path.sep}app.asar${path.sep}`)
+    ? cliPathRaw.replace(
+        `${path.sep}app.asar${path.sep}`,
+        `${path.sep}app.asar.unpacked${path.sep}`,
+      )
+    : cliPathRaw;
+
+  /** @type {{ command: string, args: string[], env: Record<string, string>, cliPath: string, bridgeFile: string }} */
+  let launch = null;
+
+  // Prefer real Node when available (dev + typical Mac).
   for (const candidate of ['/opt/homebrew/bin/node', '/usr/local/bin/node']) {
     if (fsSync.existsSync(candidate)) {
-      return { command: candidate, args: [unpacked], env };
+      launch = {
+        command: candidate,
+        args: [unpacked],
+        env: mergedEnv,
+        cliPath,
+        bridgeFile,
+      };
+      break;
     }
   }
 
-  return {
-    // Packaged fallback: Electron-as-Node (deps must be asarUnpack'd).
-    command: process.execPath,
-    args: [unpacked],
-    env: {
-      ...env,
-      ELECTRON_RUN_AS_NODE: '1',
-    },
-  };
+  if (!launch) {
+    launch = {
+      command: process.execPath,
+      args: [unpacked],
+      env: {
+        ...mergedEnv,
+        ELECTRON_RUN_AS_NODE: '1',
+      },
+      cliPath,
+      bridgeFile,
+    };
+  }
+
+  return launch;
 }
 
 function createWindow() {
@@ -241,6 +317,7 @@ function ensureMdExtension(name) {
 }
 
 const SKIP_DIRS = new Set(['.git', 'node_modules', '.obsidian', '.trash', '.vault']);
+const MAX_VAULT_FILES = 10000;
 
 /**
  * Recursively list markdown files and folders (including empty folders).
@@ -268,6 +345,9 @@ async function listVaultEntries(root) {
       }
       if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.md')) continue;
       files.push(relBase ? `${relBase}/${entry.name}` : entry.name);
+      if (files.length > MAX_VAULT_FILES) {
+        throw new Error(`Vault contains more than ${MAX_VAULT_FILES.toLocaleString()} Markdown files and cannot be opened.`);
+      }
     }
   }
 
@@ -294,9 +374,19 @@ async function startWatch(root) {
   watcher = chokidar.watch('.', {
     cwd: resolvedRoot,
     ignoreInitial: true,
-    ignored: /(^|[/\\])(\.git|node_modules|\.obsidian|\.trash|\.vault)([/\\]|$)/,
+    ignored: /(^|[/\\])(\.git|node_modules|\.obsidian|\.trash|\.vault|dist|release|build)([/\\]|$)/,
     awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 },
-    depth: 99
+    depth: 12,
+    ignorePermissionErrors: true,
+  });
+
+  watcher.on('error', (error) => {
+    console.error('[vault] watch error', error);
+    const code = error && typeof error === 'object' ? error.code : null;
+    if (code === 'EMFILE' || code === 'ENOSPC') {
+      void stopWatch();
+      void saveVaultPath(null);
+    }
   });
 
   const send = (type, filePath) => {
@@ -326,14 +416,41 @@ async function startWatch(root) {
 }
 
 ipcMain.handle('vault:open', async () => {
-  const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+  const result = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] });
   if (result.canceled || !result.filePaths[0]) return null;
   const root = path.resolve(result.filePaths[0]);
-  const { files, folders } = await listVaultEntries(root);
-  await startWatch(root);
-  return { root, files, folders };
+  try {
+    const { files, folders } = await listVaultEntries(root);
+    await startWatch(root);
+    await saveVaultPath(root);
+    return { root, files, folders };
+  } catch (error) {
+    await stopWatch();
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(message);
+  }
 });
 
+ipcMain.handle('vault:restore', async () => {
+  const root = savedVaultPath();
+  if (!root) return null;
+  try {
+    const { files, folders } = await listVaultEntries(root);
+    await startWatch(root);
+    return { root, files, folders };
+  } catch (error) {
+    console.error('[vault] restore failed; clearing saved vault', error);
+    await stopWatch();
+    await saveVaultPath(null);
+    return null;
+  }
+});
+
+ipcMain.handle('vault:clearSaved', async () => {
+  await stopWatch();
+  await saveVaultPath(null);
+  return true;
+});
 ipcMain.handle('vault:list', async (_, root) => {
   const { files, folders } = await listVaultEntries(root);
   return { files, folders };
@@ -428,13 +545,27 @@ ipcMain.handle('vault:watchStop', async () => {
 });
 
 ipcMain.handle('ai:status', async () => {
-  const key = process.env.OPENROUTER_API_KEY?.trim() ?? '';
+  const key = configuredApiKey();
   return {
     configured: key.length > 0,
     provider: 'openrouter',
     model: DEFAULT_OPENROUTER_MODEL,
     keySuffix: key ? key.slice(-4) : null,
     keyLength: key.length,
+  };
+});
+
+ipcMain.handle('ai:setApiKey', async (_, apiKey) => {
+  if (typeof apiKey !== 'string') throw new Error('API key must be text');
+  const value = apiKey.trim();
+  await fs.mkdir(path.dirname(AI_SETTINGS_PATH), { recursive: true });
+  await fs.writeFile(AI_SETTINGS_PATH, JSON.stringify({ openRouterApiKey: value }), { mode: 0o600 });
+  return {
+    configured: value.length > 0,
+    provider: 'openrouter',
+    model: DEFAULT_OPENROUTER_MODEL,
+    keySuffix: value ? value.slice(-4) : null,
+    keyLength: value.length,
   };
 });
 
@@ -493,7 +624,7 @@ ipcMain.handle('ai:agentCancel', async () => {
 
 /** Minimal smoke test: cheap model, one short completion. */
 ipcMain.handle('ai:ping', async () => {
-  const apiKey = process.env.OPENROUTER_API_KEY?.trim();
+  const apiKey = configuredApiKey();
   if (!apiKey) {
     throw new Error('OPENROUTER_API_KEY missing after .env load');
   }
@@ -549,7 +680,7 @@ ipcMain.handle('ai:ping', async () => {
 });
 
 ipcMain.handle('ai:chatCompletions', async (_, payload = {}) => {
-  const apiKey = process.env.OPENROUTER_API_KEY?.trim();
+  const apiKey = configuredApiKey();
   if (!apiKey) {
     throw new Error(
       'OPENROUTER_API_KEY is missing. Add it to the project .env and restart Electron.',
@@ -628,11 +759,11 @@ ipcMain.handle('ai:chatCompletions', async (_, payload = {}) => {
 const STARTER_SEED = [
   {
     path: 'Welcome.md',
-    body: '# Welcome to your vault\n\nA fast, local-first home for your thinking.\n\n## Start here\n\n- Notes here are real files on disk\n- Create folders to organize topics\n- Link notes with [[Projects]]\n\n#mvp #vault\n',
+    body: '# Welcome to your vault\n\nA fast, local-first home for your thinking.\n\n## Start here\n\n- Notes here are real files on disk\n- Create folders to organize topics\n- Link notes with [[Projects]]\n',
   },
   {
     path: 'Projects.md',
-    body: '# Projects\n\nA place for active work.\n\nSee also [[Welcome]].\n\n- [ ] Build the review queue\n- [ ] Add backlinks\n\n#mvp\n',
+    body: '# Projects\n\nA place for active work.\n\nSee also [[Welcome]].\n\n- [ ] Build the review queue\n- [ ] Add backlinks\n',
   },
   {
     path: 'Ideas.md',
@@ -658,6 +789,10 @@ function defaultVaultRoot() {
   return preferred;
 }
 
+async function ensureDefaultVaultDirectory() {
+  await fs.mkdir(path.join(app.getPath('documents'), 'Concrete'), { recursive: true });
+}
+
 /** Open (or create) the default on-disk vault under Documents/Concrete. */
 ipcMain.handle('vault:ensureDefault', async () => {
   const root = defaultVaultRoot();
@@ -676,11 +811,13 @@ ipcMain.handle('vault:ensureDefault', async () => {
   }
   const { files, folders } = await listVaultEntries(root);
   await startWatch(root);
+  await saveVaultPath(root);
   return { root, files, folders };
 });
 
 app.whenReady().then(async () => {
   setupAppMenu();
+  await ensureDefaultVaultDirectory();
   createWindow();
   try {
     await ensureConcreteBridge();

@@ -15,6 +15,7 @@ import {
   ArrowRightFromLine,
   Bot,
   Expand,
+  Loader2,
   Minimize2,
   ChevronDown,
   ChevronUp,
@@ -71,6 +72,7 @@ import {
   type GenerateQuizDialogResult,
 } from './quiz';
 import { settingsStore, SettingsPanel } from './settings';
+import { ProductTour } from './onboarding';
 
 
 const demoNotes = [
@@ -83,9 +85,9 @@ const demoNotes = [
 const demoFolders = ['Stats', 'Machine Learning'];
 const demoContent: Record<string, string> = {
   'Welcome.md':
-    '# Welcome to your vault\n\nA fast, local-first home for your thinking.\n\n## Start here\n\n- Open a folder to work with real Markdown files\n- Create **folders** to organize topics (Stats, Machine Learning, …)\n- Create notes inside those folders\n- Link notes with [[Projects]] and [[Ideas]]\n\n#mvp #vault\n\n> The best knowledge system is the one that gets out of your way.',
+    '# Welcome to your vault\n\nA fast, local-first home for your thinking.\n\n## Start here\n\n- Open a folder to work with real Markdown files\n- Create **folders** to organize topics (Stats, Machine Learning, …)\n- Create notes inside those folders\n- Link notes with [[Projects]] and [[Ideas]]\n\n> The best knowledge system is the one that gets out of your way.',
   'Projects.md':
-    '# Projects\n\nA place for active work.\n\nSee also [[Welcome]].\n\n- [ ] Build the review queue\n- [ ] Add backlinks\n- [ ] Design the quiz experience\n\n#mvp',
+    '# Projects\n\nA place for active work.\n\nSee also [[Welcome]].\n\n- [ ] Build the review queue\n- [ ] Add backlinks\n- [ ] Design the quiz experience\n',
   'Ideas.md': '# Ideas\n\nCapture quickly. Organize later.\n\nBack to [[Welcome]].\n',
   'Stats/Overview.md':
     '# Stats\n\nNotes living under the **Stats** folder.\n\nCreate more `.md` files here to keep metrics and analysis together.\n',
@@ -131,6 +133,12 @@ function resolveAiProvider(id: string, openRouterModelId?: string) {
 export default function App() {
   const vault = useVault(demoNotes, demoFolders);
   const [selected, setSelected] = useState('Welcome.md');
+  const [onboarding, setOnboarding] = useState(
+    () => typeof window !== 'undefined' && Boolean(window.vault) && !localStorage.getItem('mv:onboarding-complete'),
+  );
+  /** 'welcome' = vault picker; 'tour' = product advantages walkthrough */
+  const [onboardingMode, setOnboardingMode] = useState<'welcome' | 'tour'>('welcome');
+  const [onboardingStep, setOnboardingStep] = useState(0);
   const [activeFolder, setActiveFolder] = useState('');
   const [treeFocus, setTreeFocus] = useState<{
     kind: TreeItemKind;
@@ -149,7 +157,14 @@ export default function App() {
   const [dueTick, setDueTick] = useState(0);
   const [layout, setLayout] = useState<LayoutState>(() => loadLayout());
   const [generateQuizOpen, setGenerateQuizOpen] = useState(false);
-  const [generatingQuiz, setGeneratingQuiz] = useState(false);
+  const [quizJob, setQuizJob] = useState<
+    | { status: 'idle' }
+    | { status: 'running'; title: string }
+    | { status: 'done'; title: string; path: string }
+    | { status: 'error'; title: string; message: string }
+  >({ status: 'idle' });
+  const generatingQuiz = quizJob.status === 'running';
+  const quizJobRef = useRef(0);
   const [agentEnabled, setAgentEnabled] = useState(
     () => settingsStore.get().agentProviderId === 'codex',
   );
@@ -278,8 +293,12 @@ export default function App() {
   useEffect(() => {
     if (vault.root) return;
     let cancelled = false;
-    void vault.openDefault().then((result) => {
+    void (window.vault?.restore ? vault.restore() : Promise.resolve(null)).then((result) => {
       if (cancelled || !result) return;
+      // A successfully restored vault means this user has already completed
+      // the vault-selection step; never show first-run onboarding again.
+      localStorage.setItem('mv:onboarding-complete', '1');
+      setOnboarding(false);
       setContents({});
       setActiveFolder('');
       const preferred =
@@ -424,12 +443,19 @@ export default function App() {
   })();
 
   const openVault = async () => {
-    const result = await vault.open();
+    let result;
+    try {
+      result = await vault.open();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Could not open that vault.');
+      return;
+    }
     if (!result) return;
     setContents({});
     setActiveFolder('');
     const first = result.files[0] ?? '';
     setSelected(first);
+    setOnboardingStep(1);
   };
 
   const select = (name: string) => {
@@ -515,7 +541,7 @@ export default function App() {
   };
 
   const confirmGenerateQuiz = async (result: GenerateQuizDialogResult) => {
-    if (generatingQuiz) return;
+    if (quizJob.status === 'running') return;
     if (controller.isDirty) await controller.persistence.flush();
 
     const sourcePaths = result.sourcePaths.filter((path) => !isQuizPath(path));
@@ -524,7 +550,24 @@ export default function App() {
       return;
     }
 
-    setGeneratingQuiz(true);
+    const titled = result.title;
+    const primary = sourcePaths[0];
+    const saveFolder = parentDir(primary) || activeFolder;
+    const relative = joinNotePath(saveFolder, titled);
+    if (!relative) return;
+
+    // Close dialog immediately — generation continues in the background.
+    setGenerateQuizOpen(false);
+    const jobId = ++quizJobRef.current;
+    setQuizJob({ status: 'running', title: titled });
+
+    const quizSettings = settingsStore.get().quiz;
+    const types = [
+      ...(quizSettings.mcqCount > 0 ? (['mcq'] as const) : []),
+      ...(quizSettings.clozeCount > 0 ? (['cloze'] as const) : []),
+      ...(quizSettings.openCount > 0 ? (['open'] as const) : []),
+    ];
+
     try {
       const chunks: string[] = [];
       for (const path of sourcePaths) {
@@ -532,39 +575,61 @@ export default function App() {
         chunks.push(`### File: ${path}\n\n${body.trim()}`);
       }
       const noteContext = chunks.join('\n\n-----\n\n');
-      const primary = sourcePaths[0];
-      const titled = result.title;
-      const saveFolder = parentDir(primary) || activeFolder;
-      const relative = joinNotePath(saveFolder, titled);
-      if (!relative) return;
 
       const doc = await aiClient.generateQuiz({
         topic: titled.replace(/^Quiz\s+/, ''),
         noteContext: truncateNoteContext(noteContext, 12000),
         source: primary,
         sources: sourcePaths,
+        types,
+        mcqCount: quizSettings.mcqCount,
+        clozeCount: quizSettings.clozeCount,
+        openCount: quizSettings.openCount,
+        difficulty: quizSettings.difficulty,
+        customRubric: quizSettings.customRubric.trim() || undefined,
       });
       doc.title = titled;
       doc.source = primary;
+      if (quizSettings.customRubric.trim()) {
+        doc.rubric = quizSettings.customRubric.trim();
+      }
       const body = quizDocumentToMarkdown(doc, titled);
 
+      let createdPath = relative;
       if (canUseDiskVault(root)) {
         const created = await vault.create(relative);
         await vault.write(created, body);
-        finishNewNote(created, body);
+        createdPath = created;
+        setContents((prev) => ({ ...prev, [created]: body }));
+        // Don't steal focus mid-edit — toast lets the user open it.
       } else {
-        createDemoNote(relative, body);
+        vault.setFiles((current) =>
+          current.includes(relative)
+            ? current
+            : [...current, relative].sort((a, b) => a.localeCompare(b)),
+        );
+        const parent = parentDir(relative);
+        if (parent) {
+          vault.setFolders((current) => ensureFolderAncestors(current, parent));
+        }
+        setContents((prev) => ({ ...prev, [relative]: body }));
       }
-      setGenerateQuizOpen(false);
+
+      if (quizJobRef.current === jobId) {
+        setQuizJob({ status: 'done', title: titled, path: createdPath });
+      }
     } catch (error) {
       console.error('Quiz generation failed', error);
-      window.alert(
-        error instanceof Error
-          ? `Quiz generation failed:\n${error.message}`
-          : 'Quiz generation failed. Check OpenRouter key / network and try again.',
-      );
-    } finally {
-      setGeneratingQuiz(false);
+      if (quizJobRef.current === jobId) {
+        setQuizJob({
+          status: 'error',
+          title: titled,
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Quiz generation failed. Check OpenRouter key / network and try again.',
+        });
+      }
     }
   };
   const createFolder = async () => {
@@ -824,33 +889,47 @@ export default function App() {
       <aside className="rail" aria-label="Primary">
         <IconButton
           type="button"
+          className={
+            rail === 'files' && layout.sidebarOpen && !layout.focusMode
+              ? 'rail-button active'
+              : 'rail-button'
+          }
           size="2"
-          variant={rail === 'files' && layout.sidebarOpen && !layout.focusMode ? 'soft' : 'ghost'}
+          variant="ghost"
           color="gray"
           highContrast
           aria-label="Files"
+          aria-pressed={rail === 'files' && layout.sidebarOpen && !layout.focusMode}
           onClick={() => selectRail('files')}
         >
           <FileTextIcon width={18} height={18} />
         </IconButton>
         <IconButton
           type="button"
+          className={
+            rail === 'tags' && layout.sidebarOpen && !layout.focusMode
+              ? 'rail-button active'
+              : 'rail-button'
+          }
           size="2"
-          variant={rail === 'tags' && layout.sidebarOpen && !layout.focusMode ? 'soft' : 'ghost'}
+          variant="ghost"
           color="gray"
           highContrast
           aria-label="Tags"
+          aria-pressed={rail === 'tags' && layout.sidebarOpen && !layout.focusMode}
           onClick={() => selectRail('tags')}
         >
           <BadgeIcon width={18} height={18} />
         </IconButton>
         <IconButton
           type="button"
+          className={rail === 'ai' || aiChatOpen ? 'rail-button active' : 'rail-button'}
           size="2"
-          variant={rail === 'ai' || aiChatOpen ? 'soft' : 'ghost'}
+          variant="ghost"
           color="gray"
           highContrast
           aria-label="Tutor"
+          aria-pressed={rail === 'ai' || aiChatOpen}
           onClick={() => selectRail('ai')}
         >
           <Bot size={18} />
@@ -858,11 +937,13 @@ export default function App() {
         <div className="rail-spacer" />
         <IconButton
           type="button"
+          className={layout.focusMode ? 'rail-button active' : 'rail-button'}
           size="2"
-          variant={layout.focusMode ? 'soft' : 'ghost'}
+          variant="ghost"
           color="gray"
           highContrast
           aria-label={layout.focusMode ? 'Exit focus mode' : 'Focus mode'}
+          aria-pressed={layout.focusMode}
           onClick={toggleFocusMode}
         >
           {layout.focusMode ? (
@@ -873,6 +954,7 @@ export default function App() {
         </IconButton>
         <IconButton
           type="button"
+          className="rail-button"
           size="2"
           variant="ghost"
           color="gray"
@@ -1006,11 +1088,11 @@ export default function App() {
           {!layout.focusMode && (
             <IconButton
               type="button"
+              className="tabs-collapse"
               size="2"
               variant="ghost"
               color="gray"
               highContrast
-              ml="2"
               aria-label={layout.sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
               onClick={() => setSidebarOpen(!layout.sidebarOpen)}
             >
@@ -1250,12 +1332,148 @@ export default function App() {
               ? parentDir(selected) || 'vault root'
               : activeFolder || 'vault root'
           }
-          busy={generatingQuiz}
-          onCancel={() => {
-            if (!generatingQuiz) setGenerateQuizOpen(false);
-          }}
+          busy={false}
+          onCancel={() => setGenerateQuizOpen(false)}
           onConfirm={(result) => void confirmGenerateQuiz(result)}
         />
+      )}
+
+      {quizJob.status !== 'idle' && (
+        <div
+          className={`mv-toast mv-toast-${quizJob.status}`}
+          role="status"
+          aria-live="polite"
+        >
+          {quizJob.status === 'running' ? (
+            <>
+              <Loader2 size={16} className="mv-toast-spin" aria-hidden />
+              <div className="mv-toast-body">
+                <strong>Generating quiz</strong>
+                <span>{quizJob.title}</span>
+              </div>
+            </>
+          ) : null}
+          {quizJob.status === 'done' ? (
+            <>
+              <ClipboardIcon width={16} height={16} aria-hidden />
+              <div className="mv-toast-body">
+                <strong>Quiz ready</strong>
+                <span>{quizJob.title}</span>
+              </div>
+              <Button
+                size="1"
+                highContrast
+                onClick={() => {
+                  const path = quizJob.path;
+                  setQuizJob({ status: 'idle' });
+                  void (async () => {
+                    if (controller.isDirty) await controller.persistence.flush();
+                    const body = await loadNoteBody(path);
+                    setContents((prev) => ({ ...prev, [path]: body }));
+                    setSelected(path);
+                    setTreeFocus({ kind: 'file', path });
+                    controller.loadContent(body);
+                  })();
+                }}
+              >
+                Open
+              </Button>
+            </>
+          ) : null}
+          {quizJob.status === 'error' ? (
+            <>
+              <div className="mv-toast-body">
+                <strong>Quiz failed</strong>
+                <span>{quizJob.message}</span>
+              </div>
+            </>
+          ) : null}
+          {quizJob.status !== 'running' ? (
+            <IconButton
+              type="button"
+              size="1"
+              variant="ghost"
+              color="gray"
+              aria-label="Dismiss"
+              onClick={() => setQuizJob({ status: 'idle' })}
+            >
+              <Cross1Icon width={12} height={12} />
+            </IconButton>
+          ) : null}
+        </div>
+      )}
+
+      {onboarding && (
+        <div
+          className="mv-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label={onboardingMode === 'tour' ? 'Why Concrete' : 'Welcome to Concrete'}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && onboardingMode === 'tour') {
+              localStorage.setItem('mv:onboarding-complete', '1');
+              setOnboarding(false);
+            }
+          }}
+        >
+          <div
+            className="mv-settings-panel-shell"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="mv-settings-panel">
+              {onboardingMode === 'welcome' ? (
+                <>
+                  <h2>Welcome to Concrete</h2>
+                  <p>
+                    Choose where your local Markdown vault should live. Concrete will remember it
+                    and open it automatically next time.
+                  </p>
+                  <Flex direction="column" gap="2" mt="3">
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        void openVault().then(() => {
+                          localStorage.setItem('mv:onboarding-complete', '1');
+                          setOnboarding(false);
+                        });
+                      }}
+                    >
+                      Choose a vault folder
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="soft"
+                      color="gray"
+                      onClick={() => {
+                        setOnboardingMode('tour');
+                        setOnboardingStep(0);
+                      }}
+                    >
+                      Explore demo
+                    </Button>
+                  </Flex>
+                </>
+              ) : (
+                <ProductTour
+                  stepIndex={onboardingStep}
+                  onStepIndexChange={setOnboardingStep}
+                  onClose={() => {
+                    localStorage.setItem('mv:onboarding-complete', '1');
+                    setOnboarding(false);
+                    setOnboardingMode('welcome');
+                    setOnboardingStep(0);
+                  }}
+                  onFinished={() => {
+                    localStorage.setItem('mv:onboarding-complete', '1');
+                    setOnboarding(false);
+                    setOnboardingMode('welcome');
+                    setOnboardingStep(0);
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {overlay === 'settings' && (
@@ -1274,6 +1492,14 @@ export default function App() {
           >
             <SettingsPanel
               store={settingsStore}
+              vaultRoot={root}
+              onOpenVault={() => { void openVault().then(() => setOverlay(null)); }}
+              onReplayOnboarding={() => {
+                setOverlay(null);
+                setOnboardingMode('tour');
+                setOnboardingStep(0);
+                setOnboarding(true);
+              }}
               providerOptions={[
                 { id: 'openrouter', label: 'OpenRouter' },
                 { id: 'mock', label: 'Mock AI' },

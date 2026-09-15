@@ -1,9 +1,0 @@
-- [x] create new file not working
-- [x] create new folder not working
-- [x] when in folder, and I create new file, it should auto create it in that desired folder
-- [x] backlinks and cards due should be hidden by default
-- [x] ai integration should be moved to circular icon with cute eyes (bottom right of editor)
-- [x] freeform `/question` sends to pragmatic teacher bot
-- [x] settings themes: only 3 packs
-- [x] remove top right AI / settings clutter icons
-- [x] fix quote Enter escape bug

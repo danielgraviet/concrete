@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('vault', {
   create: (root, name) => ipcRenderer.invoke('vault:create', root, name),
   mkdir: (root, name) => ipcRenderer.invoke('vault:mkdir', root, name),
   ensureDefault: () => ipcRenderer.invoke('vault:ensureDefault'),
+  restore: () => ipcRenderer.invoke('vault:restore'),
   rename: (root, from, to) => ipcRenderer.invoke('vault:rename', root, from, to),
   delete: (root, name) => ipcRenderer.invoke('vault:delete', root, name),
   watchStart: (root) => ipcRenderer.invoke('vault:watchStart', root),
@@ -37,6 +38,7 @@ contextBridge.exposeInMainWorld('vault', {
 
 contextBridge.exposeInMainWorld('ai', {
   status: () => ipcRenderer.invoke('ai:status'),
+  setApiKey: (apiKey) => ipcRenderer.invoke('ai:setApiKey', apiKey),
   ping: () => ipcRenderer.invoke('ai:ping'),
   chatCompletions: (payload) => ipcRenderer.invoke('ai:chatCompletions', payload),
   agentStatus: () => ipcRenderer.invoke('ai:agentStatus'),

@@ -53,6 +53,16 @@ export function useVault(initialFiles: string[] = [], initialFolders: string[] =
     return result;
   }, []);
 
+  const restore = useCallback(async () => {
+    if (typeof window === 'undefined' || typeof window.vault?.restore !== 'function') return null;
+    const result = await window.vault.restore();
+    if (!result) return null;
+    setRoot(result.root);
+    setFiles(result.files);
+    setFolders(result.folders ?? []);
+    return result;
+  }, []);
+
   const refresh = useCallback(async () => {
     const currentRoot = rootRef.current;
     if (!currentRoot) return { files: [], folders: [] };
@@ -159,6 +169,7 @@ export function useVault(initialFiles: string[] = [], initialFolders: string[] =
     setFolders,
     open,
     openDefault,
+    restore,
     refresh,
     create,
     mkdir,

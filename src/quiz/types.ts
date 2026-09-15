@@ -103,6 +103,11 @@ export type GenerateQuizRequest = {
   /** All source note paths included in context. */
   sources?: string[];
   types?: QuestionType[];
+  mcqCount?: number;
+  clozeCount?: number;
+  openCount?: number;
+  difficulty?: 'easy' | 'medium' | 'hard';
+  customRubric?: string;
 };
 
 export type GradeQuizRequest = {

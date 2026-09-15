@@ -1,7 +1,13 @@
-import type { AgentProviderId, AppSettings, ThemePackId } from './types';
+import type {
+  AgentProviderId,
+  AppSettings,
+  QuizGenerationSettings,
+  ThemePackId,
+} from './types';
 import {
   DEFAULT_SETTINGS,
   resolveAgentProviderId,
+  resolveQuizSettings,
   resolveThemePack,
 } from './types';
 import { isThemePackId } from './themePacks';
@@ -29,6 +35,7 @@ function readStorage(): AppSettings {
         typeof parsed.providerId === 'string' ? parsed.providerId : DEFAULT_SETTINGS.providerId,
       openRouterModelId: resolveOpenRouterModelId(parsed.openRouterModelId),
       agentProviderId: resolveAgentProviderId(parsed.agentProviderId),
+      quiz: resolveQuizSettings(parsed.quiz),
     };
   } catch {
     return structuredClone(DEFAULT_SETTINGS);
@@ -47,7 +54,10 @@ export class SettingsStore {
   }
 
   get(): AppSettings {
-    return { ...this.settings };
+    return {
+      ...this.settings,
+      quiz: { ...this.settings.quiz },
+    };
   }
 
   subscribe(listener: (s: AppSettings) => void): () => void {
@@ -99,6 +109,15 @@ export class SettingsStore {
     this.settings = {
       ...this.settings,
       agentProviderId: resolveAgentProviderId(agentProviderId),
+    };
+    this.persist();
+    return this.get();
+  }
+
+  setQuizSettings(patch: Partial<QuizGenerationSettings>): AppSettings {
+    this.settings = {
+      ...this.settings,
+      quiz: resolveQuizSettings({ ...this.settings.quiz, ...patch }),
     };
     this.persist();
     return this.get();

@@ -13,6 +13,17 @@ export type Appearance = 'dark' | 'light';
 
 export type AgentProviderId = 'off' | 'codex';
 
+export type QuizDifficulty = 'easy' | 'medium' | 'hard';
+
+export type QuizGenerationSettings = {
+  mcqCount: number;
+  clozeCount: number;
+  openCount: number;
+  difficulty: QuizDifficulty;
+  /** Optional frontmatter / grading rubric override. */
+  customRubric: string;
+};
+
 export type AppSettings = {
   themePack: ThemePackId;
   autosaveMs: number;
@@ -21,6 +32,15 @@ export type AppSettings = {
   openRouterModelId: string;
   /** BYO coding agent: off | codex */
   agentProviderId: AgentProviderId;
+  quiz: QuizGenerationSettings;
+};
+
+export const DEFAULT_QUIZ_SETTINGS: QuizGenerationSettings = {
+  mcqCount: 2,
+  clozeCount: 1,
+  openCount: 1,
+  difficulty: 'medium',
+  customRubric: '',
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -29,6 +49,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   providerId: 'mock',
   openRouterModelId: 'deepseek/deepseek-v4-flash-0731',
   agentProviderId: 'off',
+  quiz: { ...DEFAULT_QUIZ_SETTINGS },
 };
 
 export function isAgentProviderId(value: unknown): value is AgentProviderId {
@@ -37,6 +58,38 @@ export function isAgentProviderId(value: unknown): value is AgentProviderId {
 
 export function resolveAgentProviderId(value: unknown): AgentProviderId {
   return isAgentProviderId(value) ? value : DEFAULT_SETTINGS.agentProviderId;
+}
+
+export function isQuizDifficulty(value: unknown): value is QuizDifficulty {
+  return value === 'easy' || value === 'medium' || value === 'hard';
+}
+
+function clampQuizCount(value: unknown, fallback: number): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(20, Math.round(n)));
+}
+
+export function resolveQuizSettings(value: unknown): QuizGenerationSettings {
+  const raw =
+    value && typeof value === 'object' ? (value as Partial<QuizGenerationSettings>) : {};
+  const next: QuizGenerationSettings = {
+    mcqCount: clampQuizCount(raw.mcqCount, DEFAULT_QUIZ_SETTINGS.mcqCount),
+    clozeCount: clampQuizCount(raw.clozeCount, DEFAULT_QUIZ_SETTINGS.clozeCount),
+    openCount: clampQuizCount(raw.openCount, DEFAULT_QUIZ_SETTINGS.openCount),
+    difficulty: isQuizDifficulty(raw.difficulty)
+      ? raw.difficulty
+      : DEFAULT_QUIZ_SETTINGS.difficulty,
+    customRubric:
+      typeof raw.customRubric === 'string'
+        ? raw.customRubric.slice(0, 500)
+        : DEFAULT_QUIZ_SETTINGS.customRubric,
+  };
+  // Keep at least one question type enabled.
+  if (next.mcqCount + next.clozeCount + next.openCount === 0) {
+    next.mcqCount = 1;
+  }
+  return next;
 }
 
 export function isAppearance(value: unknown): value is Appearance {

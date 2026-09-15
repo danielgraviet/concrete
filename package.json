@@ -60,10 +60,12 @@
       "codexAgent.mjs",
       "concreteBridge.mjs",
       "concreteMcp.mjs",
+      "concreteToolCli.mjs",
       "package.json"
     ],
     "asarUnpack": [
       "concreteMcp.mjs",
+      "concreteToolCli.mjs",
       "node_modules/@modelcontextprotocol/**",
       "node_modules/zod/**",
       "node_modules/marked/**"

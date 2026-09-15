@@ -10,9 +10,6 @@ import { Codex } from '@openai/codex-sdk';
 
 const execFileAsync = promisify(execFile);
 
-/** @type {Map<string, import('@openai/codex-sdk').Thread>} */
-const threadsByVault = new Map();
-
 /** @type {{ abort: AbortController } | null} */
 let activeRun = null;
 
@@ -210,6 +207,8 @@ export async function getAgentStatus() {
  *     command: string;
  *     args: string[];
  *     env?: Record<string, string>;
+ *     cliPath?: string;
+ *     bridgeFile?: string;
  *   } | null;
  * }} input
  * @param {(event: { kind: string, text: string }) => void} [onProgress]
@@ -263,6 +262,7 @@ export async function runAgentTurn(input, onProgress) {
             args: concreteMcp.args,
             ...(concreteMcp.env ? { env: concreteMcp.env } : {}),
             default_tools_approval_mode: 'approve',
+            startup_timeout_sec: 20,
             tools: {
               set_theme: { approval_mode: 'approve' },
               generate_quiz: { approval_mode: 'approve' },
@@ -275,30 +275,39 @@ export async function runAgentTurn(input, onProgress) {
 
     const codex = new Codex(codexOptions);
 
-    // Thread options (incl. MCP) are fixed at start — recreate when MCP path/env changes.
-    // v2: include MCP auto-approve so older never-approval threads are dropped.
-    const threadKey = concreteMcp
-      ? `${vaultRoot}::mcp:v2:${concreteMcp.args.join('\0')}:${concreteMcp.env?.CONCRETE_BRIDGE_TOKEN || ''}`
-      : vaultRoot;
+    // Fresh thread each turn so MCP servers always re-register (reuse was
+    // intermittently leaving Concrete tools missing from the session).
+    const thread = codex.startThread({
+      workingDirectory: vaultRoot,
+      skipGitRepoCheck: true,
+      sandboxMode: 'workspace-write',
+      approvalPolicy: 'never',
+      networkAccessEnabled: true,
+    });
 
-    let thread = threadsByVault.get(threadKey);
-    if (!thread) {
-      thread = codex.startThread({
-        workingDirectory: vaultRoot,
-        skipGitRepoCheck: true,
-        sandboxMode: 'workspace-write',
-        approvalPolicy: 'never',
-        networkAccessEnabled: true,
-      });
-      threadsByVault.set(threadKey, thread);
-    }
+    const nodeBin = concreteMcp?.command || 'node';
+    const cliPath = concreteMcp?.cliPath;
+    const bridgeFile = concreteMcp?.bridgeFile;
 
     const toolHints = concreteMcp
       ? [
-          'Concrete app tools are available via the `concrete` MCP server. Prefer them when relevant:',
-          '- set_theme(theme: concrete|martian|daytona) — change the UI theme',
-          '- generate_quiz(topic, source_paths[]) — create a quiz .md from vault notes',
-          '- export_note_pdf(note_path) — export a note to Exports/*.pdf',
+          'Concrete app tools (prefer MCP; fall back to CLI if MCP tools are missing):',
+          '',
+          'MCP tool names (call these directly when present):',
+          '- mcp__concrete__set_theme({ theme: "concrete"|"martian"|"daytona" })',
+          '- mcp__concrete__generate_quiz({ topic: string, source_paths: string[] })',
+          '- mcp__concrete__export_note_pdf({ note_path: string })',
+          '',
+          ...(cliPath && bridgeFile
+            ? [
+                'CLI fallback (shell) if those MCP tools are NOT in your tool list:',
+                `export CONCRETE_BRIDGE_FILE=${JSON.stringify(bridgeFile)}`,
+                `${nodeBin} ${JSON.stringify(cliPath)} set_theme '{"theme":"martian"}'`,
+                `${nodeBin} ${JSON.stringify(cliPath)} generate_quiz '{"topic":"Topic","source_paths":["Note.md"]}'`,
+                `${nodeBin} ${JSON.stringify(cliPath)} export_note_pdf '{"note_path":"Note.md"}'`,
+                'Do not search the vault for theme settings files.',
+              ]
+            : []),
           'Do not hand-edit settings files or invent quiz frontmatter when these tools apply.',
         ]
       : [];
@@ -319,7 +328,10 @@ export async function runAgentTurn(input, onProgress) {
       text: notePath ? `Editing ${notePath}…` : 'Starting Codex…',
     });
     if (concreteMcp) {
-      emit({ kind: 'status', text: 'Concrete tools ready (theme, quiz, PDF)' });
+      emit({
+        kind: 'status',
+        text: 'Concrete tools configured (MCP + CLI fallback)',
+      });
     }
 
     const { events } = await thread.runStreamed(fullPrompt, {
