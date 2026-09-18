@@ -1,5 +1,8 @@
 export type {
   ClozeQuestion,
+  CodeKind,
+  CodeQuestion,
+  CodeResponse,
   ClozeResponse,
   GenerateQuizRequest,
   GradeQuizRequest,
@@ -41,9 +44,15 @@ export {
 } from './shuffle';
 export { presentQuiz, clozeSegments } from './present';
 export { useQuizTake } from './useQuizTake';
+export { QuizHistoryStore, buildQuizAttempt } from './history';
+export type { QuizAttempt, QuestionAttempt, QuizHistoryFile } from './history';
 export { QuizShell } from './QuizShell';
+export { ProgressPanel } from './ProgressPanel';
 export { QuizTakeView } from './QuizTakeView';
 export { QuizEditView } from './QuizEditView';
 export { QuizGradeView } from './QuizGradeView';
 export { GenerateQuizDialog } from './GenerateQuizDialog';
 export type { GenerateQuizDialogResult } from './GenerateQuizDialog';
+export { verifyCodeQuestions } from './verifyCode';
+export type { VerifyCodeSummary } from './verifyCode';
+export { normalizeOutput } from './codeOutput';

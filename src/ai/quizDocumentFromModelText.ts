@@ -34,10 +34,11 @@ export function extractQuizMarkdown(raw: string): string {
     throw new Error('Empty model response');
   }
 
-  const fenced =
-    /```(?:markdown|md)?\s*([\s\S]*?)```/i.exec(text) ??
-    /```\s*([\s\S]*?)```/.exec(text);
-  const candidate = (fenced?.[1] ?? text).trim();
+  // Unwrap only when the WHOLE reply is inside one markdown fence. Quizzes
+  // contain their own fences (code questions), so a "first fence" match would
+  // grab a snippet instead of the quiz.
+  const wrapped = /^```(?:markdown|md)?[ \t]*\n([\s\S]*)\n```[ \t]*$/i.exec(text);
+  const candidate = (wrapped?.[1] ?? text).trim();
 
   const fmStart = candidate.indexOf('---');
   if (fmStart >= 0) {

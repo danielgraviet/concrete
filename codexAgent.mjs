@@ -212,8 +212,9 @@ export async function getAgentStatus() {
  *   } | null;
  * }} input
  * @param {(event: { kind: string, text: string }) => void} [onProgress]
+ * @param {(event: unknown) => void} [onEvent]
  */
-export async function runAgentTurn(input, onProgress) {
+export async function runAgentTurn(input, onProgress, onEvent) {
   const vaultRoot = typeof input.vaultRoot === 'string' ? input.vaultRoot.trim() : '';
   const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : '';
   const notePath =
@@ -344,6 +345,8 @@ export async function runAgentTurn(input, onProgress) {
 
     for await (const event of events) {
       if (abort.signal.aborted) break;
+
+      onEvent?.(event);
 
       const progress = progressFromEvent(event, vaultRoot);
       if (progress) emit(progress);

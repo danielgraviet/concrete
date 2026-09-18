@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { createPortal } from 'react-dom';
 import {
   $getSelection,
+  $createParagraphNode,
   $isRangeSelection,
   $isTextNode,
   FORMAT_TEXT_COMMAND,
@@ -107,6 +108,21 @@ function removeSlashTrigger(editor: LexicalEditor, replaceLength: number) {
   });
 }
 
+/**
+ * The block's CodeMirror mounts asynchronously, so `node.select()` right after
+ * insertion is lost. Wait for its DOM and focus it directly.
+ */
+function focusCodeBlock(editor: LexicalEditor, key: string, framesLeft = 30) {
+  requestAnimationFrame(() => {
+    const target = editor.getElementByKey(key)?.querySelector<HTMLElement>('.cm-content');
+    if (target) {
+      target.focus();
+      return;
+    }
+    if (framesLeft > 0) focusCodeBlock(editor, key, framesLeft - 1);
+  });
+}
+
 function applySlashCommand(
   editor: LexicalEditor,
   id: SlashCommandId,
@@ -152,9 +168,22 @@ function applySlashCommand(
       break;
     case 'codeBlock':
       editor.update(() => {
-        const node = $createCodeBlockNode({ code: '', language: 'javascript' });
-        $insertNodeToNearestRoot(node);
-        queueMicrotask(() => node.select());
+        const node = $createCodeBlockNode({ code: '', language: 'python' });
+        const selection = $getSelection();
+        const block = $isRangeSelection(selection)
+          ? selection.anchor.getNode().getTopLevelElement()
+          : null;
+        if (block && block.getTextContent().trim() === '') {
+          // The slash trigger left an empty paragraph — swap it for the block
+          // instead of leaving a blank line above.
+          block.replace(node);
+        } else if (block) {
+          block.insertAfter(node);
+        } else {
+          $insertNodeToNearestRoot(node);
+        }
+        if (!node.getNextSibling()) node.insertAfter($createParagraphNode());
+        focusCodeBlock(editor, node.getKey());
       });
       break;
     case 'math':
@@ -190,6 +219,7 @@ export function SlashCommandMenu() {
   const [menu, setMenu] = useState<SlashState | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const applyingRef = useRef(false);
+  const lastQueryRef = useRef<string | null>(null);
   const insertThematicBreak = usePublisher(insertThematicBreak$);
   const insertMarkdown = usePublisher(insertMarkdown$);
   const insertImage = usePublisher(insertImage$);
@@ -240,6 +270,7 @@ export function SlashCommandMenu() {
       if (applyingRef.current) return;
       const match = getSlashMatch(editor);
       if (!match) {
+        lastQueryRef.current = null;
         setMenu((current) => (current ? null : current));
         return;
       }
@@ -258,7 +289,10 @@ export function SlashCommandMenu() {
       }
 
       setMenu(match);
-      setSelectedIndex(0);
+      if (lastQueryRef.current !== match.query) {
+        lastQueryRef.current = match.query;
+        setSelectedIndex(0);
+      }
     });
   }, [editor, runCommand]);
 
@@ -312,8 +346,8 @@ export function SlashCommandMenu() {
           runAiHandoff(menu.query, menu.replaceLength);
           return true;
         }
-        const exact = resolveExactSlashCommand(menu.query);
-        const command = exact ?? options[selectedIndex];
+        // Honor the highlighted row; an exact alias only wins when nothing is highlighted.
+        const command = options[selectedIndex] ?? resolveExactSlashCommand(menu.query);
         if (!command) return false;
         event?.preventDefault();
         runCommand(command, menu.replaceLength);
@@ -329,8 +363,8 @@ export function SlashCommandMenu() {
           runAiHandoff(menu.query, menu.replaceLength);
           return true;
         }
-        const exact = resolveExactSlashCommand(menu.query);
-        const command = exact ?? options[selectedIndex];
+        // Honor the highlighted row; an exact alias only wins when nothing is highlighted.
+        const command = options[selectedIndex] ?? resolveExactSlashCommand(menu.query);
         if (!command) return false;
         event?.preventDefault();
         runCommand(command, menu.replaceLength);

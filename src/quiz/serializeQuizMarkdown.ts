@@ -17,6 +17,10 @@ function serializeFrontmatter(doc: QuizDocument): string {
   return lines.join('\n');
 }
 
+function keyPointLines(points: string[] | undefined): string[] {
+  return points?.length ? ['', '### Key points', '', ...points.map((point) => `- ${point}`)] : [];
+}
+
 function serializeQuestion(question: QuizQuestion, index: number): string {
   const heading = `## Q${index + 1} · ${question.type}`;
   if (question.type === 'mcq') {
@@ -26,9 +30,32 @@ function serializeQuestion(question: QuizQuestion, index: number): string {
     return `${heading}\n\n${question.prompt.trim()}\n\n${options}\n`;
   }
   if (question.type === 'cloze') {
-    return `${heading}\n\n${question.prompt.trim()}\n`;
+    const explanation = question.explanation?.trim();
+    return `${heading}\n\n${question.prompt.trim()}\n${explanation ? `\n### Answer\n\n${explanation}\n` : ''}`;
   }
-  return `${heading}\n\n${question.prompt.trim()}\n\n### Answer\n\n${question.answer.trim()}\n`;
+  if (question.type === 'code') {
+    const meta = [`kind: ${question.kind}`, ...(question.verified ? ['verified: true'] : [])].join('\n');
+    const fence = question.snippet.includes('```') ? '~~~~' : '```';
+    const why = question.explanation?.trim();
+    return [
+      heading,
+      '',
+      meta,
+      '',
+      question.prompt.trim(),
+      '',
+      ...(question.snippet.trim()
+        ? [`${fence}${question.language}`, question.snippet.replace(/\s+$/, ''), fence, '']
+        : []),
+      '### Answer',
+      '',
+      question.expected.trim(),
+      ...keyPointLines(question.keyPoints),
+      ...(why ? ['', '### Why', '', why] : []),
+      '',
+    ].join('\n');
+  }
+  return `${heading}\n\n${question.prompt.trim()}\n\n### Answer\n\n${question.answer.trim()}\n${keyPointLines(question.keyPoints).join('\n')}${question.keyPoints?.length ? '\n' : ''}`;
 }
 
 /** Serialize a QuizDocument to the vault markdown schema. */
@@ -37,5 +64,5 @@ export function serializeQuizMarkdown(doc: QuizDocument): string {
   doc.questions.forEach((q, i) => {
     parts.push(serializeQuestion(q, i));
   });
-  return parts.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd() + '\n';
+  return parts.join('\n').trimEnd() + '\n';
 }

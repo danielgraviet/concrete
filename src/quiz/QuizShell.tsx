@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { AiClient } from '../ai/AiClient';
 import { QuizEditView } from './QuizEditView';
 import { QuizTakeView } from './QuizTakeView';
+import type { QuizHistoryStore } from './history';
 
 type Mode = 'take' | 'edit';
 
@@ -11,9 +12,10 @@ type Props = {
   client: AiClient;
   onChange: (markdown: string) => void;
   onBlur?: () => void;
+  historyStore?: QuizHistoryStore;
 };
 
-export function QuizShell({ documentPath, markdown, client, onChange, onBlur }: Props) {
+export function QuizShell({ documentPath, markdown, client, onChange, onBlur, historyStore }: Props) {
   const [mode, setMode] = useState<Mode>('take');
   const [boundPath, setBoundPath] = useState(documentPath);
 
@@ -41,6 +43,7 @@ export function QuizShell({ documentPath, markdown, client, onChange, onBlur }: 
       documentPath={documentPath}
       client={client}
       onEdit={() => setMode('edit')}
+      historyStore={historyStore}
     />
   );
 }

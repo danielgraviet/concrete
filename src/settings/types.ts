@@ -19,6 +19,7 @@ export type QuizGenerationSettings = {
   mcqCount: number;
   clozeCount: number;
   openCount: number;
+  codeCount: number;
   difficulty: QuizDifficulty;
   /** Optional frontmatter / grading rubric override. */
   customRubric: string;
@@ -32,6 +33,8 @@ export type AppSettings = {
   openRouterModelId: string;
   /** BYO coding agent: off | codex | claude */
   agentProviderId: AgentProviderId;
+  /** Where quiz code runs: a registered sandbox runner id ('docker', 'off', …). */
+  sandboxProviderId: string;
   quiz: QuizGenerationSettings;
 };
 
@@ -39,6 +42,7 @@ export const DEFAULT_QUIZ_SETTINGS: QuizGenerationSettings = {
   mcqCount: 2,
   clozeCount: 1,
   openCount: 1,
+  codeCount: 1,
   difficulty: 'medium',
   customRubric:
     'Score correctness and conceptual understanding. Give partial credit for mostly correct answers, and require the key ideas from the reference answer. Be concise and explain what is missing.',
@@ -50,6 +54,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   providerId: 'mock',
   openRouterModelId: 'openai/gpt-4o-mini',
   agentProviderId: 'off',
+  sandboxProviderId: 'docker',
   quiz: { ...DEFAULT_QUIZ_SETTINGS },
 };
 
@@ -78,6 +83,7 @@ export function resolveQuizSettings(value: unknown): QuizGenerationSettings {
     mcqCount: clampQuizCount(raw.mcqCount, DEFAULT_QUIZ_SETTINGS.mcqCount),
     clozeCount: clampQuizCount(raw.clozeCount, DEFAULT_QUIZ_SETTINGS.clozeCount),
     openCount: clampQuizCount(raw.openCount, DEFAULT_QUIZ_SETTINGS.openCount),
+    codeCount: clampQuizCount(raw.codeCount, DEFAULT_QUIZ_SETTINGS.codeCount),
     difficulty: isQuizDifficulty(raw.difficulty)
       ? raw.difficulty
       : DEFAULT_QUIZ_SETTINGS.difficulty,
@@ -87,7 +93,7 @@ export function resolveQuizSettings(value: unknown): QuizGenerationSettings {
         : DEFAULT_QUIZ_SETTINGS.customRubric,
   };
   // Keep at least one question type enabled.
-  if (next.mcqCount + next.clozeCount + next.openCount === 0) {
+  if (next.mcqCount + next.clozeCount + next.openCount + next.codeCount === 0) {
     next.mcqCount = 1;
   }
   return next;

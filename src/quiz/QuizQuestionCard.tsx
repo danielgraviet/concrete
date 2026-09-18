@@ -1,6 +1,10 @@
 import { clozeSegments } from './present';
+import { CodeSnippet } from './CodeSnippet';
+import { QuizMarkdown } from './QuizMarkdown';
 import type {
   ClozeResponse,
+  CodeKind,
+  CodeResponse,
   McqResponse,
   OpenResponse,
   PresentedQuestion,
@@ -36,6 +40,13 @@ export function QuizQuestionCard({ question, index, total, response, onChange }:
         <ClozeBody
           question={question}
           response={response?.type === 'cloze' ? response : undefined}
+          onChange={onChange}
+        />
+      ) : null}
+      {question.type === 'code' ? (
+        <CodeBody
+          question={question}
+          response={response?.type === 'code' ? response : undefined}
           onChange={onChange}
         />
       ) : null}
@@ -75,7 +86,9 @@ function McqBody({
 
   return (
     <div className="quiz-mcq">
-      <p className="quiz-prompt">{question.prompt}</p>
+      <div className="quiz-prompt quiz-md">
+        <QuizMarkdown>{question.prompt}</QuizMarkdown>
+      </div>
       <div className="quiz-options" role={multi ? 'group' : 'radiogroup'}>
         {question.options.map((opt) => {
           const checked = selected.has(opt.id);
@@ -88,7 +101,9 @@ function McqBody({
                 onChange={() => toggle(opt.id)}
               />
               <span className="quiz-option-letter">{opt.letter}</span>
-              <span>{opt.text}</span>
+              <span className="quiz-md quiz-option-text">
+                <QuizMarkdown inline>{opt.text}</QuizMarkdown>
+              </span>
             </label>
           );
         })}
@@ -121,7 +136,9 @@ function ClozeBody({
       <p className="quiz-prompt quiz-cloze-prompt">
         {segments.map((seg, i) =>
           seg.type === 'text' ? (
-            <span key={i}>{seg.value}</span>
+            <span key={i} className="quiz-md">
+              <QuizMarkdown inline>{seg.value}</QuizMarkdown>
+            </span>
           ) : (
             <input
               key={i}
@@ -148,7 +165,9 @@ function OpenBody({
 }) {
   return (
     <div className="quiz-open">
-      <p className="quiz-prompt">{question.prompt}</p>
+      <div className="quiz-prompt quiz-md">
+        <QuizMarkdown>{question.prompt}</QuizMarkdown>
+      </div>
       <textarea
         className="quiz-open-input"
         rows={5}
@@ -156,6 +175,59 @@ function OpenBody({
         value={response?.text ?? ''}
         onChange={(e) =>
           onChange({ questionId: question.id, type: 'open', text: e.target.value })
+        }
+      />
+    </div>
+  );
+}
+
+export const CODE_KIND_LABEL: Record<CodeKind, string> = {
+  'predict-output': 'Predict the output',
+  'find-bug': 'Find the bug',
+  complexity: 'Time complexity',
+  scale: 'What happens at scale?',
+};
+
+const CODE_PLACEHOLDER: Record<CodeKind, string> = {
+  'predict-output': 'Exactly what gets printed…',
+  'find-bug': 'What is the bug, and how would you fix it?',
+  complexity: 'Big-O, and why…',
+  scale: 'What breaks as the input grows? What would you change, and why?',
+};
+
+function CodeBody({
+  question,
+  response,
+  onChange,
+}: {
+  question: Extract<PresentedQuestion, { type: 'code' }>;
+  response?: CodeResponse;
+  onChange: (response: QuizResponse) => void;
+}) {
+  return (
+    <div className="quiz-code-question">
+      <div className="quiz-code-kind">
+        {CODE_KIND_LABEL[question.kind]}
+        {question.verified ? (
+          <span className="quiz-code-verified" title="The expected output came from running this code">
+            Verified by running
+          </span>
+        ) : null}
+      </div>
+      <div className="quiz-prompt quiz-md">
+        <QuizMarkdown>{question.prompt}</QuizMarkdown>
+      </div>
+      {question.snippet.trim() ? (
+        <CodeSnippet language={question.language} code={question.snippet} />
+      ) : null}
+      <textarea
+        className="quiz-open-input quiz-code-input"
+        rows={question.kind === 'predict-output' ? 3 : question.kind === 'scale' ? 7 : 4}
+        spellCheck={false}
+        placeholder={CODE_PLACEHOLDER[question.kind]}
+        value={response?.text ?? ''}
+        onChange={(e) =>
+          onChange({ questionId: question.id, type: 'code', text: e.target.value })
         }
       />
     </div>

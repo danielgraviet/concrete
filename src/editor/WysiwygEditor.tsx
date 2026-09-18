@@ -14,6 +14,12 @@ import {
   type MDXEditorProps,
 } from '@mdxeditor/editor';
 import '@mdxeditor/editor/style.css';
+import { acceptCompletion, completionStatus } from '@codemirror/autocomplete';
+import { indentLess, indentMore } from '@codemirror/commands';
+import { syntaxHighlighting } from '@codemirror/language';
+import { Prec } from '@codemirror/state';
+import { keymap } from '@codemirror/view';
+import { classHighlighter } from '@lezer/highlight';
 import {
   forwardRef,
   useImperativeHandle,
@@ -23,6 +29,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { EditorCommandHandler } from './types';
+import { RUN_CODE_EVENT, runnableCodeBlockDescriptor } from './RunnableCodeBlock';
 import { quoteExitPlugin } from './quote';
 import { inlineCodeExitPlugin } from './inlineCode';
 import { slashMenuPlugin } from './slash';
@@ -66,25 +73,41 @@ export function createDefaultWysiwygPlugins(): NonNullable<MDXEditorProps['plugi
     quotePlugin(),
     thematicBreakPlugin(),
     linkPlugin(),
-    codeBlockPlugin({ defaultCodeBlockLanguage: 'javascript' }),
+    codeBlockPlugin({
+      defaultCodeBlockLanguage: 'python',
+      codeBlockEditorDescriptors: [runnableCodeBlockDescriptor],
+    }),
     codeMirrorPlugin({
+      // Stable `tok-*` classes so token colors follow the active theme via CSS.
+      codeMirrorExtensions: [
+        syntaxHighlighting(classHighlighter),
+        // Tab accepts the open autocomplete suggestion; otherwise it indents.
+        Prec.highest(
+          keymap.of([
+            {
+              key: 'Tab',
+              run: (view) =>
+                completionStatus(view.state) === 'active'
+                  ? acceptCompletion(view)
+                  : indentMore(view),
+            },
+            { key: 'Shift-Tab', run: indentLess },
+            {
+              // Run the block (handled by RunnableCodeBlock's wrapper).
+              key: 'Mod-Enter',
+              run: (view) => {
+                view.dom.dispatchEvent(new CustomEvent(RUN_CODE_EVENT, { bubbles: true }));
+                return true;
+              },
+            },
+          ]),
+        ),
+      ],
       codeBlockLanguages: {
-        js: 'JavaScript',
-        javascript: 'JavaScript',
-        ts: 'TypeScript',
-        typescript: 'TypeScript',
-        tsx: 'TSX',
-        jsx: 'JSX',
-        css: 'CSS',
-        html: 'HTML',
-        json: 'JSON',
-        md: 'Markdown',
         python: 'Python',
-        rust: 'Rust',
-        go: 'Go',
-        shell: 'Shell',
-        text: 'Plain Text',
-        '': 'Plain Text',
+        typescript: 'TypeScript',
+        text: 'Raw Text',
+        '': 'Raw Text',
       },
     }),
     imagePlugin(),
@@ -176,6 +199,9 @@ export const WysiwygEditor = forwardRef<WysiwygEditorHandle, WysiwygEditorProps>
         readOnly={readOnly}
         placeholder={placeholder}
         plugins={plugins}
+        // Popups (language picker, etc.) default to <body>, outside the theme
+        // wrapper, so theme CSS variables wouldn't resolve there.
+        overlayContainer={document.querySelector<HTMLElement>('.radix-themes')}
       />
     );
   },

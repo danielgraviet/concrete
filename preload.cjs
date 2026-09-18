@@ -45,6 +45,8 @@ contextBridge.exposeInMainWorld('ai', {
   ping: () => ipcRenderer.invoke('ai:ping'),
   chatCompletions: (payload) => ipcRenderer.invoke('ai:chatCompletions', payload),
   activity: () => ipcRenderer.invoke('ai:activity'),
+  trajectories: () => ipcRenderer.invoke('ai:trajectories'),
+  recordActivity: (event) => ipcRenderer.invoke('ai:recordActivity', event),
   activityClear: () => ipcRenderer.invoke('ai:activityClear'),
   agentStatus: (payload) => ipcRenderer.invoke('ai:agentStatus', payload),
   agentRun: (payload) => ipcRenderer.invoke('ai:agentRun', payload),
@@ -68,6 +70,21 @@ contextBridge.exposeInMainWorld('ai', {
 });
 
 /** Sync renderer copies onto the macOS pasteboard for other apps / terminals. */
+contextBridge.exposeInMainWorld('sandbox', {
+  providers: () => ipcRenderer.invoke('sandbox:providers'),
+  status: (providerId) => ipcRenderer.invoke('sandbox:status', providerId),
+  run: (payload) => ipcRenderer.invoke('sandbox:run', payload),
+  prepare: (payload) => ipcRenderer.invoke('sandbox:prepare', payload),
+  onProgress: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('sandbox:progress', listener);
+    return () => {
+      ipcRenderer.removeListener('sandbox:progress', listener);
+    };
+  },
+});
+
 contextBridge.exposeInMainWorld('systemClipboard', {
   writeText: (text) => ipcRenderer.invoke('clipboard:writeText', text),
 });

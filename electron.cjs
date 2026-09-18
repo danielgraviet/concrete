@@ -4,6 +4,8 @@ const fsSync = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const chokidar = require('chokidar');
+const sandbox = require('./sandbox/index.cjs');
+const { createTrajectory } = require('./agentTrajectory.cjs');
 
 let mainWindow = null;
 let watcher = null;
@@ -12,6 +14,7 @@ let watchedRoot = null;
 const AI_SETTINGS_PATH = path.join(app.getPath('userData'), 'ai-settings.json');
 const APP_STATE_PATH = path.join(app.getPath('userData'), 'app-state.json');
 const AI_ACTIVITY_PATH = path.join(app.getPath('userData'), 'ai-activity.jsonl');
+const TRAJECTORY_DIR = path.join(app.getPath('documents'), 'Concrete', 'agent-trajectories');
 
 async function recordAiActivity(event) {
   try {
@@ -541,7 +544,15 @@ ipcMain.handle('vault:list', async (_, root) => {
 
 ipcMain.handle('vault:read', async (_, root, name) => {
   const { resolved } = resolveWithinRoot(root, name);
-  return fs.readFile(resolved, 'utf8');
+  try {
+    return await fs.readFile(resolved, 'utf8');
+  } catch (error) {
+    // A note can disappear between list/watch notification and a renderer read
+    // (for example, when it is moved or deleted in Finder). Treat that race as
+    // a normal cache miss so Electron does not emit a noisy rejected IPC call.
+    if (error?.code === 'ENOENT') return '';
+    throw error;
+  }
 });
 
 ipcMain.handle('vault:write', async (_, root, name, content) => {
@@ -673,6 +684,61 @@ ipcMain.handle('ai:setApiKey', async (_, apiKey) => {
   };
 });
 
+// Code execution for quiz questions. The provider id picks a registered runner
+// (see sandbox/factory.cjs), so Docker can be swapped for a hosted sandbox.
+ipcMain.handle('sandbox:providers', async () => sandbox.listRunners());
+
+ipcMain.handle('sandbox:status', async (_, providerId) => {
+  try {
+    return await sandbox.getRunner(providerId).status();
+  } catch (error) {
+    return { available: false, detail: error?.message ?? 'Sandbox unavailable', languages: [] };
+  }
+});
+
+// Long setup steps (image builds) report progress back to the window that asked.
+function sandboxProgress(event) {
+  return (message) => {
+    if (!event.sender.isDestroyed()) event.sender.send('sandbox:progress', { message: String(message) });
+  };
+}
+
+ipcMain.handle('sandbox:prepare', async (event, payload = {}) => {
+  try {
+    const runner = sandbox.getRunner(payload.providerId);
+    if (typeof runner.prepare !== 'function') return { ok: false, error: 'This runner needs no setup.' };
+    return await runner.prepare({ tier: String(payload.tier ?? ''), onProgress: sandboxProgress(event) });
+  } catch (error) {
+    return { ok: false, error: error?.message ?? 'Setup failed.' };
+  }
+});
+
+ipcMain.handle('sandbox:run', async (event, payload = {}) => {
+  const language = typeof payload.language === 'string' ? payload.language : '';
+  const code = typeof payload.code === 'string' ? payload.code : '';
+  if (!language || !code.trim() || code.length > 20000) {
+    return {
+      ok: false, stdout: '', stderr: '', exitCode: null, timedOut: false, durationMs: 0,
+      error: 'Invalid code run request.',
+    };
+  }
+  const timeoutMs = Math.min(30000, Math.max(1000, Number(payload.timeoutMs) || 8000));
+  try {
+    return await sandbox.getRunner(payload.providerId).run({
+      language,
+      code,
+      timeoutMs,
+      allowBuild: payload.allowBuild !== false,
+      onProgress: sandboxProgress(event),
+    });
+  } catch (error) {
+    return {
+      ok: false, stdout: '', stderr: '', exitCode: null, timedOut: false, durationMs: 0,
+      error: error?.message ?? 'Code run failed.',
+    };
+  }
+});
+
 const AGENT_MODULES = {
   codex: 'codexAgent.mjs',
   claude: 'claudeAgent.mjs',
@@ -722,17 +788,33 @@ ipcMain.handle('ai:agentRun', async (event, payload) => {
     notePath: notePath || null,
     openRouterModel: DEFAULT_OPENROUTER_MODEL,
   };
-  return agent.runAgentTurn(
+  const trajectory = await createTrajectory({
+    provider: providerId,
+    vaultRoot,
+    notePath,
+    prompt: typeof payload?.prompt === 'string' ? payload.prompt : '',
+  });
+  await trajectory.record('run.started', { agentProviderId: providerId });
+  try {
+    const result = await agent.runAgentTurn(
     {
       ...(payload ?? {}),
       concreteMcp: buildConcreteMcpConfig(),
     },
     (progress) => {
+      void trajectory.record('ui.progress', progress);
       if (!event.sender.isDestroyed()) {
         event.sender.send('ai:agentProgress', progress);
       }
     },
-  );
+    (rawEvent) => { void trajectory.record('provider.event', { event: rawEvent }); },
+    );
+    await trajectory.finish({ status: 'success', result });
+    return result;
+  } catch (error) {
+    await trajectory.finish({ status: 'error', error: error instanceof Error ? error.message : String(error) });
+    throw error;
+  }
 });
 
 ipcMain.handle('ai:agentCancel', async () => {
@@ -896,6 +978,8 @@ ipcMain.handle('ai:chatCompletions', async (_, payload = {}) => {
     metadata: payload.metadata ?? null,
     messages: payload.capture === 'full' ? messages : messages.map((message) => ({ ...message, content: String(message.content).slice(0, 500) })),
     responsePreview: content.slice(0, 1000),
+    // Full reply for captured calls, so parse failures downstream can be diagnosed.
+    ...(payload.capture === 'full' ? { responseText: content.slice(0, 50000) } : {}),
   };
   await recordAiActivity(activity);
   return {
@@ -907,6 +991,44 @@ ipcMain.handle('ai:chatCompletions', async (_, payload = {}) => {
 });
 
 ipcMain.handle('ai:activity', () => readAiActivity());
+ipcMain.handle('ai:trajectories', async () => {
+  console.log('[trajectory] scan requested', TRAJECTORY_DIR);
+  try {
+    const files = (await fs.readdir(TRAJECTORY_DIR, { withFileTypes: true }))
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.jsonl'))
+      .map((entry) => ({ entry, directory: TRAJECTORY_DIR }))
+      .sort((a, b) => b.entry.name.localeCompare(a.entry.name));
+    const result = (await Promise.all(files.map(async ({ entry, directory }) => {
+      const records = (await fs.readFile(path.join(directory, entry.name), 'utf8'))
+        .trim().split('\n').filter(Boolean).flatMap((line) => {
+          try { return [JSON.parse(line)]; } catch { return []; }
+        });
+      return { file: entry.name, records, location: 'Documents/Concrete' };
+    }))).slice(0, 200);
+    console.log('[trajectory] scan complete', result.length, 'file(s)');
+    return result;
+  } catch (error) {
+    console.error('[trajectory] scan failed', error);
+    return [];
+  }
+});
+// Lets the renderer log failures that happen after a successful API call
+// (e.g. an unparseable quiz), keeping the raw model reply for debugging.
+ipcMain.handle('ai:recordActivity', async (_, event = {}) => {
+  await recordAiActivity({
+    requestId: typeof event.requestId === 'string' ? event.requestId : `${Date.now()}-renderer`,
+    operation: typeof event.operation === 'string' ? event.operation.slice(0, 80) : 'renderer_event',
+    startedAt: Date.now(),
+    completedAt: Date.now(),
+    status: event.status === 'error' ? 'error' : 'info',
+    model: typeof event.model === 'string' ? event.model : undefined,
+    error: typeof event.error === 'string' ? event.error.slice(0, 2000) : undefined,
+    responseText: typeof event.responseText === 'string' ? event.responseText.slice(0, 50000) : undefined,
+    metadata: event.metadata && typeof event.metadata === 'object' ? event.metadata : null,
+  });
+  return true;
+});
+
 ipcMain.handle('ai:activityClear', async () => {
   try { await fs.unlink(AI_ACTIVITY_PATH); } catch {}
   return true;

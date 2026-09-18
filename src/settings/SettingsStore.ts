@@ -35,6 +35,10 @@ function readStorage(): AppSettings {
         typeof parsed.providerId === 'string' ? parsed.providerId : DEFAULT_SETTINGS.providerId,
       openRouterModelId: resolveOpenRouterModelId(parsed.openRouterModelId),
       agentProviderId: resolveAgentProviderId(parsed.agentProviderId),
+      sandboxProviderId:
+        typeof parsed.sandboxProviderId === 'string' && parsed.sandboxProviderId
+          ? parsed.sandboxProviderId
+          : DEFAULT_SETTINGS.sandboxProviderId,
       quiz: resolveQuizSettings(parsed.quiz),
     };
   } catch {
@@ -110,6 +114,12 @@ export class SettingsStore {
       ...this.settings,
       agentProviderId: resolveAgentProviderId(agentProviderId),
     };
+    this.persist();
+    return this.get();
+  }
+
+  setSandboxProviderId(sandboxProviderId: string): AppSettings {
+    this.settings = { ...this.settings, sandboxProviderId: sandboxProviderId || 'docker' };
     this.persist();
     return this.get();
   }

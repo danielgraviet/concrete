@@ -2,30 +2,56 @@ import type { AiClient } from '../ai/AiClient';
 import { QuizGradeView } from './QuizGradeView';
 import { QuizQuestionCard } from './QuizQuestionCard';
 import { useQuizTake } from './useQuizTake';
+import type { QuizHistoryStore } from './history';
+import { ProgressPanel } from './ProgressPanel';
+import { QuizProbeView } from './QuizProbeView';
+import { folderOf } from './progressStats';
 
 type Props = {
   markdown: string;
   documentPath: string;
   client: AiClient;
   onEdit: () => void;
+  historyStore?: QuizHistoryStore;
 };
 
-export function QuizTakeView({ markdown, documentPath, client, onEdit }: Props) {
+export function QuizTakeView({ markdown, documentPath, client, onEdit, historyStore }: Props) {
   const {
     quiz,
     presented,
     responses,
     phase,
     report,
+    probes,
     error,
     setResponse,
     reshuffle,
     submit,
+    answerProbes,
+    skipProbes,
     retake,
-  } = useQuizTake(markdown, documentPath, client);
+  } = useQuizTake(markdown, documentPath, client, historyStore);
+
+  if (phase === 'probing' || (phase === 'grading' && probes.length > 0)) {
+    return (
+      <QuizProbeView
+        probes={probes}
+        questions={quiz.questions}
+        responses={responses}
+        busy={phase === 'grading'}
+        onSubmit={(answers) => void answerProbes(answers)}
+        onSkip={skipProbes}
+      />
+    );
+  }
 
   if (phase === 'graded' && report) {
-    return <QuizGradeView report={report} onRetake={retake} onEdit={onEdit} />;
+    return (
+      <>
+        <QuizGradeView report={report} questions={quiz.questions} onRetake={retake} onEdit={onEdit} />
+        {historyStore ? <ProgressPanel store={historyStore} folder={folderOf(documentPath)} /> : null}
+      </>
+    );
   }
 
   return (

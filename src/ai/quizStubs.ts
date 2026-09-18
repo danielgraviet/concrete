@@ -1,4 +1,5 @@
 import { applyQuizGuardrails } from '../quiz/guardrails';
+import { normalizeOutput } from '../quiz/codeOutput';
 import type {
   GenerateQuizRequest,
   GradeQuizRequest,
@@ -14,7 +15,7 @@ const DEFAULT_RUBRIC =
 export function stubGenerateQuiz(request: GenerateQuizRequest): QuizDocument {
   const topic = request.topic.trim() || 'Untitled';
   const title = topic.startsWith('Quiz ') ? topic : `Quiz ${topic}`;
-  const types = request.types?.length ? request.types : (['mcq', 'cloze', 'open'] as const);
+  const types = request.types?.length ? request.types : (['mcq', 'cloze', 'open', 'code'] as const);
 
   const questions: QuizDocument['questions'] = [];
 
@@ -66,6 +67,19 @@ export function stubGenerateQuiz(request: GenerateQuizRequest): QuizDocument {
     });
   }
 
+  if (types.includes('code')) {
+    questions.push({
+      id: 'q-4',
+      type: 'code',
+      kind: 'predict-output',
+      language: 'python',
+      prompt: 'What does this program print?',
+      snippet: 'nums = [1, 2, 3]\nprint(sum(n * 2 for n in nums))',
+      expected: '12',
+      explanation: 'Each number is doubled (2, 4, 6) and then summed.',
+    });
+  }
+
   return applyQuizGuardrails(
     {
       title,
@@ -77,7 +91,7 @@ export function stubGenerateQuiz(request: GenerateQuizRequest): QuizDocument {
   );
 }
 
-function normalize(text: string): string {
+export function normalize(text: string): string {
   return text.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
@@ -164,6 +178,24 @@ function gradeOpen(
   };
 }
 
+/**
+ * Code-reading baseline. predict-output is deterministic (exact output match);
+ * the other kinds fall back to the open-answer heuristic until a judge scores them.
+ */
+function gradeCode(
+  question: Extract<GradeQuizRequest['quiz']['questions'][number], { type: 'code' }>,
+  text: string,
+): { score: number; maxScore: number; feedback: string } {
+  if (!text.trim()) return { score: 0, maxScore: 1, feedback: 'No answer submitted.' };
+  if (question.kind === 'predict-output') {
+    const match = normalizeOutput(text) === normalizeOutput(question.expected);
+    return match
+      ? { score: 1, maxScore: 1, feedback: 'Output matches.' }
+      : { score: 0, maxScore: 1, feedback: 'Output does not match what the code prints.' };
+  }
+  return gradeOpen([question.expected, ...(question.keyPoints ?? [])].join(' '), text);
+}
+
 /** Local heuristic grader used until OpenAI/Anthropic keys are configured. */
 export function stubGradeQuiz(request: GradeQuizRequest): GradeReport {
   const rubric = request.rubric?.trim() || request.quiz.rubric;
@@ -178,7 +210,9 @@ export function stubGradeQuiz(request: GradeQuizRequest): GradeReport {
       } else if (q.type === 'cloze' && response.type === 'cloze') {
         result = gradeCloze(q.answers, response.fills);
       } else if (q.type === 'open' && response.type === 'open') {
-        result = gradeOpen(q.answer, response.text);
+        result = gradeOpen([q.answer, ...(q.keyPoints ?? [])].join(' '), response.text);
+      } else if (q.type === 'code' && response.type === 'code') {
+        result = gradeCode(q, response.text);
       }
     }
     return {

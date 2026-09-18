@@ -1,6 +1,6 @@
 /** File-backed quiz domain types (distinct from flashcard SRS). */
 
-export type QuestionType = 'mcq' | 'cloze' | 'open';
+export type QuestionType = 'mcq' | 'cloze' | 'open' | 'code';
 
 export type McqOption = {
   /** Stable id used for grading — never display letter. */
@@ -23,6 +23,8 @@ export type ClozeQuestion = {
   prompt: string;
   /** Answers in blank order. */
   answers: string[];
+  /** Why the answer fits; context for the grader. */
+  explanation?: string;
 };
 
 export type OpenQuestion = {
@@ -31,9 +33,37 @@ export type OpenQuestion = {
   prompt: string;
   /** Reference answer for the grader. */
   answer: string;
+  /** Ideas a strong answer covers; graded by coverage, not wording. */
+  keyPoints?: string[];
 };
 
-export type QuizQuestion = McqQuestion | ClozeQuestion | OpenQuestion;
+/** What a code-reading question asks about its snippet. */
+/**
+ * predict-output: run-and-verify. find-bug / complexity / scale: explain-it-back,
+ * scored against `keyPoints`. `scale` asks what happens as the input grows.
+ */
+export type CodeKind = 'predict-output' | 'find-bug' | 'complexity' | 'scale';
+
+export const CODE_KINDS: readonly CodeKind[] = ['predict-output', 'find-bug', 'complexity', 'scale'];
+
+export type CodeQuestion = {
+  id: string;
+  type: 'code';
+  kind: CodeKind;
+  /** Fence language of the snippet (python, typescript …). */
+  language: string;
+  prompt: string;
+  snippet: string;
+  /** predict-output: exact stdout. Otherwise: reference answer for the grader. */
+  expected: string;
+  /** Ideas a strong explanation covers (explain-it-back kinds). */
+  keyPoints?: string[];
+  explanation?: string;
+  /** True when `expected` came from actually running the snippet. */
+  verified?: boolean;
+};
+
+export type QuizQuestion = McqQuestion | ClozeQuestion | OpenQuestion | CodeQuestion;
 
 export type QuizDocument = {
   title: string;
@@ -54,7 +84,8 @@ export type PresentedMcqQuestion = Omit<McqQuestion, 'options'> & {
 export type PresentedQuestion =
   | PresentedMcqQuestion
   | ClozeQuestion
-  | OpenQuestion;
+  | OpenQuestion
+  | CodeQuestion;
 
 export type McqResponse = {
   questionId: string;
@@ -76,7 +107,13 @@ export type OpenResponse = {
   text: string;
 };
 
-export type QuizResponse = McqResponse | ClozeResponse | OpenResponse;
+export type CodeResponse = {
+  questionId: string;
+  type: 'code';
+  text: string;
+};
+
+export type QuizResponse = McqResponse | ClozeResponse | OpenResponse | CodeResponse;
 
 export type QuestionGrade = {
   questionId: string;
@@ -84,6 +121,12 @@ export type QuestionGrade = {
   maxScore: number;
   feedback: string;
   correctAnswer?: string;
+  /** Key points the answer did not cover. */
+  missing?: string[];
+  /** A "why?" probe the judge wants answered before finalizing this grade. */
+  followUp?: string;
+  /** The probe and the student's reply, once answered. */
+  probe?: { question: string; answer: string };
 };
 
 export type GradeReport = {
@@ -107,6 +150,7 @@ export type GenerateQuizRequest = {
   mcqCount?: number;
   clozeCount?: number;
   openCount?: number;
+  codeCount?: number;
   difficulty?: 'easy' | 'medium' | 'hard';
   customRubric?: string;
 };
@@ -115,4 +159,8 @@ export type GradeQuizRequest = {
   quiz: QuizDocument;
   responses: QuizResponse[];
   rubric?: string;
+  /** First pass: let the judge ask follow-up probes for vague answers. */
+  allowProbes?: boolean;
+  /** Second pass: answered probes. Only these questions are re-graded, together with their follow-up. */
+  followUps?: Array<{ questionId: string; question: string; answer: string }>;
 };

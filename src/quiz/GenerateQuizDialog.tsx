@@ -7,16 +7,20 @@ import {
   Flex,
   Heading,
   ScrollArea,
+  SegmentedControl,
   Text,
   TextField,
 } from '@radix-ui/themes';
 import { ClipboardIcon } from '@radix-ui/react-icons';
 import { isQuizPath, quizFileTitle } from './paths';
 import { noteTitle } from '../vault/fileTree';
+import type { QuizDifficulty, QuizGenerationSettings } from '../settings';
 
 export type GenerateQuizDialogResult = {
   title: string;
   sourcePaths: string[];
+  /** Per-run generation settings (seeded from Settings, not saved back). */
+  settings: QuizGenerationSettings;
 };
 
 type Props = {
@@ -24,6 +28,8 @@ type Props = {
   /** Currently open note — preselected when it is not a quiz. */
   defaultSourcePath: string;
   folderHint?: string;
+  /** Starting counts / difficulty / rubric, from Settings. */
+  defaultSettings: QuizGenerationSettings;
   busy?: boolean;
   onCancel: () => void;
   onConfirm: (result: GenerateQuizDialogResult) => void;
@@ -43,13 +49,23 @@ export function GenerateQuizDialog({
   files,
   defaultSourcePath,
   folderHint,
+  defaultSettings,
   busy = false,
   onCancel,
   onConfirm,
 }: Props) {
   const noteFiles = useMemo(
-    () => files.filter((path) => !isQuizPath(path)).sort((a, b) => a.localeCompare(b)),
-    [files],
+    () => {
+      const dirOf = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf('/')));
+      const currentDir = defaultSourcePath ? dirOf(defaultSourcePath) : null;
+      // Clicked note first, then notes in its folder, then everything else; A–Z within each group.
+      const rank = (path: string) =>
+        path === defaultSourcePath ? 0 : currentDir !== null && dirOf(path) === currentDir ? 1 : 2;
+      return files
+        .filter((path) => !isQuizPath(path))
+        .sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+    },
+    [files, defaultSourcePath],
   );
 
   const initialSources = useMemo(() => {
@@ -63,6 +79,20 @@ export function GenerateQuizDialog({
   const [title, setTitle] = useState(() =>
     quizFileTitle(defaultTitleFromSources(initialSources)).replace(/^Quiz\s+/, ''),
   );
+
+  const [counts, setCounts] = useState({
+    mcqCount: defaultSettings.mcqCount,
+    clozeCount: defaultSettings.clozeCount,
+    openCount: defaultSettings.openCount,
+    codeCount: defaultSettings.codeCount,
+  });
+  const [difficulty, setDifficulty] = useState<QuizDifficulty>(defaultSettings.difficulty);
+  const totalQuestions = counts.mcqCount + counts.clozeCount + counts.openCount + counts.codeCount;
+
+  const setCount = (key: keyof typeof counts, raw: number) => {
+    const n = Number.isFinite(raw) ? Math.max(0, Math.min(20, Math.round(raw))) : 0;
+    setCounts((current) => ({ ...current, [key]: n }));
+  };
 
   const toggle = (path: string) => {
     setSelected((current) => {
@@ -83,11 +113,12 @@ export function GenerateQuizDialog({
   };
 
   const submit = () => {
-    if (busy || selected.length === 0) return;
+    if (busy || selected.length === 0 || totalQuestions === 0) return;
     const descriptive = title.trim() || defaultTitleFromSources(selected);
     onConfirm({
       title: quizFileTitle(descriptive),
       sourcePaths: selected,
+      settings: { ...defaultSettings, ...counts, difficulty },
     });
   };
 
@@ -175,13 +206,59 @@ export function GenerateQuizDialog({
             )}
           </Flex>
 
+          <Flex direction="column" gap="2">
+            <Flex justify="between" align="center">
+              <Text size="2" weight="medium">
+                Questions
+              </Text>
+              <Text size="1" color="gray">
+                {totalQuestions} total
+              </Text>
+            </Flex>
+            <Flex gap="3" wrap="wrap">
+              {(
+                [
+                  ['mcqCount', 'Multiple choice'],
+                  ['clozeCount', 'Cloze'],
+                  ['openCount', 'Open'],
+                  ['codeCount', 'Code'],
+                ] as const
+              ).map(([key, label]) => (
+                <label key={key} className="mv-quiz-count-field">
+                  <Text size="1" color="gray">
+                    {label}
+                  </Text>
+                  <TextField.Root
+                    type="number"
+                    min={0}
+                    max={20}
+                    value={String(counts[key])}
+                    disabled={busy}
+                    onChange={(e) => setCount(key, Number(e.target.value))}
+                  />
+                </label>
+              ))}
+            </Flex>
+            <SegmentedControl.Root
+              value={difficulty}
+              onValueChange={(value) => setDifficulty(value as QuizDifficulty)}
+            >
+              <SegmentedControl.Item value="easy">Easy</SegmentedControl.Item>
+              <SegmentedControl.Item value="medium">Medium</SegmentedControl.Item>
+              <SegmentedControl.Item value="hard">Hard</SegmentedControl.Item>
+            </SegmentedControl.Root>
+            <Text size="1" color="gray">
+              Starts from your Settings defaults; changes here apply to this quiz only.
+            </Text>
+          </Flex>
+
           <Flex gap="3" justify="end">
             <Button variant="soft" color="gray" disabled={busy} onClick={onCancel}>
               Cancel
             </Button>
             <Button
               highContrast
-              disabled={busy || selected.length === 0}
+              disabled={busy || selected.length === 0 || totalQuestions === 0}
               loading={busy}
               onClick={submit}
             >

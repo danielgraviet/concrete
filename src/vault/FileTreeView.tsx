@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ContextMenu, IconButton, Text } from '@radix-ui/themes';
 import {
   ChevronDownIcon,
@@ -13,6 +13,9 @@ import type { VaultFolderNode, VaultTreeNode } from './types';
 
 export type TreeItemKind = 'file' | 'folder';
 
+/** Paths flagged "New" (e.g. freshly generated, not yet opened). */
+const NewPathsContext = createContext<ReadonlySet<string>>(new Set());
+
 type FileTreeViewProps = {
   files: string[];
   folders?: string[];
@@ -22,6 +25,8 @@ type FileTreeViewProps = {
   /** @deprecated Unused — vault root label row was removed for a minimal sidebar. */
   vaultLabel?: string;
   filterPaths?: string[] | null;
+  /** Files to badge as new until the user opens them. */
+  newPaths?: string[];
   onSelectFile: (path: string) => void;
   onSelectFolder: (path: string) => void;
   onRename: (path: string, kind: TreeItemKind, nextName: string) => void | Promise<void>;
@@ -111,6 +116,9 @@ function FolderBranch({
   const isOpen = expanded.has(node.path);
   const isActive = activeFolder === node.path;
   const isRenaming = renaming?.kind === 'folder' && renaming.path === node.path;
+  const newPathSet = useContext(NewPathsContext);
+  const hasNewInside =
+    !isOpen && [...newPathSet].some((path) => path.startsWith(`${node.path}/`));
 
   return (
     <div className="tree-branch">
@@ -177,6 +185,7 @@ function FolderBranch({
                   {node.name}
                 </Text>
               )}
+              {hasNewInside ? <span className="new-dot" aria-label="Contains a new quiz" /> : null}
             </div>
           </div>
         </ContextMenu.Trigger>
@@ -275,6 +284,7 @@ function TreeNode({
   const isPdf = isPdfFileName(node.name);
   const isRenaming = renaming?.kind === 'file' && renaming.path === node.path;
   const label = noteTitle(node.path);
+  const isNew = useContext(NewPathsContext).has(node.path);
 
   return (
     <ContextMenu.Root>
@@ -316,6 +326,7 @@ function TreeNode({
               {label}
             </Text>
           )}
+          {isNew ? <span className="new-badge">New</span> : null}
         </button>
       </ContextMenu.Trigger>
       <ContextMenu.Content size="1" variant="soft">
@@ -359,6 +370,7 @@ export function FileTreeView({
   selected,
   activeFolder,
   filterPaths = null,
+  newPaths,
   onSelectFile,
   onSelectFolder,
   onRename,
@@ -370,7 +382,7 @@ export function FileTreeView({
     return filterTree(full, new Set(filterPaths));
   }, [files, folders, filterPaths]);
 
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(folders));
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [renaming, setRenaming] = useState<{ path: string; kind: TreeItemKind } | null>(
     null,
   );
@@ -380,7 +392,9 @@ export function FileTreeView({
     const prev = new Set(prevFoldersRef.current);
     const added = folders.filter((path) => !prev.has(path));
     prevFoldersRef.current = folders;
-    if (added.length === 0) return;
+    // Initial vault load (nothing listed before) stays collapsed; only folders
+    // created afterwards auto-open.
+    if (prev.size === 0 || added.length === 0) return;
     setExpanded((current) => {
       const next = new Set(current);
       for (const path of added) next.add(path);
@@ -411,6 +425,25 @@ export function FileTreeView({
       return next;
     });
   }, [selected]);
+
+  const newPathSet = useMemo(() => new Set(newPaths ?? []), [newPaths]);
+
+  // Reveal items that become new while running, so the badge is visible. Ones
+  // already new at launch stay collapsed (folders start closed).
+  const seenNewRef = useRef(newPathSet);
+  useEffect(() => {
+    const fresh = [...newPathSet].filter((path) => !seenNewRef.current.has(path));
+    seenNewRef.current = newPathSet;
+    if (fresh.length === 0) return;
+    setExpanded((current) => {
+      const next = new Set(current);
+      for (const path of fresh) {
+        const parts = path.split('/');
+        for (let i = 1; i < parts.length; i += 1) next.add(parts.slice(0, i).join('/'));
+      }
+      return next;
+    });
+  }, [newPathSet]);
 
   const toggle = (path: string) => {
     setExpanded((current) => {
@@ -443,24 +476,26 @@ export function FileTreeView({
         if (source) commitRename(source, 'file', `@root/${source.split('/').pop() ?? source}`);
       }}
     >
-      {tree.children.map((child) => (
-        <TreeNode
-          key={`${child.type}:${child.path}`}
-          node={child}
-          depth={0}
-          selected={selected}
-          activeFolder={activeFolder}
-          expanded={expanded}
-          renaming={renaming}
-          onToggle={toggle}
-          onSelectFile={onSelectFile}
-          onSelectFolder={onSelectFolder}
-          onStartRename={(path, kind) => setRenaming({ path, kind })}
-          onCommitRename={commitRename}
-          onCancelRename={() => setRenaming(null)}
-          onDelete={onDelete}
-        />
-      ))}
+      <NewPathsContext.Provider value={newPathSet}>
+        {tree.children.map((child) => (
+          <TreeNode
+            key={`${child.type}:${child.path}`}
+            node={child}
+            depth={0}
+            selected={selected}
+            activeFolder={activeFolder}
+            expanded={expanded}
+            renaming={renaming}
+            onToggle={toggle}
+            onSelectFile={onSelectFile}
+            onSelectFolder={onSelectFolder}
+            onStartRename={(path, kind) => setRenaming({ path, kind })}
+            onCommitRename={commitRename}
+            onCancelRename={() => setRenaming(null)}
+            onDelete={onDelete}
+          />
+        ))}
+      </NewPathsContext.Provider>
     </div>
   );
 }

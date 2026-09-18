@@ -51,7 +51,6 @@ import { useSearch } from './search';
 import { MetaService } from './meta';
 import {
   CardStore,
-  ReviewPanel,
   QuizView,
   ReviewQueue,
   Sm2SchedulerStrategy,
@@ -72,8 +71,12 @@ import {
   QuizShell,
   GenerateQuizDialog,
   type GenerateQuizDialogResult,
+  ProgressPanel,
 } from './quiz';
+import { QuizHistoryStore } from './quiz';
 import { settingsStore, SettingsPanel } from './settings';
+import { getSandboxStatus } from './sandbox';
+import { verifyCodeQuestions } from './quiz/verifyCode';
 import type { AgentProviderId } from './settings';
 import { ProductTour } from './onboarding';
 
@@ -102,6 +105,25 @@ type RailView = 'files' | 'tags' | 'ai';
 type Overlay = 'settings' | null;
 
 const LAYOUT_KEY = 'mv:layout';
+const LAST_NOTE_KEY = 'mv:last-note';
+const NEW_QUIZZES_KEY = 'mv:new-quizzes';
+
+function readNewQuizzes(): string[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(NEW_QUIZZES_KEY) ?? '[]');
+    return Array.isArray(parsed) ? parsed.filter((p): p is string => typeof p === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function readLastNote(): string {
+  try {
+    return localStorage.getItem(LAST_NOTE_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
 
 type LayoutState = {
   sidebarOpen: boolean;
@@ -136,6 +158,11 @@ function resolveAiProvider(id: string, openRouterModelId?: string) {
 export default function App() {
   const vault = useVault(demoNotes, demoFolders);
   const [selected, setSelected] = useState('Welcome.md');
+  // Only remember the open note once the restored/initial selection is settled,
+  // so the placeholder default never overwrites the saved one.
+  const persistSelectionRef = useRef(false);
+  // Generated quizzes the user hasn't opened yet; badged "New" in the tree.
+  const [newQuizPaths, setNewQuizPaths] = useState<string[]>(readNewQuizzes);
   const [onboarding, setOnboarding] = useState(
     () => typeof window !== 'undefined' && Boolean(window.vault) && !localStorage.getItem('mv:onboarding-complete'),
   );
@@ -163,7 +190,7 @@ export default function App() {
   const [quizJob, setQuizJob] = useState<
     | { status: 'idle' }
     | { status: 'running'; title: string }
-    | { status: 'done'; title: string; path: string }
+    | { status: 'done'; title: string; path: string; note?: string }
     | { status: 'error'; title: string; message: string }
   >({ status: 'idle' });
   const generatingQuiz = quizJob.status === 'running';
@@ -253,6 +280,7 @@ export default function App() {
     () => new ReviewQueue(cardStore, new Sm2SchedulerStrategy()),
     [cardStore],
   );
+  const quizHistory = useMemo(() => new QuizHistoryStore(root ?? ''), [root]);
 
   useEffect(() => {
     const settings = settingsStore.hydrate();
@@ -289,6 +317,28 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    try {
+      localStorage.setItem(NEW_QUIZZES_KEY, JSON.stringify(newQuizPaths));
+    } catch {
+      // Storage unavailable — badges just won't survive a restart.
+    }
+  }, [newQuizPaths]);
+
+  // Opening a quiz (from the tree, the toast, or anywhere) clears its badge.
+  useEffect(() => {
+    setNewQuizPaths((current) => (current.includes(selected) ? current.filter((p) => p !== selected) : current));
+  }, [selected]);
+
+  useEffect(() => {
+    if (!persistSelectionRef.current || !selected) return;
+    try {
+      localStorage.setItem(LAST_NOTE_KEY, selected);
+    } catch {
+      // Storage unavailable — skip remembering.
+    }
+  }, [selected]);
+
+  useEffect(() => {
     setSlashAiHandler((query) => openAiChat(query));
     return () => setSlashAiHandler(null);
   }, []);
@@ -305,9 +355,12 @@ export default function App() {
       setOnboarding(false);
       setContents({});
       setActiveFolder('');
+      const lastNote = readLastNote();
       const preferred =
-        result.files.find((file) => file === 'Welcome.md') ?? result.files[0] ?? '';
+        (lastNote && result.files.includes(lastNote) ? lastNote : '') ||
+        (result.files.find((file) => file === 'Welcome.md') ?? result.files[0] ?? '');
       setSelected(preferred);
+      persistSelectionRef.current = true;
     });
     return () => {
       cancelled = true;
@@ -481,6 +534,7 @@ export default function App() {
   };
 
   const select = (name: string) => {
+    persistSelectionRef.current = true;
     if (isPdfFileName(name)) {
       // PDFs aren't editable notes — open them in the OS default viewer instead.
       if (root) void VaultService.openPath(root, name);
@@ -589,11 +643,12 @@ export default function App() {
     const jobId = ++quizJobRef.current;
     setQuizJob({ status: 'running', title: titled });
 
-    const quizSettings = settingsStore.get().quiz;
+    const quizSettings = result.settings;
     const types = [
       ...(quizSettings.mcqCount > 0 ? (['mcq'] as const) : []),
       ...(quizSettings.clozeCount > 0 ? (['cloze'] as const) : []),
       ...(quizSettings.openCount > 0 ? (['open'] as const) : []),
+      ...(quizSettings.codeCount > 0 ? (['code'] as const) : []),
     ];
 
     try {
@@ -604,7 +659,13 @@ export default function App() {
       }
       const noteContext = chunks.join('\n\n-----\n\n');
 
-      const doc = await aiClient.generateQuiz({
+      // Code questions are checked by running them, and some fail that check.
+      // Ask for one spare when a runner is available so the requested count holds.
+      const sandboxProviderId = settingsStore.get().sandboxProviderId;
+      const sandboxReady =
+        quizSettings.codeCount > 0 && (await getSandboxStatus(sandboxProviderId)).available;
+
+      const generated = await aiClient.generateQuiz({
         topic: titled.replace(/^Quiz\s+/, ''),
         noteContext: truncateNoteContext(noteContext, 12000),
         source: primary,
@@ -613,13 +674,16 @@ export default function App() {
         mcqCount: quizSettings.mcqCount,
         clozeCount: quizSettings.clozeCount,
         openCount: quizSettings.openCount,
+        codeCount: quizSettings.codeCount + (sandboxReady ? 1 : 0),
         difficulty: quizSettings.difficulty,
         customRubric: quizSettings.customRubric.trim() || undefined,
       });
+      const verification = await verifyCodeQuestions(generated, sandboxProviderId);
+      const doc = verification.doc;
       // Models sometimes satisfy the requested composition twice. Enforce the
       // user's counts before saving so the quiz cannot silently grow.
-      const limits = { mcq: quizSettings.mcqCount, cloze: quizSettings.clozeCount, open: quizSettings.openCount };
-      const used = { mcq: 0, cloze: 0, open: 0 };
+      const limits = { mcq: quizSettings.mcqCount, cloze: quizSettings.clozeCount, open: quizSettings.openCount, code: quizSettings.codeCount };
+      const used = { mcq: 0, cloze: 0, open: 0, code: 0 };
       doc.questions = doc.questions.filter((question) => {
         if (used[question.type] >= limits[question.type]) return false;
         used[question.type] += 1;
@@ -652,8 +716,16 @@ export default function App() {
         setContents((prev) => ({ ...prev, [relative]: body }));
       }
 
+      setNewQuizPaths((current) => (current.includes(createdPath) ? current : [...current, createdPath]));
       if (quizJobRef.current === jobId) {
-        setQuizJob({ status: 'done', title: titled, path: createdPath });
+        const keptCode = used.code;
+        const note =
+          quizSettings.codeCount > 0 && keptCode < quizSettings.codeCount
+            ? `${keptCode} of ${quizSettings.codeCount} code questions passed verification.`
+            : verification.unverified > 0
+              ? 'Code answers are unverified — start Docker to check them.'
+              : undefined;
+        setQuizJob({ status: 'done', title: titled, path: createdPath, note });
       }
     } catch (error) {
       console.error('Quiz generation failed', error);
@@ -1131,6 +1203,7 @@ export default function App() {
               selected={selected}
               activeFolder={activeFolder}
               filterPaths={filterPaths}
+              newPaths={newQuizPaths}
               onSelectFile={select}
               onSelectFolder={(path) => {
                 setActiveFolder(path);
@@ -1285,6 +1358,7 @@ export default function App() {
           {isQuizPath(selected) ? (
             <QuizShell
               documentPath={selected}
+              historyStore={quizHistory}
               markdown={controller.content}
               client={aiClient}
               onChange={(value) => {
@@ -1345,16 +1419,6 @@ export default function App() {
       <aside className="right-panel" aria-hidden={!layout.rightOpen || layout.focusMode}>
         <div className="panel-title-row">
           <div className="panel-title">BACKLINKS</div>
-          <IconButton
-            type="button"
-            size="1"
-            variant="ghost"
-            color="gray"
-            aria-label="Collapse panel"
-            onClick={() => setRightOpen(false)}
-          >
-            <ArrowRightFromLine size={15} />
-          </IconButton>
         </div>
         {backlinks.length === 0 ? (
           <div className="empty-panel">
@@ -1378,11 +1442,7 @@ export default function App() {
           </div>
         )}
         <div className="panel-section">
-          <ReviewPanel
-            store={cardStore}
-            queue={reviewQueue}
-            onStartQuiz={(cards) => setQuizCards(cards)}
-          />
+          <ProgressPanel store={quizHistory} folder={parentDir(selected)} />
           <span className="sr-only">{dueTick}</span>
         </div>
       </aside>
@@ -1396,6 +1456,7 @@ export default function App() {
               ? parentDir(selected) || 'vault root'
               : activeFolder || 'vault root'
           }
+          defaultSettings={settingsStore.get().quiz}
           busy={false}
           onCancel={() => setGenerateQuizOpen(false)}
           onConfirm={(result) => void confirmGenerateQuiz(result)}
@@ -1423,6 +1484,7 @@ export default function App() {
               <div className="mv-toast-body">
                 <strong>Quiz ready</strong>
                 <span>{quizJob.title}</span>
+                {quizJob.note ? <span>{quizJob.note}</span> : null}
               </div>
               <Button
                 size="1"
