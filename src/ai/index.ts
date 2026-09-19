@@ -32,7 +32,7 @@ export {
   extractQuizMarkdown,
 } from './quizDocumentFromModelText';
 export { AiPanel } from './AiPanel';
-export { AiOrb } from './AiOrb';
+// AiOrb is lazy-loaded from App.
 export {
   TEACHER_SYSTEM_PROMPT,
   NOTE_CONTEXT_LIMIT,

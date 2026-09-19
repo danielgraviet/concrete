@@ -24,4 +24,4 @@ export {
   type ThemePack,
 } from './themePacks';
 export { SettingsStore, settingsStore } from './SettingsStore';
-export { SettingsPanel } from './SettingsPanel';
+// SettingsPanel is lazy-loaded from App to keep the critical path thin.

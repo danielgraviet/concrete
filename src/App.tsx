@@ -1,25 +1,23 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Flex, IconButton, Text } from '@radix-ui/themes';
 import {
+  ChatBubbleIcon,
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ChevronUpIcon,
   ClipboardIcon,
   Cross1Icon,
+  EnterFullScreenIcon,
+  ExitFullScreenIcon,
   FilePlusIcon,
   FileTextIcon,
   GearIcon,
   BadgeIcon,
   PlusCircledIcon,
   TrashIcon,
+  UpdateIcon,
 } from '@radix-ui/react-icons';
-import {
-  ArrowLeftFromLine,
-  ArrowRightFromLine,
-  Bot,
-  Expand,
-  Loader2,
-  Minimize2,
-  ChevronDown,
-  ChevronUp,
-} from 'lucide-react';
 import { WysiwygEditor, useEditorController } from './editor';
 import {
   askText,
@@ -31,6 +29,7 @@ import {
   joinFolderPath,
   joinNotePath,
   joinPdfPath,
+  NoteBodyCache,
   noteTitle,
   parentDir,
   useVault,
@@ -40,6 +39,7 @@ import {
 import { useBacklinks } from './graph';
 
 const MAX_TAB_TITLE_CHARS = 32;
+const NOTE_BODY_CACHE_MAX = 24;
 
 function tabTitleFor(path: string): string {
   const title = (path.split('/').pop() ?? path).replace(/\.md$/i, '') || 'Untitled';
@@ -58,7 +58,6 @@ import {
 } from './learn';
 import {
   aiClient,
-  AiOrb,
   LocalEchoProvider,
   MockAiProvider,
   OpenRouterProvider,
@@ -69,17 +68,25 @@ import {
   isQuizPath,
   quizDocumentToMarkdown,
   QuizShell,
-  GenerateQuizDialog,
   type GenerateQuizDialogResult,
   ProgressPanel,
 } from './quiz';
 import { QuizHistoryStore } from './quiz';
-import { settingsStore, SettingsPanel } from './settings';
+import { settingsStore } from './settings';
 import { getSandboxStatus } from './sandbox';
 import { verifyCodeQuestions } from './quiz/verifyCode';
 import type { AgentProviderId } from './settings';
 import { ProductTour } from './onboarding';
 
+const SettingsPanel = lazy(() =>
+  import('./settings/SettingsPanel').then((m) => ({ default: m.SettingsPanel })),
+);
+const GenerateQuizDialog = lazy(() =>
+  import('./quiz/GenerateQuizDialog').then((m) => ({ default: m.GenerateQuizDialog })),
+);
+const AiOrb = lazy(() =>
+  import('./ai/AiOrb').then((m) => ({ default: m.AiOrb })),
+);
 
 const demoNotes = [
   'Welcome.md',
@@ -158,6 +165,8 @@ function resolveAiProvider(id: string, openRouterModelId?: string) {
 export default function App() {
   const vault = useVault(demoNotes, demoFolders);
   const [selected, setSelected] = useState('Welcome.md');
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
   // Only remember the open note once the restored/initial selection is settled,
   // so the placeholder default never overwrites the saved one.
   const persistSelectionRef = useRef(false);
@@ -174,7 +183,26 @@ export default function App() {
     kind: TreeItemKind;
     path: string;
   } | null>(null);
-  const [contents, setContents] = useState<Record<string, string>>({ ...demoContent });
+  const [contents, setContentsState] = useState<Record<string, string>>({ ...demoContent });
+  const noteCacheRef = useRef(new NoteBodyCache(NOTE_BODY_CACHE_MAX));
+  const setContents = (
+    updater:
+      | Record<string, string>
+      | ((prev: Record<string, string>) => Record<string, string>),
+  ) => {
+    setContentsState((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      const cache = noteCacheRef.current;
+      cache.clear();
+      const pin = selectedRef.current;
+      if (pin && next[pin] !== undefined) cache.set(pin, next[pin]);
+      for (const [key, value] of Object.entries(next)) {
+        if (key === pin) continue;
+        cache.set(key, value);
+      }
+      return cache.toRecord();
+    });
+  };
   const [query, setQuery] = useState('');
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState('');
@@ -344,26 +372,35 @@ export default function App() {
   }, []);
 
   // Persist into Documents/Concrete so creates/edits survive restarts.
+  // Defer until after first paint so the shell can show immediately.
   useEffect(() => {
     if (vault.root) return;
     let cancelled = false;
-    void (window.vault?.restore ? vault.restore() : Promise.resolve(null)).then((result) => {
-      if (cancelled || !result) return;
-      // A successfully restored vault means this user has already completed
-      // the vault-selection step; never show first-run onboarding again.
-      localStorage.setItem('mv:onboarding-complete', '1');
-      setOnboarding(false);
-      setContents({});
-      setActiveFolder('');
-      const lastNote = readLastNote();
-      const preferred =
-        (lastNote && result.files.includes(lastNote) ? lastNote : '') ||
-        (result.files.find((file) => file === 'Welcome.md') ?? result.files[0] ?? '');
-      setSelected(preferred);
-      persistSelectionRef.current = true;
-    });
+    const restore = () => {
+      void (window.vault?.restore ? vault.restore() : Promise.resolve(null)).then((result) => {
+        if (cancelled || !result) {
+          void window.perf?.mark('renderer-interactive');
+          return;
+        }
+        // A successfully restored vault means this user has already completed
+        // the vault-selection step; never show first-run onboarding again.
+        localStorage.setItem('mv:onboarding-complete', '1');
+        setOnboarding(false);
+        setContents({});
+        setActiveFolder('');
+        const lastNote = readLastNote();
+        const preferred =
+          (lastNote && result.files.includes(lastNote) ? lastNote : '') ||
+          (result.files.find((file) => file === 'Welcome.md') ?? result.files[0] ?? '');
+        setSelected(preferred);
+        persistSelectionRef.current = true;
+        void window.perf?.mark('renderer-interactive');
+      });
+    };
+    const idleId = window.setTimeout(restore, 0);
     return () => {
       cancelled = true;
+      window.clearTimeout(idleId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once when Electron vault API is ready
   }, []);
@@ -375,11 +412,9 @@ export default function App() {
   }, [cardStore, root]);
 
   const rootRef = useRef(root);
-  const selectedRef = useRef(selected);
   const contentRef = useRef('');
   const markSavedRef = useRef<(content?: string) => void>(() => {});
   rootRef.current = root;
-  selectedRef.current = selected;
 
   const controller = useEditorController({
     initialContent: contents[selected] ?? '',
@@ -1068,7 +1103,7 @@ export default function App() {
           aria-pressed={rail === 'ai' || aiChatOpen}
           onClick={() => selectRail('ai')}
         >
-          <Bot size={18} />
+          <ChatBubbleIcon width={18} height={18} />
         </IconButton>
         <div className="rail-spacer" />
         <IconButton
@@ -1083,9 +1118,9 @@ export default function App() {
           onClick={toggleFocusMode}
         >
           {layout.focusMode ? (
-            <Minimize2 size={18} />
+            <ExitFullScreenIcon width={18} height={18} />
           ) : (
-            <Expand size={18} />
+            <EnterFullScreenIcon width={18} height={18} />
           )}
         </IconButton>
         <IconButton
@@ -1234,9 +1269,9 @@ export default function App() {
               onClick={() => setSidebarOpen(!layout.sidebarOpen)}
             >
               {layout.sidebarOpen ? (
-                <ArrowLeftFromLine size={16} />
+                <ChevronLeftIcon width={16} height={16} />
               ) : (
-                <ArrowRightFromLine size={16} />
+                <ChevronRightIcon width={16} height={16} />
               )}
             </IconButton>
           )}
@@ -1269,7 +1304,7 @@ export default function App() {
               aria-label={layout.focusMode ? 'Exit focus mode (Esc)' : 'Focus mode (⌘⇧F)'}
               onClick={toggleFocusMode}
             >
-              {layout.focusMode ? <Minimize2 size={16} /> : <Expand size={16} />}
+              {layout.focusMode ? <ExitFullScreenIcon width={16} height={16} /> : <EnterFullScreenIcon width={16} height={16} />}
             </IconButton>
             {!layout.focusMode && (
               <IconButton
@@ -1282,9 +1317,9 @@ export default function App() {
                 onClick={() => setRightOpen(!layout.rightOpen)}
               >
                 {layout.rightOpen ? (
-                  <ArrowRightFromLine size={16} />
+                  <ChevronRightIcon width={16} height={16} />
                 ) : (
-                  <ArrowLeftFromLine size={16} />
+                  <ChevronLeftIcon width={16} height={16} />
                 )}
               </IconButton>
             )}
@@ -1338,7 +1373,7 @@ export default function App() {
                   findInputRef.current?.focus();
                 }}
               >
-                <ChevronUp size={14} />
+                <ChevronUpIcon width={14} height={14} />
               </button>
               <button
                 type="button"
@@ -1350,7 +1385,7 @@ export default function App() {
                   findInputRef.current?.focus();
                 }}
               >
-                <ChevronDown size={14} />
+                <ChevronDownIcon width={14} height={14} />
               </button>
               <button type="button" onClick={() => setFindOpen(false)} aria-label="Close find">×</button>
             </div>
@@ -1381,32 +1416,34 @@ export default function App() {
             />
           )}
         </div>
-        <AiOrb
-          client={aiClient}
-          noteContext={truncateNoteContext(controller.content)}
-          notePath={selected}
-          vaultRoot={root}
-          agentProviderId={agentProviderId}
-          open={aiChatOpen}
-          onOpenChange={setAiChatOpen}
-          seedPrompt={aiSeedPrompt}
-          onSeedConsumed={() => setAiSeedPrompt(null)}
-          onBeforeAgentRun={async () => {
-            if (controller.isDirty) await controller.persistence.flush();
-          }}
-          onAfterAgentRun={async () => {
-            if (!root || !selected) return;
-            try {
-              const text = await VaultService.read(root, selected);
-              setContents((prev) => ({ ...prev, [selected]: text }));
-              controller.loadContent(text);
-              controller.markSaved();
-              setEditorRevision((n) => n + 1);
-            } catch {
-              // Watcher may still pick up the change.
-            }
-          }}
-        />
+        <Suspense fallback={null}>
+          <AiOrb
+            client={aiClient}
+            noteContext={truncateNoteContext(controller.content)}
+            notePath={selected}
+            vaultRoot={root}
+            agentProviderId={agentProviderId}
+            open={aiChatOpen}
+            onOpenChange={setAiChatOpen}
+            seedPrompt={aiSeedPrompt}
+            onSeedConsumed={() => setAiSeedPrompt(null)}
+            onBeforeAgentRun={async () => {
+              if (controller.isDirty) await controller.persistence.flush();
+            }}
+            onAfterAgentRun={async () => {
+              if (!root || !selected) return;
+              try {
+                const text = await VaultService.read(root, selected);
+                setContents((prev) => ({ ...prev, [selected]: text }));
+                controller.loadContent(text);
+                controller.markSaved();
+                setEditorRevision((n) => n + 1);
+              } catch {
+                // Watcher may still pick up the change.
+              }
+            }}
+          />
+        </Suspense>
         <footer className="statusbar">
           <span>{controller.content.length} characters</span>
           <span>•</span>
@@ -1448,19 +1485,21 @@ export default function App() {
       </aside>
 
       {generateQuizOpen && (
-        <GenerateQuizDialog
-          files={files}
-          defaultSourcePath={selected}
-          folderHint={
-            selected && !isQuizPath(selected)
-              ? parentDir(selected) || 'vault root'
-              : activeFolder || 'vault root'
-          }
-          defaultSettings={settingsStore.get().quiz}
-          busy={false}
-          onCancel={() => setGenerateQuizOpen(false)}
-          onConfirm={(result) => void confirmGenerateQuiz(result)}
-        />
+        <Suspense fallback={null}>
+          <GenerateQuizDialog
+            files={files}
+            defaultSourcePath={selected}
+            folderHint={
+              selected && !isQuizPath(selected)
+                ? parentDir(selected) || 'vault root'
+                : activeFolder || 'vault root'
+            }
+            defaultSettings={settingsStore.get().quiz}
+            busy={false}
+            onCancel={() => setGenerateQuizOpen(false)}
+            onConfirm={(result) => void confirmGenerateQuiz(result)}
+          />
+        </Suspense>
       )}
 
       {quizJob.status !== 'idle' && (
@@ -1471,7 +1510,7 @@ export default function App() {
         >
           {quizJob.status === 'running' ? (
             <>
-              <Loader2 size={16} className="mv-toast-spin" aria-hidden />
+              <UpdateIcon width={16} height={16} className="mv-toast-spin" aria-hidden />
               <div className="mv-toast-body">
                 <strong>Generating quiz</strong>
                 <span>{quizJob.title}</span>
@@ -1628,24 +1667,26 @@ export default function App() {
             className="mv-settings-panel-shell"
             onMouseDown={(event) => event.stopPropagation()}
           >
-            <SettingsPanel
-              store={settingsStore}
-              vaultRoot={root}
-              onOpenVault={() => { void openVault().then(() => setOverlay(null)); }}
-              onImportObsidian={() => { void importObsidianVault().then(() => setOverlay(null)); }}
-              onReplayOnboarding={() => {
-                setOverlay(null);
-                setOnboardingMode('tour');
-                setOnboardingStep(0);
-                setOnboarding(true);
-              }}
-              providerOptions={[
-                { id: 'openrouter', label: 'OpenRouter' },
-                { id: 'mock', label: 'Mock AI' },
-                { id: 'local-echo', label: 'Local Echo' },
-              ]}
-              onClose={() => setOverlay(null)}
-            />
+            <Suspense fallback={<div className="mv-settings-panel"><p>Loading settings…</p></div>}>
+              <SettingsPanel
+                store={settingsStore}
+                vaultRoot={root}
+                onOpenVault={() => { void openVault().then(() => setOverlay(null)); }}
+                onImportObsidian={() => { void importObsidianVault().then(() => setOverlay(null)); }}
+                onReplayOnboarding={() => {
+                  setOverlay(null);
+                  setOnboardingMode('tour');
+                  setOnboardingStep(0);
+                  setOnboarding(true);
+                }}
+                providerOptions={[
+                  { id: 'openrouter', label: 'OpenRouter' },
+                  { id: 'mock', label: 'Mock AI' },
+                  { id: 'local-echo', label: 'Local Echo' },
+                ]}
+                onClose={() => setOverlay(null)}
+              />
+            </Suspense>
           </div>
         </div>
       )}

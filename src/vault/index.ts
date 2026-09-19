@@ -35,3 +35,4 @@ export { VaultService, canMkdir, canUseDiskVault } from './VaultService';
 export { useVault } from './hooks';
 export { FileTreeView, type TreeItemKind } from './FileTreeView';
 export { askText } from './askText';
+export { NoteBodyCache } from './NoteBodyCache';

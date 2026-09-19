@@ -80,6 +80,16 @@ Please keep pull requests small and focused when possible. Screenshots or short 
 - Add tests around parsing, notes, or learning workflows
 - Try the app on a different Mac and report what you find
 
+### Finding something to work on
+
+Browse the [open issues](https://github.com/danielgraviet/concrete/issues) to find a feature, bug, design question, or documentation task. Issues labeled [`good-first-issue`](https://github.com/danielgraviet/concrete/labels/good-first-issue) are a good place to start. Other useful labels include `enhancement`, `bug`, `needs-design`, `ux`, `education`, `telemetry`, and `documentation`.
+
+Feature ideas should begin as issues so the community can discuss the problem and possible approaches. Once the direction is clear, implement the work on a branch using your initials—such as `dg/fix-agent-workflow`—and open a pull request that links back to the issue.
+
+## Performance & footprint
+
+Dev folders (`node_modules`, local `release/`) are large; end users mainly feel the DMG / `.app` size and App Support Chromium caches. See [docs/perf-baseline.md](docs/perf-baseline.md) for the scorecard, cold-start marks, and bundle analysis (`ANALYZE=1 npm run build`). Use `npm run clean` to wipe local pack artifacts.
+
 ## Project status
 
 Concrete is an actively developed experimental desktop app. The core note, quiz, tutor, agent, and sandbox workflows are usable, while the learning analytics and trajectory dataset formats are still evolving. Expect APIs, file formats, and UI details to change.

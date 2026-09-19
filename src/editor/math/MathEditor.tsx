@@ -5,6 +5,7 @@ import { $getNodeByKey, type NodeKey } from 'lexical';
 import katex from 'katex';
 import { $isMathNode } from './MathNode';
 import { CACHED_EQUATIONS, formatEquationLatex, resolveEquation } from './equationResolver';
+import { ensureKatexCss } from './ensureKatexCss';
 
 function equationSuggestion(prompt: string): [string, string] | null {
   const query = prompt.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -30,6 +31,17 @@ export function MathEditor({ value, inline, nodeKey }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const areaRef = useRef<HTMLTextAreaElement>(null);
   const [generating, setGenerating] = useState(false);
+  const [cssReady, setCssReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void ensureKatexCss().then(() => {
+      if (!cancelled) setCssReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!editing) {
@@ -153,7 +165,13 @@ export function MathEditor({ value, inline, nodeKey }: Props) {
             setEditing(true);
           }}
         >
-          {error ? <span className="mv-math-error">{error}</span> : <span dangerouslySetInnerHTML={{ __html: html }} />}
+          {error ? (
+            <span className="mv-math-error">{error}</span>
+          ) : cssReady ? (
+            <span dangerouslySetInnerHTML={{ __html: html }} />
+          ) : (
+            <span className="mv-math-fallback">{value || '…'}</span>
+          )}
         </span>
       </ContextMenu.Trigger>
       <ContextMenu.Content size="1" variant="soft">
