@@ -348,7 +348,7 @@ function displayedExtension(name) {
   return DISPLAYED_EXTENSIONS.has(ext) ? ext : null;
 }
 
-const SKIP_DIRS = new Set(['.git', 'node_modules', '.obsidian', '.trash', '.vault']);
+const SKIP_DIRS = new Set(['.git', 'node_modules', '.obsidian', '.trash', '.vault', 'agent-trajectories']);
 const MAX_VAULT_FILES = 10000;
 const OBSIDIAN_IMPORT_MARKER = '.concrete-obsidian-imported';
 
@@ -447,7 +447,7 @@ async function startWatch(root) {
   watcher = chokidar.watch('.', {
     cwd: resolvedRoot,
     ignoreInitial: true,
-    ignored: /(^|[/\\])(\.git|node_modules|\.obsidian|\.trash|\.vault|dist|release|build)([/\\]|$)/,
+    ignored: /(^|[/\\])(\.git|node_modules|\.obsidian|\.trash|\.vault|agent-trajectories|dist|release|build)([/\\]|$)/,
     awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 },
     depth: 12,
     ignorePermissionErrors: true,
@@ -484,8 +484,12 @@ async function startWatch(root) {
     if (!displayedExtension(filePath)) return;
     send('unlink', filePath);
   });
-  watcher.on('addDir', (dirPath) => send('addDir', dirPath));
-  watcher.on('unlinkDir', (dirPath) => send('unlinkDir', dirPath));
+  watcher.on('addDir', (dirPath) => {
+    if (!/(^|[/\\])agent-trajectories([/\\]|$)/.test(dirPath)) send('addDir', dirPath);
+  });
+  watcher.on('unlinkDir', (dirPath) => {
+    if (!/(^|[/\\])agent-trajectories([/\\]|$)/.test(dirPath)) send('unlinkDir', dirPath);
+  });
 }
 
 ipcMain.handle('vault:open', async () => {

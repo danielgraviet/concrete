@@ -386,22 +386,6 @@ export function FileTreeView({
   const [renaming, setRenaming] = useState<{ path: string; kind: TreeItemKind } | null>(
     null,
   );
-  const prevFoldersRef = useRef(folders);
-
-  useEffect(() => {
-    const prev = new Set(prevFoldersRef.current);
-    const added = folders.filter((path) => !prev.has(path));
-    prevFoldersRef.current = folders;
-    // Initial vault load (nothing listed before) stays collapsed; only folders
-    // created afterwards auto-open.
-    if (prev.size === 0 || added.length === 0) return;
-    setExpanded((current) => {
-      const next = new Set(current);
-      for (const path of added) next.add(path);
-      return next;
-    });
-  }, [folders]);
-
   useEffect(() => {
     if (!activeFolder) return;
     setExpanded((current) => {
@@ -413,18 +397,6 @@ export function FileTreeView({
       return next;
     });
   }, [activeFolder]);
-
-  useEffect(() => {
-    if (!selected.includes('/')) return;
-    setExpanded((current) => {
-      const next = new Set(current);
-      const parts = selected.split('/');
-      for (let i = 1; i < parts.length; i += 1) {
-        next.add(parts.slice(0, i).join('/'));
-      }
-      return next;
-    });
-  }, [selected]);
 
   const newPathSet = useMemo(() => new Set(newPaths ?? []), [newPaths]);
 
