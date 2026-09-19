@@ -1166,8 +1166,10 @@ export default function App() {
                   variant="ghost"
                   color="gray"
                   highContrast
-                  aria-label="New folder"
-                  onClick={createFolder}
+                  aria-label={
+                    noteTargetFolder ? `New note in ${noteTargetFolder}` : 'New note'
+                  }
+                  onClick={create}
                 >
                   <PlusCircledIcon width={16} height={16} />
                 </IconButton>
@@ -1177,10 +1179,8 @@ export default function App() {
                   variant="ghost"
                   color="gray"
                   highContrast
-                  aria-label={
-                    noteTargetFolder ? `New note in ${noteTargetFolder}` : 'New note'
-                  }
-                  onClick={create}
+                  aria-label="New folder"
+                  onClick={createFolder}
                 >
                   <FilePlusIcon width={16} height={16} />
                 </IconButton>

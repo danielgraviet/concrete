@@ -4,6 +4,14 @@ import { ContextMenu } from '@radix-ui/themes';
 import { $getNodeByKey, type NodeKey } from 'lexical';
 import katex from 'katex';
 import { $isMathNode } from './MathNode';
+import { CACHED_EQUATIONS, formatEquationLatex, resolveEquation } from './equationResolver';
+
+function equationSuggestion(prompt: string): [string, string] | null {
+  const query = prompt.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  if (!query) return null;
+  const match = Object.entries(CACHED_EQUATIONS).find(([name]) => name.startsWith(query) || query.includes(name));
+  return match ?? null;
+}
 
 type Props = {
   value: string;
@@ -18,11 +26,18 @@ export function MathEditor({ value, inline, nodeKey }: Props) {
   const [editor] = useLexicalComposerContext();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
+  const draftRef = useRef(value);
   const inputRef = useRef<HTMLInputElement>(null);
   const areaRef = useRef<HTMLTextAreaElement>(null);
+  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
-    if (!editing) setDraft(value);
+    if (!editing) {
+      setDraft(value);
+      // Slash-command math starts with a temporary placeholder. Enter edit
+      // mode immediately so the first keystroke replaces it.
+      if (value === 'formula') setEditing(true);
+    }
   }, [value, editing]);
 
   useEffect(() => {
@@ -32,8 +47,8 @@ export function MathEditor({ value, inline, nodeKey }: Props) {
     el?.select();
   }, [editing, inline]);
 
-  const commit = useCallback(() => {
-    const next = draft.trim();
+  const commit = useCallback((value = draftRef.current) => {
+    const next = value.trim();
     editor.update(() => {
       const node = $getNodeByKey(nodeKey);
       if (!$isMathNode(node)) return;
@@ -46,13 +61,39 @@ export function MathEditor({ value, inline, nodeKey }: Props) {
     setEditing(false);
   }, [draft, editor, nodeKey]);
 
+  const generate = async () => {
+    if (!draft.trim() || generating) return;
+    setGenerating(true);
+    try {
+      const latex = await resolveEquation(draft);
+      if (latex) setDraft(latex);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   const onChange = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    draftRef.current = event.target.value;
     setDraft(event.target.value);
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === 'Enter' && (inline || event.metaKey || event.ctrlKey)) {
+    const suggestion = equationSuggestion(draft);
+    if (event.key === 'Tab' && suggestion) {
       event.preventDefault();
+      draftRef.current = suggestion[1];
+      setDraft(suggestion[1]);
+      return;
+    }
+    if (
+      event.key === 'Enter' &&
+      (inline || !event.shiftKey)
+    ) {
+      event.preventDefault();
+      if (event.metaKey || event.ctrlKey) {
+        void generate();
+        return;
+      }
       commit();
     }
     if (event.key === 'Escape') {
@@ -65,37 +106,24 @@ export function MathEditor({ value, inline, nodeKey }: Props) {
   if (editing) {
     if (inline) {
       return (
-        <input
-          ref={inputRef}
-          className="mv-math-input inline"
-          value={draft}
-          onChange={onChange}
-          onBlur={commit}
-          onKeyDown={onKeyDown}
-          spellCheck={false}
-          aria-label="Edit inline math"
-        />
+        <div className="mv-math-editing">
+          {equationSuggestion(draft) ? <div className="mv-math-suggestion">Tab ↹ {equationSuggestion(draft)?.[0]}</div> : null}
+          <input ref={inputRef} className="mv-math-input inline" value={draft} onChange={onChange} onBlur={() => setTimeout(() => commit(), 0)} onKeyDown={onKeyDown} spellCheck={false} aria-label="Edit inline math" />
+        </div>
       );
     }
     return (
-      <textarea
-        ref={areaRef}
-        className="mv-math-input block"
-        rows={2}
-        value={draft}
-        onChange={onChange}
-        onBlur={commit}
-        onKeyDown={onKeyDown}
-        spellCheck={false}
-        aria-label="Edit display math"
-      />
+      <div className="mv-math-editing">
+        {equationSuggestion(draft) ? <div className="mv-math-suggestion">Tab ↹ {equationSuggestion(draft)?.[0]}</div> : null}
+        <textarea ref={areaRef} className="mv-math-input block" rows={2} value={draft} onChange={onChange} onBlur={() => setTimeout(() => commit(), 0)} onKeyDown={onKeyDown} spellCheck={false} aria-label="Edit display math" />
+      </div>
     );
   }
 
   let html = '';
   let error: string | null = null;
   // Notes sometimes write `\=` for equals; KaTeX treats `\=` differently.
-  const latex = (value || '\\;').replace(/\\=/g, '=');
+  const latex = formatEquationLatex((value || '\\;').replace(/\\=/g, '='));
   try {
     html = katex.renderToString(latex, {
       throwOnError: false,

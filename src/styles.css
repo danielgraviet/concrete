@@ -2211,7 +2211,9 @@ div[class*="selectContainer"] [class*="selectItem"][data-state="checked"]{
 /* KaTeX math in the editor */
 .mv-math{display:inline;line-height:inherit}
 .mv-math.mv-math-block{display:block;margin:18px 0;text-align:center}
-.mv-math-render{cursor:text;border-radius:4px;user-select:none;-webkit-user-select:none}
+.mv-math-render{cursor:text;border-radius:4px;user-select:none;-webkit-user-select:none;line-height:1.8}
+.mv-math-render.block{display:block;margin:14px 0 18px;padding:10px 14px;overflow-x:auto;text-align:center}
+.mv-math-render.inline{display:inline-block;margin:0 .18em;padding:.08em .12em;vertical-align:middle}
 .mv-math-render.inline{display:inline-block;padding:0 2px;vertical-align:middle}
 .mv-math-render.block{display:block;padding:10px 12px;overflow-x:auto}
 .mv-math-render:hover{background:color-mix(in srgb, var(--mv-accent, #a3a3a3) 12%, transparent)}
@@ -2219,6 +2221,8 @@ div[class*="selectContainer"] [class*="selectItem"][data-state="checked"]{
 .mv-math-render.block .katex{font-size:1.2em}
 .mv-math-error{color:#e08a8a;font-family:ui-monospace,Menlo,monospace;font-size:12px}
 .mv-math-input{font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--mv-text,#eee);background:var(--mv-surface-2,#2a2a2a);border:1px solid var(--mv-accent,#a3a3a3);border-radius:5px;outline:0}
+.mv-math-editing{display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+.mv-math-suggestion{color:var(--mv-muted,#858585);font:11px ui-monospace,SFMono-Regular,Menlo,monospace;padding:3px 6px}
 .mv-math-input.inline{min-width:4ch;max-width:min(420px,80vw);padding:2px 6px}
 .mv-math-input.block{display:block;width:100%;max-width:760px;margin:0 auto;padding:10px 12px;resize:vertical}
 .theme-pack-martian .mv-math-render .katex{color:#0c0c0c}

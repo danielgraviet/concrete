@@ -3,7 +3,7 @@
   "version": "0.1.1",
   "description": "Concrete — a local Markdown vault for knowledge you can build on",
   "author": "Daniel Graviet",
-  "private": true,
+  "license": "MIT",
   "type": "module",
   "main": "electron.cjs",
   "scripts": {
