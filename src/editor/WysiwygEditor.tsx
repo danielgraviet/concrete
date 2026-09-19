@@ -121,6 +121,33 @@ export function createDefaultWysiwygPlugins(): NonNullable<MDXEditorProps['plugi
   ];
 }
 
+/** Leaner plugin set for very large notes (skips math/slash/runnable extras). */
+export function createLiteWysiwygPlugins(): NonNullable<MDXEditorProps['plugins']> {
+  return [
+    headingsPlugin(),
+    listsPlugin(),
+    quotePlugin(),
+    thematicBreakPlugin(),
+    linkPlugin(),
+    codeBlockPlugin({ defaultCodeBlockLanguage: 'text' }),
+    codeMirrorPlugin({
+      codeMirrorExtensions: [syntaxHighlighting(classHighlighter)],
+      codeBlockLanguages: {
+        python: 'Python',
+        typescript: 'TypeScript',
+        text: 'Raw Text',
+        '': 'Raw Text',
+      },
+    }),
+    markdownShortcutPlugin(),
+    quoteExitPlugin(),
+    inlineCodeExitPlugin(),
+  ];
+}
+
+/** Notes larger than this use the lite plugin set. */
+export const LARGE_NOTE_CHARS = 350_000;
+
 /**
  * Thin MDXEditor wrapper.
  * MDXEditor only applies the `markdown` prop on mount, so we remount (and
@@ -175,11 +202,19 @@ export const WysiwygEditor = forwardRef<WysiwygEditorHandle, WysiwygEditorProps>
       editorRef.current?.setMarkdown(normalizeMathMarkdown(markdownRef.current));
     }, [contentRevision, documentId]);
 
+    const useLitePlugins = markdown.length >= LARGE_NOTE_CHARS;
     const plugins = useMemo(() => {
       if (pluginsOverride) return pluginsOverride;
-      const base = createDefaultWysiwygPlugins();
+      if (useLitePlugins) {
+        console.info(
+          `[perf] large note (${markdown.length} chars) — using lite editor plugins`,
+        );
+      }
+      const base = useLitePlugins
+        ? createLiteWysiwygPlugins()
+        : createDefaultWysiwygPlugins();
       return extraPlugins ? [...base, ...extraPlugins] : base;
-    }, [pluginsOverride, extraPlugins]);
+    }, [pluginsOverride, extraPlugins, useLitePlugins, markdown.length]);
 
     const initialMarkdown = useMemo(
       () => normalizeMathMarkdown(markdown),

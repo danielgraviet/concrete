@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu, clipboard, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, clipboard, shell, session } = require('electron');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
@@ -7,9 +7,24 @@ const chokidar = require('chokidar');
 const sandbox = require('./sandbox/index.cjs');
 const { createTrajectory } = require('./agentTrajectory.cjs');
 
+/** Cap Chromium disk cache (~50MB) before app ready. */
+app.commandLine.appendSwitch('disk-cache-size', String(50 * 1024 * 1024));
+
+const PERF_BOOT_MS = Date.now();
+function perfMark(label) {
+  console.log(`[perf] ${label} +${Date.now() - PERF_BOOT_MS}ms`);
+}
+
 let mainWindow = null;
 let watcher = null;
 let watchedRoot = null;
+let concreteBridgeInfo = null;
+let concreteToolContext = {
+  vaultRoot: null,
+  notePath: null,
+  openRouterModel: null,
+};
+let dotEnvLoaded = false;
 
 const AI_SETTINGS_PATH = path.join(app.getPath('userData'), 'ai-settings.json');
 const APP_STATE_PATH = path.join(app.getPath('userData'), 'app-state.json');
@@ -55,15 +70,6 @@ function configuredApiKey() {
   } catch {}
   return process.env.OPENROUTER_API_KEY?.trim() ?? '';
 }
-
-/** @type {{ url: string, token: string } | null} */
-let concreteBridgeInfo = null;
-/** Latest vault/note context for MCP tool handlers. */
-let concreteToolContext = {
-  vaultRoot: null,
-  notePath: null,
-  openRouterModel: null,
-};
 
 /** Native Edit roles so Cmd+C / Cmd+V work in the renderer. */
 function setupAppMenu() {
@@ -116,6 +122,8 @@ function setupAppMenu() {
  *  in the parent terminal cannot override a fresh `.env`.
  */
 function loadDotEnv() {
+  if (dotEnvLoaded) return;
+  dotEnvLoaded = true;
   try {
     const envPath = path.join(__dirname, '.env');
     if (!fsSync.existsSync(envPath)) {
@@ -151,8 +159,6 @@ function loadDotEnv() {
     console.error('Failed to load .env', error);
   }
 }
-
-loadDotEnv();
 
 ipcMain.handle('clipboard:writeText', (_event, text) => {
   if (typeof text !== 'string' || !text) return false;
@@ -273,17 +279,24 @@ function buildConcreteMcpConfig() {
 }
 
 function createWindow() {
+  perfMark('window-create-start');
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
     minWidth: 960,
     minHeight: 640,
+    show: false,
     backgroundColor: '#191919',
     title: 'Concrete',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true
     }
+  });
+
+  mainWindow.once('ready-to-show', () => {
+    perfMark('window-ready-to-show');
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
   });
 
   if (app.isPackaged) {
@@ -447,9 +460,13 @@ async function startWatch(root) {
   watcher = chokidar.watch('.', {
     cwd: resolvedRoot,
     ignoreInitial: true,
-    ignored: /(^|[/\\])(\.git|node_modules|\.obsidian|\.trash|\.vault|agent-trajectories|dist|release|build)([/\\]|$)/,
+    usePolling: false,
+    ignored: [
+      /(^|[/\\])(\.git|node_modules|\.obsidian|\.trash|\.vault|agent-trajectories|dist|release|build|\.cache|\.turbo|\.next|coverage)([/\\]|$)/,
+      /\.(?:DS_Store|log|tmp|swp|map)$/i,
+    ],
     awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 },
-    depth: 12,
+    depth: 10,
     ignorePermissionErrors: true,
   });
 
@@ -459,6 +476,15 @@ async function startWatch(root) {
     if (code === 'EMFILE' || code === 'ENOSPC') {
       void stopWatch();
       void saveVaultPath(null);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('vault:watch', {
+          type: 'error',
+          path: '',
+          root: resolvedRoot,
+          code,
+          message: error?.message ?? String(error),
+        });
+      }
     }
   });
 
@@ -664,6 +690,7 @@ ipcMain.handle('vault:revealInFolder', async (_, root, name) => {
 });
 
 ipcMain.handle('ai:status', async () => {
+  loadDotEnv();
   const key = configuredApiKey();
   return {
     configured: key.length > 0,
@@ -675,6 +702,7 @@ ipcMain.handle('ai:status', async () => {
 });
 
 ipcMain.handle('ai:setApiKey', async (_, apiKey) => {
+  loadDotEnv();
   if (typeof apiKey !== 'string') throw new Error('API key must be text');
   const value = apiKey.trim();
   await fs.mkdir(path.dirname(AI_SETTINGS_PATH), { recursive: true });
@@ -762,6 +790,7 @@ async function loadAgentModule(providerId) {
 }
 
 ipcMain.handle('ai:agentStatus', async (_event, payload) => {
+  loadDotEnv();
   const providerId = resolveAgentProviderId(payload);
   lastAgentProviderId = providerId;
   try {
@@ -779,6 +808,7 @@ ipcMain.handle('ai:agentStatus', async (_event, payload) => {
 });
 
 ipcMain.handle('ai:agentRun', async (event, payload) => {
+  loadDotEnv();
   await ensureConcreteBridge();
   const providerId = resolveAgentProviderId(payload);
   lastAgentProviderId = providerId;
@@ -832,6 +862,7 @@ ipcMain.handle('ai:agentCancel', async () => {
 
 /** Minimal smoke test: cheap model, one short completion. */
 ipcMain.handle('ai:ping', async () => {
+  loadDotEnv();
   const apiKey = configuredApiKey();
   if (!apiKey) {
     throw new Error('OPENROUTER_API_KEY missing after .env load');
@@ -888,6 +919,7 @@ ipcMain.handle('ai:ping', async () => {
 });
 
 ipcMain.handle('ai:chatCompletions', async (_, payload = {}) => {
+  loadDotEnv();
   const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const startedAt = Date.now();
   const operation = typeof payload.operation === 'string' ? payload.operation : 'chat_completion';
@@ -1109,14 +1141,15 @@ ipcMain.handle('vault:importObsidian', async (_, root) => {
 });
 
 app.whenReady().then(async () => {
+  perfMark('app-ready');
   setupAppMenu();
-  await ensureDefaultVaultDirectory();
+  // Window first — vault mkdir and bridge wait until needed.
   createWindow();
-  try {
-    await ensureConcreteBridge();
-  } catch (error) {
-    console.error('[concrete] failed to start tool bridge', error);
-  }
+  setImmediate(() => {
+    void ensureDefaultVaultDirectory().catch((error) => {
+      console.error('[vault] ensure default failed', error);
+    });
+  });
 });
 app.on('window-all-closed', () => {
   void stopWatch();
@@ -1124,7 +1157,14 @@ app.on('window-all-closed', () => {
 });
 app.on('before-quit', () => {
   void stopWatch();
+  // Shrink App Support growth: drop Chromium disk cache on quit.
+  void session.defaultSession.clearCache().catch(() => {});
 });
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
+});
+
+ipcMain.handle('perf:mark', (_event, label) => {
+  if (typeof label === 'string' && label.trim()) perfMark(label.trim().slice(0, 80));
+  return true;
 });

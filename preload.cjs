@@ -88,3 +88,7 @@ contextBridge.exposeInMainWorld('sandbox', {
 contextBridge.exposeInMainWorld('systemClipboard', {
   writeText: (text) => ipcRenderer.invoke('clipboard:writeText', text),
 });
+
+contextBridge.exposeInMainWorld('perf', {
+  mark: (label) => ipcRenderer.invoke('perf:mark', label),
+});

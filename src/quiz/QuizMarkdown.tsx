@@ -1,9 +1,11 @@
 import type { ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { normalizeMathMarkdown } from '../editor/math';
+import { ensureKatexCss } from '../editor/math/ensureKatexCss';
 import { CodeSnippet } from './CodeSnippet';
 
 type HastText = { type: string; value?: string; children?: HastText[] };
@@ -44,6 +46,21 @@ const inlineComponents: Components = {
  * sits inside another element.
  */
 export function QuizMarkdown({ children, inline = false }: { children: string; inline?: boolean }): ReactNode {
+  const [cssReady, setCssReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void ensureKatexCss().then(() => {
+      if (!cancelled) setCssReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!cssReady) {
+    return <span className="quiz-md-fallback">{children}</span>;
+  }
+
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMath]}

@@ -26,3 +26,6 @@ release/
 *.dmg
 *.zip
 *.app
+
+# Generated perf artifacts
+docs/bundle-stats.html

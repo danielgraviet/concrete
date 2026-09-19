@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { BotMessageSquare } from 'lucide-react';
+import { ChatBubbleIcon } from '@radix-ui/react-icons';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
@@ -376,7 +376,7 @@ export function AiOrb({
         aria-expanded={open}
         onClick={() => onOpenChange(!open)}
       >
-        <BotMessageSquare size={22} aria-hidden />
+        <ChatBubbleIcon width={22} height={22} aria-hidden />
       </button>
     </div>
   );

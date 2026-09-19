@@ -51,7 +51,7 @@ export { ProgressPanel } from './ProgressPanel';
 export { QuizTakeView } from './QuizTakeView';
 export { QuizEditView } from './QuizEditView';
 export { QuizGradeView } from './QuizGradeView';
-export { GenerateQuizDialog } from './GenerateQuizDialog';
+// GenerateQuizDialog is lazy-loaded from App.
 export type { GenerateQuizDialogResult } from './GenerateQuizDialog';
 export { verifyCodeQuestions } from './verifyCode';
 export type { VerifyCodeSummary } from './verifyCode';

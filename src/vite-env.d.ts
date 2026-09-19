@@ -145,6 +145,10 @@ interface Window {
   systemClipboard?: {
     writeText: (text: string) => Promise<boolean>;
   };
+  /** Startup / interaction marks forwarded to Electron main logs. */
+  perf?: {
+    mark: (label: string) => Promise<boolean>;
+  };
 }
 
 interface AiAgentStatus {

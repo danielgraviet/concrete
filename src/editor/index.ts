@@ -2,6 +2,8 @@ export type { EditorCommandName, EditorCommand, EditorCommandHandler } from './t
 export {
   WysiwygEditor,
   createDefaultWysiwygPlugins,
+  createLiteWysiwygPlugins,
+  LARGE_NOTE_CHARS,
 } from './WysiwygEditor';
 export type { WysiwygEditorProps, WysiwygEditorHandle } from './WysiwygEditor';
 export { useEditorController } from './useEditorController';

@@ -61,6 +61,8 @@ function resolveTarget(language, code) {
 const MAX_OUTPUT_BYTES = 64 * 1024;
 const PULL_TIMEOUT_MS = 10 * 60 * 1000;
 const BUILD_TIMEOUT_MS = 20 * 60 * 1000;
+const DOCKER_START_TIMEOUT_MS = 45 * 1000;
+const DOCKER_START_POLL_MS = 1000;
 
 /** GUI apps on macOS get a minimal PATH, so probe the usual install spots. */
 function findDocker() {
@@ -93,6 +95,41 @@ function exec(file, args, timeout) {
       resolve({ ok: !error, stdout: String(stdout ?? ''), stderr: String(stderr ?? ''), error });
     });
   });
+}
+
+function dockerDesktopInstalled() {
+  return process.platform === 'darwin' && fsSync.existsSync('/Applications/Docker.app');
+}
+
+function launchDockerDesktop() {
+  if (!dockerDesktopInstalled()) return false;
+  try {
+    const child = spawn('/usr/bin/open', ['-a', 'Docker'], { detached: true, stdio: 'ignore' });
+    child.unref();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function wait(delayMs) {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+/** Start Docker Desktop when it is installed, then wait for its daemon. */
+async function ensureDockerReady(docker, onProgress) {
+  const initial = await exec(docker, ['info', '--format', '{{.ServerVersion}}'], 6000);
+  if (initial.ok) return { ready: true, version: initial.stdout.trim(), started: false };
+  if (!launchDockerDesktop()) return { ready: false, started: false };
+
+  onProgress?.('Starting Docker Desktop…');
+  const deadline = Date.now() + DOCKER_START_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    await wait(DOCKER_START_POLL_MS);
+    const info = await exec(docker, ['info', '--format', '{{.ServerVersion}}'], 6000);
+    if (info.ok) return { ready: true, version: info.stdout.trim(), started: true };
+  }
+  return { ready: false, started: true };
 }
 
 /** `docker build -t tag -` with the Dockerfile on stdin (no build context needed). */
@@ -175,11 +212,13 @@ function create() {
       const languages = LANGUAGE_NAMES;
       const docker = findDocker();
       if (!docker) return { available: false, detail: 'Docker is not installed.', languages, images: [] };
-      const info = await exec(docker, ['info', '--format', '{{.ServerVersion}}'], 6000);
-      if (!info.ok) {
+      const ready = await ensureDockerReady(docker);
+      if (!ready.ready) {
         return {
           available: false,
-          detail: 'Docker is installed but not running. Start Docker Desktop.',
+          detail: dockerDesktopInstalled()
+            ? 'Docker Desktop could not be started. Open it and try again.'
+            : 'Docker is installed but its runtime is not running.',
           languages,
           images: [],
         };
@@ -194,7 +233,7 @@ function create() {
           sizeHint: tier.sizeHint,
         })),
       );
-      return { available: true, detail: `Docker ${info.stdout.trim()}`, languages, images };
+      return { available: true, detail: `Docker ${ready.version}`, languages, images };
     },
 
     /** Build/pull a tier's image ahead of time (e.g. from Settings). */
@@ -204,6 +243,8 @@ function create() {
       const docker = findDocker();
       if (!docker) return fail('Docker is not installed.');
       try {
+        const ready = await ensureDockerReady(docker, onProgress);
+        if (!ready.ready) return fail('Docker is installed but its runtime could not be started.');
         await ensureImage(docker, tier, onProgress);
         return { ok: true };
       } catch (error) {
@@ -218,6 +259,8 @@ function create() {
       const docker = findDocker();
       if (!docker) return fail('Docker is not installed.');
       try {
+        const ready = await ensureDockerReady(docker, onProgress);
+        if (!ready.ready) return fail('Docker is installed but its runtime could not be started.');
         if (!allowBuild && tier.dockerfile && !(await imagePresent(docker, tier))) {
           return fail(`The ${tier.id} image hasn't been set up yet.`);
         }
