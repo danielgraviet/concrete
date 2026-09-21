@@ -62,6 +62,12 @@ async function saveVaultPath(root) {
 }
 
 function configuredApiKey() {
+  // A project .env key is the operator-controlled source of truth.  The
+  // persisted key is only a fallback for users who configure the key through
+  // Settings (and have no .env key).  Previously the persisted value won,
+  // which made rotating OPENROUTER_API_KEY in .env appear to have no effect.
+  const envKey = process.env.OPENROUTER_API_KEY?.trim() ?? '';
+  if (envKey) return envKey;
   try {
     const saved = JSON.parse(fsSync.readFileSync(AI_SETTINGS_PATH, 'utf8'));
     if (typeof saved.openRouterApiKey === 'string' && saved.openRouterApiKey.trim()) {
@@ -705,6 +711,10 @@ ipcMain.handle('ai:setApiKey', async (_, apiKey) => {
   loadDotEnv();
   if (typeof apiKey !== 'string') throw new Error('API key must be text');
   const value = apiKey.trim();
+  // Make a key entered in Settings effective for the current Electron
+  // session. On a later launch, a project .env key (if present) takes
+  // precedence over this persisted fallback.
+  process.env.OPENROUTER_API_KEY = value;
   await fs.mkdir(path.dirname(AI_SETTINGS_PATH), { recursive: true });
   await fs.writeFile(AI_SETTINGS_PATH, JSON.stringify({ openRouterApiKey: value }), { mode: 0o600 });
   return {

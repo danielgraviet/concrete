@@ -3,6 +3,7 @@ import {
   applyWatchToFileList,
   applyWatchToFolderList,
   ensureFolderAncestors,
+  isHiddenVaultFile,
   parentDir,
 } from './fileTree';
 import { VaultService } from './VaultService';
@@ -13,8 +14,9 @@ import { filterWatchByRoot, subscribeVaultWatch } from './watch';
  * Thin vault binding: open/list CRUD helpers + live file/folder lists.
  */
 export function useVault(initialFiles: string[] = [], initialFolders: string[] = []) {
+  const visibleFiles = (paths: string[]) => paths.filter((path) => !isHiddenVaultFile(path));
   const [root, setRoot] = useState<string | null>(null);
-  const [files, setFiles] = useState<string[]>(initialFiles);
+  const [files, setFiles] = useState<string[]>(() => visibleFiles(initialFiles));
   const [pdfFiles, setPdfFiles] = useState<string[]>([]);
   const [folders, setFolders] = useState<string[]>(initialFolders);
   const rootRef = useRef(root);
@@ -28,7 +30,10 @@ export function useVault(initialFiles: string[] = [], initialFolders: string[] =
         if (isPdf) {
           setPdfFiles((current) => applyWatchToFileList(current, event));
         } else {
-          setFiles((current) => applyWatchToFileList(current, event));
+          setFiles((current) => {
+            const next = applyWatchToFileList(current, event);
+            return visibleFiles(next);
+          });
         }
       }
       if (event.type === 'addDir' || event.type === 'unlinkDir') {
@@ -42,7 +47,7 @@ export function useVault(initialFiles: string[] = [], initialFolders: string[] =
     const result = await VaultService.open();
     if (!result) return null;
     setRoot(result.root);
-    setFiles(result.files);
+    setFiles(visibleFiles(result.files));
     setPdfFiles(result.pdfFiles ?? []);
     setFolders(result.folders ?? []);
     return result;
@@ -55,7 +60,7 @@ export function useVault(initialFiles: string[] = [], initialFolders: string[] =
     }
     const result = await VaultService.ensureDefault();
     setRoot(result.root);
-    setFiles(result.files);
+    setFiles(visibleFiles(result.files));
     setPdfFiles(result.pdfFiles ?? []);
     setFolders(result.folders ?? []);
     return result;
@@ -66,7 +71,7 @@ export function useVault(initialFiles: string[] = [], initialFolders: string[] =
     const result = await window.vault.restore();
     if (!result) return null;
     setRoot(result.root);
-    setFiles(result.files);
+    setFiles(visibleFiles(result.files));
     setPdfFiles(result.pdfFiles ?? []);
     setFolders(result.folders ?? []);
     return result;
@@ -76,7 +81,7 @@ export function useVault(initialFiles: string[] = [], initialFolders: string[] =
     const currentRoot = rootRef.current;
     if (!currentRoot) return { files: [], pdfFiles: [], folders: [] };
     const next = await VaultService.list(currentRoot);
-    setFiles(next.files);
+    setFiles(visibleFiles(next.files));
     setPdfFiles(next.pdfFiles ?? []);
     setFolders(next.folders);
     return next;

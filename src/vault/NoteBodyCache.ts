@@ -1,13 +1,23 @@
 /**
- * Bounded in-memory note body cache (open tabs + recent reads).
- * Prevents holding an entire vault's markdown in React state.
+ * Bounded in-memory note body cache (open note + recent reads).
+ * Pinned paths are never evicted — critical so the open note survives
+ * bulk warm-index updates that exceed maxEntries.
  */
 export class NoteBodyCache {
   #map = new Map<string, string>();
+  #pinned = new Set<string>();
   #maxEntries: number;
 
   constructor(maxEntries = 24) {
     this.#maxEntries = Math.max(4, maxEntries);
+  }
+
+  pin(path: string): void {
+    if (path) this.#pinned.add(path);
+  }
+
+  clearPins(): void {
+    this.#pinned.clear();
   }
 
   get(path: string): string | undefined {
@@ -27,10 +37,21 @@ export class NoteBodyCache {
     if (!path) return;
     if (this.#map.has(path)) this.#map.delete(path);
     this.#map.set(path, body);
+    this.#evict();
+  }
+
+  #evict(): void {
     while (this.#map.size > this.#maxEntries) {
-      const oldest = this.#map.keys().next().value as string | undefined;
-      if (!oldest) break;
-      this.#map.delete(oldest);
+      let victim: string | undefined;
+      for (const key of this.#map.keys()) {
+        if (!this.#pinned.has(key)) {
+          victim = key;
+          break;
+        }
+      }
+      // Everything left is pinned — stop rather than dropping the open note.
+      if (!victim) break;
+      this.#map.delete(victim);
     }
   }
 

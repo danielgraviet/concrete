@@ -22,6 +22,12 @@ export function isPdfFileName(name: string): boolean {
   return toPosixPath(name).toLowerCase().endsWith('.pdf');
 }
 
+/** Agent instruction files stay in the vault for automation but are not notes. */
+export function isHiddenVaultFile(name: string): boolean {
+  const base = toPosixPath(name).split('/').pop() ?? name;
+  return base.toLowerCase() === 'agents.md';
+}
+
 /** Sort rank: folders first, then notes, quizzes last. */
 function treeSortRank(node: VaultTreeNode): number {
   if (node.type === 'folder') return 0;

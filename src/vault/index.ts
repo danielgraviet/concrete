@@ -15,6 +15,7 @@ export {
   ensureFolderAncestors,
   filesInFolder,
   isPdfFileName,
+  isHiddenVaultFile,
   isQuizFileName,
   joinNotePath,
   joinPdfPath,
