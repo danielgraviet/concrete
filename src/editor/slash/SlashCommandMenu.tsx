@@ -203,6 +203,9 @@ function applySlashCommand(
       // Three rows includes the Markdown header row, leaving two body rows.
       helpers.insertTable({ rows: 3, columns: 3 });
       break;
+    case 'columns':
+      helpers.insertMarkdown(':::columns\n:::column\n### Pros\n- \n:::\n:::column\n### Cons\n- \n:::\n:::');
+      break;
     case 'divider':
       helpers.insertThematicBreak();
       break;

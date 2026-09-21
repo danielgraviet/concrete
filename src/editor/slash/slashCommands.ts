@@ -12,6 +12,7 @@ export type SlashCommandId =
   | 'mathBlock'
   | 'image'
   | 'table'
+  | 'columns'
   | 'divider';
 
 export type SlashCommand = {
@@ -128,6 +129,14 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     keywords: ['grid', 'rows', 'columns'],
     symbol: '▦',
     hint: 'Insert a 3-column table',
+  },
+  {
+    id: 'columns',
+    title: 'Two-column lists',
+    aliases: ['columns', 'twocolumn', 'proscons'],
+    keywords: ['pros', 'cons', 'dos', 'donts', 'paired'],
+    symbol: '↔',
+    hint: 'Place two lists side by side',
   },
   {
     id: 'divider',

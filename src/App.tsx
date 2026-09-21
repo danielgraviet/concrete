@@ -26,6 +26,7 @@ import {
   ensureFolderAncestors,
   FileTreeView,
   isPdfFileName,
+  isHiddenVaultFile,
   joinFolderPath,
   joinNotePath,
   joinPdfPath,
@@ -167,6 +168,8 @@ export default function App() {
   const [selected, setSelected] = useState('Welcome.md');
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
+  // Editor text is asynchronous; track its note before using it for caching.
+  const editorPathRef = useRef(selected);
   // Only remember the open note once the restored/initial selection is settled,
   // so the placeholder default never overwrites the saved one.
   const persistSelectionRef = useRef(false);
@@ -194,12 +197,16 @@ export default function App() {
       const next = typeof updater === 'function' ? updater(prev) : updater;
       const cache = noteCacheRef.current;
       cache.clear();
+      cache.clearPins();
       const pin = selectedRef.current;
-      if (pin && next[pin] !== undefined) cache.set(pin, next[pin]);
+      if (pin) cache.pin(pin);
+      // Insert non-pinned first, then pin last so the open note is MRU and
+      // never lost when next has more keys than maxEntries.
       for (const [key, value] of Object.entries(next)) {
         if (key === pin) continue;
         cache.set(key, value);
       }
+      if (pin && next[pin] !== undefined) cache.set(pin, next[pin]);
       return cache.toRecord();
     });
   };
@@ -389,9 +396,10 @@ export default function App() {
         setContents({});
         setActiveFolder('');
         const lastNote = readLastNote();
+        const visibleFiles = result.files.filter((file) => !isHiddenVaultFile(file));
         const preferred =
-          (lastNote && result.files.includes(lastNote) ? lastNote : '') ||
-          (result.files.find((file) => file === 'Welcome.md') ?? result.files[0] ?? '');
+          (lastNote && visibleFiles.includes(lastNote) ? lastNote : '') ||
+          (visibleFiles.find((file) => file === 'Welcome.md') ?? visibleFiles[0] ?? '');
         setSelected(preferred);
         persistSelectionRef.current = true;
         void window.perf?.mark('renderer-interactive');
@@ -446,13 +454,16 @@ export default function App() {
           const text = await VaultService.read(root, selected);
           if (cancelled) return;
           setContents((prev) => ({ ...prev, [selected]: text }));
+          editorPathRef.current = selected;
           controller.loadContent(text);
+          setEditorRevision((n) => n + 1);
           return;
         } catch {
           /* fall through to cache */
         }
       }
       const fallback = contents[selected] ?? demoContent[selected] ?? '';
+      editorPathRef.current = selected;
       controller.loadContent(fallback);
     })();
     return () => {
@@ -510,7 +521,11 @@ export default function App() {
       setContents((prev) => {
         const next = { ...prev };
         for (const [path, text] of entries) {
-          if (path === selectedRef.current && contentRef.current) {
+          if (
+            path === selectedRef.current &&
+            editorPathRef.current === path &&
+            contentRef.current
+          ) {
             next[path] = contentRef.current;
           } else {
             next[path] = text;
@@ -548,7 +563,7 @@ export default function App() {
     if (!result) return;
     setContents({});
     setActiveFolder('');
-    const first = result.files[0] ?? '';
+    const first = result.files.find((file) => !isHiddenVaultFile(file)) ?? '';
     setSelected(first);
     setOnboardingStep(1);
   };
@@ -561,7 +576,7 @@ export default function App() {
       if (!result) return;
       setContents({});
       setActiveFolder('');
-      setSelected(result.files[0] ?? '');
+      setSelected(result.files.find((file) => !isHiddenVaultFile(file)) ?? '');
       setOnboardingStep(1);
     } catch (error) {
       window.alert(error instanceof Error ? error.message : 'Could not import the Obsidian vault.');
@@ -583,6 +598,7 @@ export default function App() {
     // inherit a note's parent (that forced "New folder" into ML etc.).
     const cached = contents[name] ?? demoContent[name];
     if (cached !== undefined) {
+      editorPathRef.current = name;
       controller.loadContent(cached);
     }
   };
