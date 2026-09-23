@@ -75,11 +75,37 @@ export function wrapBareMathLines(markdown: string): string {
 }
 
 /**
+ * Convert LaTeX display math delimiters `\[...\]` to `$$...$$`.
+ * Handles multi-line expressions and preserves formatting.
+ */
+export function normalizeLatexDisplayMath(markdown: string): string {
+  return markdown.replace(/\\\[([\s\S]*?)\\\]/g, (match, body) => {
+    const trimmed = body.trim();
+    if (trimmed.includes('\n')) {
+      return `$$\n${trimmed}\n$$`;
+    }
+    return `$$${trimmed}$$`;
+  });
+}
+
+/**
+ * Convert LaTeX inline math delimiters `\(...\)` to `$...$`.
+ * Only converts single-line expressions to avoid breaking paragraph flow.
+ */
+export function normalizeLatexInlineMath(markdown: string): string {
+  return markdown.replace(/\\\(([^\n]*?)\\\)/g, (match, body) => {
+    return `$${body.trim()}$`;
+  });
+}
+
+/**
  * Full import-time math normalization for the editor.
- * Order: wrap bare lines → expand one-line `$$` → fix `\=`.
+ * Order: LaTeX delimiters → wrap bare lines → expand one-line `$$` → fix `\=`.
  */
 export function normalizeMathMarkdown(markdown: string): string {
   return sanitizeLatexEquals(
-    normalizeDisplayMath(wrapBareMathLines(markdown)),
+    normalizeDisplayMath(
+      wrapBareMathLines(normalizeLatexInlineMath(normalizeLatexDisplayMath(markdown)))
+    ),
   );
 }
