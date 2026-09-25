@@ -2,6 +2,7 @@ import type {
   AiProvider,
   CompleteRequest,
   GenerateQuizRequest,
+  GenerateQuizFollowUpRequest,
   GradeQuizRequest,
   GradeReport,
   QuizDocument,
@@ -68,5 +69,9 @@ export class MockAiProvider implements AiProvider {
 
   async gradeQuiz(request: GradeQuizRequest): Promise<GradeReport> {
     return stubGradeQuiz(request);
+  }
+
+  async generateQuizFollowUp(_request: GenerateQuizFollowUpRequest): Promise<string> {
+    return 'What reasoning led you to that answer?';
   }
 }

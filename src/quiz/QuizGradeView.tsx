@@ -1,19 +1,22 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { runSandboxCode, type SandboxRunResult } from '../sandbox';
 import { settingsStore } from '../settings';
+import type { AiClient } from '../ai/AiClient';
 import { CodeSnippet } from './CodeSnippet';
+import { QuizFollowUp } from './QuizFollowUp';
 import { QuizMarkdown } from './QuizMarkdown';
-import type { CodeQuestion, GradeReport, QuizQuestion } from './types';
+import type { CodeQuestion, GradeReport, QuizDocument, QuizQuestion, QuizResponse } from './types';
 
 type Props = {
   report: GradeReport;
-  /** Quiz questions, so code answers can be re-run for the student. */
-  questions?: QuizQuestion[];
+  quiz: QuizDocument;
+  responses: Record<string, QuizResponse>;
+  client: AiClient;
   onRetake: () => void;
   onEdit?: () => void;
 };
 
-export function QuizGradeView({ report, questions = [], onRetake, onEdit }: Props) {
+export function QuizGradeView({ report, quiz, responses, client, onRetake, onEdit }: Props) {
   return (
     <div className="quiz-grade">
       <div className="quiz-grade-summary">
@@ -70,8 +73,24 @@ export function QuizGradeView({ report, questions = [], onRetake, onEdit }: Prop
               </div>
             ) : null}
             {(() => {
-              const question = questions.find((q) => q.id === item.questionId);
-              return question?.type === 'code' ? <CodeReview question={question} /> : null;
+              const question = quiz.questions.find((q) => q.id === item.questionId);
+              const response = responses[item.questionId];
+              return (
+                <Fragment key={item.questionId}>
+                  {question?.type === 'code' ? <CodeReview question={question} /> : null}
+                  {item.score < item.maxScore && response && (response.type === 'open' || response.type === 'code') && response.text.trim() && (question?.type === 'open' || (question?.type === 'code' && question.kind !== 'predict-output')) ? (
+                    <QuizFollowUp
+                      client={client}
+                      quiz={quiz}
+                      question={question}
+                      response={response}
+                      responses={Object.values(responses)}
+                      feedback={item.feedback}
+                      missing={item.missing ?? []}
+                    />
+                  ) : null}
+                </Fragment>
+              );
             })()}
           </li>
         ))}

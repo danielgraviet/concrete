@@ -2,6 +2,7 @@ import type {
   AiProvider,
   CompleteRequest,
   GenerateQuizRequest,
+  GenerateQuizFollowUpRequest,
   GradeQuizRequest,
   GradeReport,
   QuizDocument,
@@ -47,6 +48,13 @@ export class AiClient {
       return this.provider.generateQuiz(request);
     }
     return Promise.resolve(stubGenerateQuiz(request));
+  }
+
+  generateQuizFollowUp(request: GenerateQuizFollowUpRequest): Promise<string> {
+    if (this.provider.generateQuizFollowUp) {
+      return this.provider.generateQuizFollowUp(request);
+    }
+    return Promise.resolve('What reasoning led you to that answer?');
   }
 
   gradeQuiz(request: GradeQuizRequest): Promise<GradeReport> {

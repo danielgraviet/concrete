@@ -159,8 +159,13 @@ export type GradeQuizRequest = {
   quiz: QuizDocument;
   responses: QuizResponse[];
   rubric?: string;
-  /** First pass: let the judge ask follow-up probes for vague answers. */
-  allowProbes?: boolean;
-  /** Second pass: answered probes. Only these questions are re-graded, together with their follow-up. */
+  /** Optional practice follow-up answers, scored with the original response. */
   followUps?: Array<{ questionId: string; question: string; answer: string }>;
+};
+
+export type GenerateQuizFollowUpRequest = {
+  question: string;
+  studentAnswer: string;
+  feedback: string;
+  missing: string[];
 };

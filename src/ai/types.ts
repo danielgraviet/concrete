@@ -2,6 +2,7 @@
 
 import type {
   GenerateQuizRequest,
+  GenerateQuizFollowUpRequest,
   GradeQuizRequest,
   GradeReport,
   QuizDocument,
@@ -12,7 +13,7 @@ export type CompleteRequest = {
   context?: string;
 };
 
-export type { GenerateQuizRequest, GradeQuizRequest, GradeReport, QuizDocument };
+export type { GenerateQuizRequest, GenerateQuizFollowUpRequest, GradeQuizRequest, GradeReport, QuizDocument };
 
 export interface AiProvider {
   readonly id: string;
@@ -21,6 +22,8 @@ export interface AiProvider {
   embed?(text: string): Promise<number[]>;
   /** Optional structured quiz generation (stubbed until live keys). */
   generateQuiz?(request: GenerateQuizRequest): Promise<QuizDocument>;
+  /** Generate one optional practice follow-up for a graded open/code answer. */
+  generateQuizFollowUp?(request: GenerateQuizFollowUpRequest): Promise<string>;
   /** Optional rubric grading (stubbed until live keys). */
   gradeQuiz?(request: GradeQuizRequest): Promise<GradeReport>;
 }

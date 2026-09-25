@@ -2,6 +2,7 @@ export type {
   CompleteRequest,
   AiProvider,
   GenerateQuizRequest,
+  GenerateQuizFollowUpRequest,
   GradeQuizRequest,
   GradeReport,
   QuizDocument,
