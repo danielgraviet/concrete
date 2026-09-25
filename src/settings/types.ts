@@ -28,9 +28,12 @@ export type QuizGenerationSettings = {
 export type AppSettings = {
   themePack: ThemePackId;
   autosaveMs: number;
+  /** Tutor/quiz model backend: openrouter | claude | codex | mock | local-echo. */
   providerId: string;
   /** OpenRouter model id when provider is openrouter. */
   openRouterModelId: string;
+  /** Claude Code model alias when provider is claude. */
+  claudeModelId: string;
   /** BYO coding agent: off | codex | claude */
   agentProviderId: AgentProviderId;
   /** Where quiz code runs: a registered sandbox runner id ('docker', 'off', …). */
@@ -53,6 +56,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autosaveMs: 800,
   providerId: 'mock',
   openRouterModelId: 'deepseek/deepseek-v4-flash-0731',
+  claudeModelId: 'sonnet',
   agentProviderId: 'off',
   sandboxProviderId: 'docker',
   quiz: { ...DEFAULT_QUIZ_SETTINGS },

@@ -10,18 +10,24 @@ export type {
 export { MockAiProvider } from './MockAiProvider';
 export { LocalEchoProvider } from './LocalEchoProvider';
 export {
-  OpenRouterProvider,
+  ChatModelProvider,
+  isChatBackendId,
   OPENROUTER_MODEL_DEEPSEEK_V4_FLASH,
   OPENROUTER_MODEL_DEFAULT,
   OPENROUTER_MODEL_LUNA,
   OPENROUTER_MODEL_GPT4O_MINI,
   OPENROUTER_MODEL_OPTIONS,
-  isOpenRouterConfigured,
   isOpenRouterModelId,
   resolveOpenRouterModelId,
   openRouterModelLabel,
-} from './OpenRouterProvider';
-export type { OpenRouterModelOption } from './OpenRouterProvider';
+} from './ChatModelProvider';
+export type { ChatBackendId, OpenRouterModelOption } from './ChatModelProvider';
+export {
+  CLAUDE_MODEL_DEFAULT,
+  CLAUDE_MODEL_OPTIONS,
+  resolveClaudeModelId,
+  claudeModelLabel,
+} from './claudeModels';
 export { AiClient, aiClient } from './AiClient';
 export { stubGenerateQuiz, stubGradeQuiz } from './quizStubs';
 export {

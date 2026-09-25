@@ -61,7 +61,7 @@ import {
   aiClient,
   LocalEchoProvider,
   MockAiProvider,
-  OpenRouterProvider,
+  ChatModelProvider,
   setSlashAiHandler,
   truncateNoteContext,
 } from './ai';
@@ -77,7 +77,7 @@ import { QuizHistoryStore } from './quiz';
 import { settingsStore } from './settings';
 import { getSandboxStatus } from './sandbox';
 import { verifyCodeQuestions } from './quiz/verifyCode';
-import type { AgentProviderId } from './settings';
+import type { AgentProviderId, AppSettings } from './settings';
 import { ProductTour } from './onboarding';
 
 const SettingsPanel = lazy(() =>
@@ -156,12 +156,19 @@ function loadLayout(): LayoutState {
   }
 }
 
-function resolveAiProvider(id: string, openRouterModelId?: string) {
-  if (id === 'openrouter') {
-    return new OpenRouterProvider(openRouterModelId);
+function resolveAiProvider(settings: AppSettings) {
+  switch (settings.providerId) {
+    case 'openrouter':
+      return new ChatModelProvider('openrouter', settings.openRouterModelId);
+    case 'claude':
+      return new ChatModelProvider('claude', settings.claudeModelId);
+    case 'codex':
+      return new ChatModelProvider('codex');
+    case 'local-echo':
+      return new LocalEchoProvider();
+    default:
+      return new MockAiProvider();
   }
-  if (id === 'local-echo') return new LocalEchoProvider();
-  return new MockAiProvider();
 }
 
 export default function App() {
@@ -331,28 +338,22 @@ export default function App() {
   useEffect(() => {
     const settings = settingsStore.hydrate();
     setAgentProviderId(settings.agentProviderId);
-    aiClient.setProvider(
-      resolveAiProvider(settings.providerId, settings.openRouterModelId),
-    );
+    aiClient.setProvider(resolveAiProvider(settings));
     const unsub = settingsStore.subscribe((next) => {
       setAgentProviderId(next.agentProviderId);
-      aiClient.setProvider(
-        resolveAiProvider(next.providerId, next.openRouterModelId),
-      );
+      aiClient.setProvider(resolveAiProvider(next));
     });
 
-    // Prefer OpenRouter automatically when a key is configured and settings still say mock.
+    // Leave the mock for the first live backend that is ready: an OpenRouter
+    // key, then a Claude Code or Codex login or API key.
     void (async () => {
+      if (settingsStore.get().providerId !== 'mock') return;
       try {
-        const status = await window.ai?.status();
-        if (!status?.configured) return;
-        const current = settingsStore.get();
-        if (current.providerId === 'mock') {
-          settingsStore.setProviderId('openrouter');
-        } else {
-          aiClient.setProvider(
-            resolveAiProvider(current.providerId, current.openRouterModelId),
-          );
+        for (const backend of ['openrouter', 'claude', 'codex'] as const) {
+          const status = await window.ai?.status(backend);
+          if (!status?.configured) continue;
+          if (settingsStore.get().providerId === 'mock') settingsStore.setProviderId(backend);
+          return;
         }
       } catch {
         // Browser demo / missing bridge — keep mock.
@@ -798,7 +799,7 @@ export default function App() {
           message:
             error instanceof Error
               ? error.message
-              : 'Quiz generation failed. Check OpenRouter key / network and try again.',
+              : 'Quiz generation failed. Check the Tutor AI settings / network and try again.',
         });
       }
     }
@@ -1747,11 +1748,6 @@ export default function App() {
                   setOnboardingStep(0);
                   setOnboarding(true);
                 }}
-                providerOptions={[
-                  { id: 'openrouter', label: 'OpenRouter' },
-                  { id: 'mock', label: 'Mock AI' },
-                  { id: 'local-echo', label: 'Local Echo' },
-                ]}
                 onClose={() => setOverlay(null)}
               />
             </Suspense>

@@ -40,8 +40,8 @@ contextBridge.exposeInMainWorld('vault', {
 });
 
 contextBridge.exposeInMainWorld('ai', {
-  status: () => ipcRenderer.invoke('ai:status'),
-  setApiKey: (apiKey) => ipcRenderer.invoke('ai:setApiKey', apiKey),
+  status: (backend) => ipcRenderer.invoke('ai:status', backend),
+  setApiKey: (apiKey, backend) => ipcRenderer.invoke('ai:setApiKey', apiKey, backend),
   ping: () => ipcRenderer.invoke('ai:ping'),
   chatCompletions: (payload) => ipcRenderer.invoke('ai:chatCompletions', payload),
   activity: () => ipcRenderer.invoke('ai:activity'),

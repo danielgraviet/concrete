@@ -25,7 +25,11 @@ interface AiChatMessage {
   content: string;
 }
 
+/** Where a chat completion runs. Claude and Codex use the CLI login or an API key. */
+type AiChatBackend = 'openrouter' | 'claude' | 'codex';
+
 interface AiChatCompletionsRequest {
+  backend?: AiChatBackend;
   model?: string;
   messages: AiChatMessage[];
   temperature?: number;
@@ -44,8 +48,10 @@ interface AiChatCompletionsResult {
 
 interface AiStatus {
   configured: boolean;
-  provider: string;
-  model: string;
+  provider: AiChatBackend;
+  model: string | null;
+  /** CLI login / API key status for Claude and Codex. */
+  message?: string;
   keySuffix?: string | null;
   keyLength?: number;
 }
@@ -110,10 +116,10 @@ interface Window {
       error?: string;
     }>;
   };
-  /** OpenRouter bridge — key stays in Electron main. */
+  /** Model bridge — API keys and CLI logins stay in Electron main. */
   ai?: {
-    status: () => Promise<AiStatus>;
-    setApiKey: (apiKey: string) => Promise<AiStatus>;
+    status: (backend?: AiChatBackend) => Promise<AiStatus>;
+    setApiKey: (apiKey: string, backend?: AiChatBackend) => Promise<AiStatus>;
     ping: () => Promise<AiPingResult>;
     chatCompletions: (
       request: AiChatCompletionsRequest,
@@ -167,6 +173,9 @@ interface AiAgentRunRequest {
   notePath?: string | null;
   prompt: string;
   agentProviderId?: 'codex' | 'claude';
+  /** Tutor model the agent's generate_quiz tool should use. */
+  aiBackend?: AiChatBackend;
+  aiModel?: string;
 }
 
 interface AiAgentRunResult {

@@ -22,7 +22,8 @@ let concreteBridgeInfo = null;
 let concreteToolContext = {
   vaultRoot: null,
   notePath: null,
-  openRouterModel: null,
+  aiBackend: 'openrouter',
+  aiModel: null,
 };
 let dotEnvLoaded = false;
 
@@ -61,20 +62,38 @@ async function saveVaultPath(root) {
   await fs.writeFile(APP_STATE_PATH, JSON.stringify({ lastVaultPath: root }), { mode: 0o600 });
 }
 
-function configuredApiKey() {
+/** Chat backends and where each one's optional API key comes from. */
+const CHAT_BACKENDS = {
+  openrouter: { env: 'OPENROUTER_API_KEY', saved: 'openRouterApiKey' },
+  // Claude Code and Codex read these variables themselves; without a key they
+  // fall back to the user's subscription login.
+  claude: { env: 'ANTHROPIC_API_KEY', saved: 'anthropicApiKey' },
+  codex: { env: 'CODEX_API_KEY', saved: 'openAiApiKey' },
+};
+
+function resolveChatBackend(id) {
+  return typeof id === 'string' && CHAT_BACKENDS[id] ? id : 'openrouter';
+}
+
+function readAiSettings() {
+  try {
+    const saved = JSON.parse(fsSync.readFileSync(AI_SETTINGS_PATH, 'utf8'));
+    return saved && typeof saved === 'object' ? saved : {};
+  } catch {
+    return {};
+  }
+}
+
+function configuredApiKey(backend) {
   // A project .env key is the operator-controlled source of truth.  The
   // persisted key is only a fallback for users who configure the key through
   // Settings (and have no .env key).  Previously the persisted value won,
   // which made rotating OPENROUTER_API_KEY in .env appear to have no effect.
-  const envKey = process.env.OPENROUTER_API_KEY?.trim() ?? '';
+  const source = CHAT_BACKENDS[resolveChatBackend(backend)];
+  const envKey = process.env[source.env]?.trim() ?? '';
   if (envKey) return envKey;
-  try {
-    const saved = JSON.parse(fsSync.readFileSync(AI_SETTINGS_PATH, 'utf8'));
-    if (typeof saved.openRouterApiKey === 'string' && saved.openRouterApiKey.trim()) {
-      return saved.openRouterApiKey.trim();
-    }
-  } catch {}
-  return process.env.OPENROUTER_API_KEY?.trim() ?? '';
+  const saved = readAiSettings()[source.saved];
+  return typeof saved === 'string' ? saved.trim() : '';
 }
 
 /** Native Edit roles so Cmd+C / Cmd+V work in the renderer. */
@@ -191,9 +210,15 @@ async function ensureConcreteBridge() {
     getContext: () => ({
       vaultRoot: concreteToolContext.vaultRoot || watchedRoot,
       notePath: concreteToolContext.notePath,
-      openRouterModel:
-        concreteToolContext.openRouterModel || DEFAULT_OPENROUTER_MODEL,
     }),
+    // The agent's generate_quiz tool uses the same model as the tutor.
+    chat: ({ messages, temperature, max_tokens }) =>
+      completeChat(concreteToolContext.aiBackend, {
+        model: concreteToolContext.aiModel,
+        messages,
+        temperature,
+        max_tokens,
+      }),
     BrowserWindow,
   });
   console.log('[concrete] tool bridge on', concreteBridgeInfo.url);
@@ -702,35 +727,46 @@ ipcMain.handle('vault:revealInFolder', async (_, root, name) => {
   return true;
 });
 
-ipcMain.handle('ai:status', async () => {
-  loadDotEnv();
-  const key = configuredApiKey();
+/** OpenRouter needs a key; Claude and Codex also accept their CLI login. */
+async function aiStatusFor(backend) {
+  const key = configuredApiKey(backend);
+  const keyInfo = { keySuffix: key ? key.slice(-4) : null, keyLength: key.length };
+  if (backend === 'openrouter') {
+    return { configured: key.length > 0, provider: backend, model: DEFAULT_OPENROUTER_MODEL, ...keyInfo };
+  }
+  const status = await (await loadAgentModule(backend)).getAgentStatus({ apiKey: key });
   return {
-    configured: key.length > 0,
-    provider: 'openrouter',
-    model: DEFAULT_OPENROUTER_MODEL,
-    keySuffix: key ? key.slice(-4) : null,
-    keyLength: key.length,
+    configured: status.available && status.authenticated,
+    provider: backend,
+    model: null,
+    message: status.message,
+    ...keyInfo,
   };
+}
+
+ipcMain.handle('ai:status', async (_, backend) => {
+  loadDotEnv();
+  return aiStatusFor(resolveChatBackend(backend));
 });
 
-ipcMain.handle('ai:setApiKey', async (_, apiKey) => {
+ipcMain.handle('ai:setApiKey', async (_, apiKey, backend) => {
   loadDotEnv();
   if (typeof apiKey !== 'string') throw new Error('API key must be text');
+  const id = resolveChatBackend(backend);
+  const source = CHAT_BACKENDS[id];
   const value = apiKey.trim();
   // Make a key entered in Settings effective for the current Electron
   // session. On a later launch, a project .env key (if present) takes
   // precedence over this persisted fallback.
-  process.env.OPENROUTER_API_KEY = value;
+  if (value) process.env[source.env] = value;
+  else delete process.env[source.env];
   await fs.mkdir(path.dirname(AI_SETTINGS_PATH), { recursive: true });
-  await fs.writeFile(AI_SETTINGS_PATH, JSON.stringify({ openRouterApiKey: value }), { mode: 0o600 });
-  return {
-    configured: value.length > 0,
-    provider: 'openrouter',
-    model: DEFAULT_OPENROUTER_MODEL,
-    keySuffix: value ? value.slice(-4) : null,
-    keyLength: value.length,
-  };
+  await fs.writeFile(
+    AI_SETTINGS_PATH,
+    JSON.stringify({ ...readAiSettings(), [source.saved]: value }),
+    { mode: 0o600 },
+  );
+  return aiStatusFor(id);
 });
 
 // Code execution for quiz questions. The provider id picks a registered runner
@@ -812,7 +848,7 @@ ipcMain.handle('ai:agentStatus', async (_event, payload) => {
   lastAgentProviderId = providerId;
   try {
     const agent = await loadAgentModule(providerId);
-    return await agent.getAgentStatus();
+    return await agent.getAgentStatus({ apiKey: configuredApiKey(providerId) });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return {
@@ -837,7 +873,8 @@ ipcMain.handle('ai:agentRun', async (event, payload) => {
   concreteToolContext = {
     vaultRoot: vaultRoot || watchedRoot,
     notePath: notePath || null,
-    openRouterModel: DEFAULT_OPENROUTER_MODEL,
+    aiBackend: resolveChatBackend(payload?.aiBackend),
+    aiModel: typeof payload?.aiModel === 'string' && payload.aiModel ? payload.aiModel : null,
   };
   const trajectory = await createTrajectory({
     provider: providerId,
@@ -850,6 +887,7 @@ ipcMain.handle('ai:agentRun', async (event, payload) => {
     const result = await agent.runAgentTurn(
     {
       ...(payload ?? {}),
+      apiKey: configuredApiKey(providerId),
       concreteMcp: buildConcreteMcpConfig(),
     },
     (progress) => {
@@ -880,7 +918,7 @@ ipcMain.handle('ai:agentCancel', async () => {
 /** Minimal smoke test: cheap model, one short completion. */
 ipcMain.handle('ai:ping', async () => {
   loadDotEnv();
-  const apiKey = configuredApiKey();
+  const apiKey = configuredApiKey('openrouter');
   if (!apiKey) {
     throw new Error('OPENROUTER_API_KEY missing after .env load');
   }
@@ -935,47 +973,13 @@ ipcMain.handle('ai:ping', async () => {
   };
 });
 
-ipcMain.handle('ai:chatCompletions', async (_, payload = {}) => {
-  loadDotEnv();
-  const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const startedAt = Date.now();
-  const operation = typeof payload.operation === 'string' ? payload.operation : 'chat_completion';
-  // Write a start event before network work so even crashes, timeouts, and
-  // malformed provider responses remain visible in the activity log.
-  await recordAiActivity({
-    requestId,
-    operation,
-    startedAt,
-    status: 'started',
-    model: payload.model ?? DEFAULT_OPENROUTER_MODEL,
-    metadata: payload.metadata ?? null,
-  });
-  const apiKey = configuredApiKey();
+async function openRouterChat(body) {
+  const apiKey = configuredApiKey('openrouter');
   if (!apiKey) {
-    const error = new Error(
+    throw new Error(
       'OPENROUTER_API_KEY is missing. Add it to the project .env and restart Electron.',
     );
-    await recordAiActivity({ requestId, operation, startedAt, durationMs: Date.now() - startedAt, status: 'error', error: error.message });
-    throw error;
   }
-
-  const messages = Array.isArray(payload.messages) ? payload.messages : [];
-  if (messages.length === 0) {
-    await recordAiActivity({ requestId, operation, startedAt, durationMs: Date.now() - startedAt, status: 'error', error: 'chatCompletions requires messages' });
-    throw new Error('chatCompletions requires messages');
-  }
-
-  const body = {
-    model: typeof payload.model === 'string' && payload.model
-      ? payload.model
-      : DEFAULT_OPENROUTER_MODEL,
-    messages,
-    temperature:
-      typeof payload.temperature === 'number' ? payload.temperature : 0.5,
-    max_tokens:
-      typeof payload.max_tokens === 'number' ? payload.max_tokens : 4096,
-  };
-
   const response = await fetch(OPENROUTER_URL, {
     method: 'POST',
     headers: {
@@ -1027,33 +1031,99 @@ ipcMain.handle('ai:chatCompletions', async (_, payload = {}) => {
         .filter((part) => typeof part === 'string')
         .join('')
     : rawContent;
+  const choice = data?.choices?.[0] ?? {};
   if (typeof content !== 'string' || !content.trim()) {
-    const choice = data?.choices?.[0] ?? {};
     const reason = choice.finish_reason || choice.native_finish_reason || 'unknown';
     const refusal = choice.message?.refusal;
     const detail = refusal ? ` refusal=${String(refusal).slice(0, 180)}` : '';
-    const error = `OpenRouter returned an empty completion (finish_reason=${reason}).${detail}`;
+    throw new Error(`OpenRouter returned an empty completion (finish_reason=${reason}).${detail}`);
+  }
+  return {
+    content,
+    model: data.model ?? body.model,
+    usage: data.usage ?? null,
+    finishReason: choice.finish_reason ?? null,
+    nativeFinishReason: choice.native_finish_reason ?? null,
+  };
+}
+
+/** One chat completion on the chosen backend: OpenRouter, Claude Code, or Codex. */
+async function completeChat(backend, { model, messages, temperature, max_tokens }) {
+  const id = resolveChatBackend(backend);
+  if (id === 'openrouter') {
+    return openRouterChat({
+      model: typeof model === 'string' && model ? model : DEFAULT_OPENROUTER_MODEL,
+      messages,
+      temperature: typeof temperature === 'number' ? temperature : 0.5,
+      max_tokens: typeof max_tokens === 'number' ? max_tokens : 4096,
+    });
+  }
+  const agent = await loadAgentModule(id);
+  return agent.completeChat({
+    messages,
+    model: typeof model === 'string' && model ? model : undefined,
+    apiKey: configuredApiKey(id),
+  });
+}
+
+ipcMain.handle('ai:chatCompletions', async (_, payload = {}) => {
+  loadDotEnv();
+  const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const startedAt = Date.now();
+  const operation = typeof payload.operation === 'string' ? payload.operation : 'chat_completion';
+  const backend = resolveChatBackend(payload.backend);
+  const requestedModel = payload.model ?? (backend === 'openrouter' ? DEFAULT_OPENROUTER_MODEL : backend);
+  // Write a start event before network work so even crashes, timeouts, and
+  // malformed provider responses remain visible in the activity log.
+  await recordAiActivity({
+    requestId,
+    operation,
+    startedAt,
+    status: 'started',
+    backend,
+    model: requestedModel,
+    metadata: payload.metadata ?? null,
+  });
+
+  const messages = Array.isArray(payload.messages) ? payload.messages : [];
+  if (messages.length === 0) {
+    await recordAiActivity({ requestId, operation, startedAt, durationMs: Date.now() - startedAt, status: 'error', error: 'chatCompletions requires messages' });
+    throw new Error('chatCompletions requires messages');
+  }
+
+  let result;
+  try {
+    result = await completeChat(backend, {
+      model: payload.model,
+      messages,
+      temperature: payload.temperature,
+      max_tokens: payload.max_tokens,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     await recordAiActivity({
       requestId,
       operation,
       startedAt,
       durationMs: Date.now() - startedAt,
       status: 'error',
-      model: data?.model ?? body.model,
-      error,
+      backend,
+      model: requestedModel,
+      error: message,
       metadata: payload.metadata ?? null,
     });
-    throw new Error(error);
+    throw error;
   }
 
+  const { content } = result;
   const activity = {
     requestId, operation, startedAt, completedAt: Date.now(), durationMs: Date.now() - startedAt,
-    status: 'success', model: data.model ?? body.model,
-    finishReason: data?.choices?.[0]?.finish_reason ?? null,
-    nativeFinishReason: data?.choices?.[0]?.native_finish_reason ?? null,
-    temperature: body.temperature, maxTokens: body.max_tokens,
+    status: 'success', backend, model: result.model,
+    finishReason: result.finishReason ?? null,
+    nativeFinishReason: result.nativeFinishReason ?? null,
+    temperature: payload.temperature ?? null, maxTokens: payload.max_tokens ?? null,
     promptChars: messages.reduce((sum, message) => sum + String(message.content).length, 0),
-    responseChars: content.length, usage: data.usage ?? null,
+    responseChars: content.length, usage: result.usage ?? null,
     metadata: payload.metadata ?? null,
     messages: payload.capture === 'full' ? messages : messages.map((message) => ({ ...message, content: String(message.content).slice(0, 500) })),
     responsePreview: content.slice(0, 1000),
@@ -1063,8 +1133,8 @@ ipcMain.handle('ai:chatCompletions', async (_, payload = {}) => {
   await recordAiActivity(activity);
   return {
     content,
-    model: data.model ?? body.model,
-    usage: data.usage ?? null,
+    model: result.model,
+    usage: result.usage ?? null,
     requestId,
   };
 });

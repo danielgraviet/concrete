@@ -1,5 +1,5 @@
 /**
- * Prompt engineering for OpenRouter quiz generation.
+ * Prompt engineering for quiz generation.
  * Output must match the vault quiz markdown schema (no A/B/C letters in options).
  */
 

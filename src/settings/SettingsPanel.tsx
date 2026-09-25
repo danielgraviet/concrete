@@ -9,6 +9,8 @@ import type {
 } from './types';
 import { THEME_PACKS } from './themePacks';
 import { OPENROUTER_MODEL_OPTIONS } from '../ai/openRouterModels';
+import { CLAUDE_MODEL_OPTIONS } from '../ai/claudeModels';
+import { isChatBackendId, type ChatBackendId } from '../ai/ChatModelProvider';
 import { getSandboxStatus, onSandboxProgress, prepareSandboxImage, type SandboxStatus } from '../sandbox';
 
 type Props = {
@@ -41,6 +43,8 @@ export function SettingsPanel({
   onReplayOnboarding,
   providerOptions = [
     { id: 'openrouter', label: 'OpenRouter' },
+    { id: 'claude', label: 'Claude Code' },
+    { id: 'codex', label: 'Codex' },
     { id: 'mock', label: 'Mock AI' },
     { id: 'local-echo', label: 'Local Echo' },
   ],
@@ -48,7 +52,7 @@ export function SettingsPanel({
 }: Props) {
   const [settings, setSettings] = useState<AppSettings>(() => store.get());
   const [agentStatus, setAgentStatus] = useState<string | null>(null);
-  const [openRouterKey, setOpenRouterKey] = useState('');
+  const [apiKeyInput, setApiKeyInput] = useState('');
   const [keyStatus, setKeyStatus] = useState<string | null>(null);
   const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
   const [sandboxProviders, setSandboxProviders] = useState<Array<{ id: string; label: string }>>([]);
@@ -82,10 +86,20 @@ export function SettingsPanel({
 
   useEffect(() => store.subscribe(setSettings), [store]);
 
+  const backend: ChatBackendId | null = isChatBackendId(settings.providerId) ? settings.providerId : null;
+
   useEffect(() => {
-    if (!window.ai?.status) return;
-    void window.ai.status().then(setAiStatus).catch(() => setAiStatus(null));
-  }, []);
+    setAiStatus(null);
+    setKeyStatus(null);
+    if (!backend || !window.ai?.status) return;
+    let cancelled = false;
+    void window.ai.status(backend).then((status) => {
+      if (!cancelled) setAiStatus(status);
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [backend]);
 
   useEffect(() => {
     void window.sandbox?.providers().then(setSandboxProviders).catch(() => setSandboxProviders([]));
@@ -405,39 +419,75 @@ export function SettingsPanel({
             ))}
           </Select.Content>
         </Select.Root>
-        {settings.providerId === 'openrouter' ? (
+        {backend ? (
           <>
-            {aiStatus?.configured ? (
-              <Text size="1" color="green">
-                ✓ API key already set{aiStatus.keySuffix ? ` (ending …${aiStatus.keySuffix})` : ''} — ready to go.
-                {' '}Enter a new key below only if you want to replace it.
+            {backend === 'openrouter' ? (
+              aiStatus?.configured ? (
+                <Text size="1" color="green">
+                  ✓ API key already set{aiStatus.keySuffix ? ` (ending …${aiStatus.keySuffix})` : ''} — ready to go.
+                  {' '}Enter a new key below only if you want to replace it.
+                </Text>
+              ) : (
+                <Text size="1" color="gray">
+                  No API key configured yet. Add one below, or set OPENROUTER_API_KEY in the project .env.
+                </Text>
+              )
+            ) : aiStatus?.message ? (
+              <Text size="1" color={aiStatus.configured ? 'green' : 'gray'}>
+                {aiStatus.configured ? '✓ ' : ''}{aiStatus.message}
               </Text>
-            ) : (
+            ) : null}
+            {backend !== 'openrouter' ? (
               <Text size="1" color="gray">
-                No API key configured yet. Add one below, or set OPENROUTER_API_KEY in the project .env.
+                {backend === 'claude'
+                  ? 'Uses your Claude Code login (Pro/Max subscription). An Anthropic API key, if set, is used instead.'
+                  : 'Uses your Codex login (ChatGPT subscription) and the model from your Codex config. An OpenAI API key, if set, is used instead.'}
               </Text>
-            )}
+            ) : null}
             <TextField.Root
               type="password"
-              placeholder={aiStatus?.configured ? 'Replace saved key (optional)' : 'OpenRouter API key'}
-              value={openRouterKey}
-              onChange={(event) => setOpenRouterKey(event.target.value)}
+              placeholder={
+                aiStatus?.keySuffix
+                  ? 'Replace saved key (optional)'
+                  : backend === 'openrouter'
+                    ? 'OpenRouter API key'
+                    : backend === 'claude'
+                      ? 'Anthropic API key (optional)'
+                      : 'OpenAI API key (optional)'
+              }
+              value={apiKeyInput}
+              onChange={(event) => setApiKeyInput(event.target.value)}
             />
             <Flex align="center" gap="2">
               <Button
                 type="button"
                 variant="soft"
-                disabled={!openRouterKey.trim() || !window.ai?.setApiKey}
+                disabled={!apiKeyInput.trim() || !window.ai?.setApiKey}
                 onClick={() => {
-                  void window.ai?.setApiKey(openRouterKey.trim()).then((status) => {
-                    setOpenRouterKey('');
+                  void window.ai?.setApiKey(apiKeyInput.trim(), backend).then((status) => {
+                    setApiKeyInput('');
                     setAiStatus(status);
-                    setKeyStatus(status.configured ? 'OpenRouter key saved.' : 'Key cleared.');
+                    setKeyStatus('Key saved.');
                   }).catch((error) => setKeyStatus(error instanceof Error ? error.message : 'Could not save key.'));
                 }}
               >
                 Save key
               </Button>
+              {backend !== 'openrouter' && aiStatus?.keySuffix ? (
+                <Button
+                  type="button"
+                  variant="soft"
+                  color="gray"
+                  onClick={() => {
+                    void window.ai?.setApiKey('', backend).then((status) => {
+                      setAiStatus(status);
+                      setKeyStatus('Key removed. Using your CLI login.');
+                    }).catch((error) => setKeyStatus(error instanceof Error ? error.message : 'Could not remove key.'));
+                  }}
+                >
+                  Use login instead
+                </Button>
+              ) : null}
               {keyStatus ? <Text size="1" color="gray">{keyStatus}</Text> : null}
             </Flex>
             <Text size="1" color="gray">
@@ -445,14 +495,16 @@ export function SettingsPanel({
             </Text>
           </>
         ) : null}
-        {settings.providerId === 'openrouter' ? (
+        {backend === 'openrouter' || backend === 'claude' ? (
           <Select.Root
-            value={settings.openRouterModelId}
-            onValueChange={(value) => store.setOpenRouterModelId(value)}
+            value={backend === 'openrouter' ? settings.openRouterModelId : settings.claudeModelId}
+            onValueChange={(value) =>
+              backend === 'openrouter' ? store.setOpenRouterModelId(value) : store.setClaudeModelId(value)
+            }
           >
             <Select.Trigger placeholder="Model" />
             <Select.Content>
-              {OPENROUTER_MODEL_OPTIONS.map((model) => (
+              {(backend === 'openrouter' ? OPENROUTER_MODEL_OPTIONS : CLAUDE_MODEL_OPTIONS).map((model) => (
                 <Select.Item key={model.id} value={model.id}>
                   {model.label}
                 </Select.Item>
@@ -467,7 +519,7 @@ export function SettingsPanel({
           Agent
         </Text>
         <Text size="1" color="gray">
-          Bring-your-own agent edits notes on disk, using your own Codex or Claude Code login.
+          Bring-your-own agent edits notes on disk, using your own Codex or Claude Code login, or the API key saved under Tutor AI.
         </Text>
         <Select.Root
           value={settings.agentProviderId}

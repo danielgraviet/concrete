@@ -15,11 +15,11 @@ import { quizDocumentFromModelText } from './quizDocumentFromModelText';
 import { truncateNoteContext } from './systemPrompt';
 import { normalize as normalizeAnswer, stubGradeQuiz } from './quizStubs';
 import {
-  OPENROUTER_MODEL_DEFAULT,
   OPENROUTER_MODEL_DEEPSEEK_V4_FLASH,
   OPENROUTER_MODEL_LUNA,
   openRouterModelLabel,
 } from './openRouterModels';
+import { claudeModelLabel } from './claudeModels';
 
 export {
   OPENROUTER_MODEL_DEFAULT,
@@ -38,12 +38,12 @@ export type ChatMessage = {
   content: string;
 };
 
-export type OpenRouterChatRequest = {
-  model?: string;
-  messages: ChatMessage[];
-  temperature?: number;
-  max_tokens?: number;
-};
+/** Where completions run. Matches the Electron main-process chat backends. */
+export type ChatBackendId = 'openrouter' | 'claude' | 'codex';
+
+export function isChatBackendId(value: unknown): value is ChatBackendId {
+  return value === 'openrouter' || value === 'claude' || value === 'codex';
+}
 
 const KEY_POINT_RULES = `When key points are listed, score mainly by how many the student meaningfully covers, giving credit for equivalent ideas in different words. Reasoning matters: naming a term without explaining why it applies earns at most half credit for that point. Never reward padding or vague statements.`;
 
@@ -60,29 +60,48 @@ function followUpText(followUp: { question: string; answer: string } | undefined
 function requireAiBridge() {
   if (typeof window === 'undefined' || !window.ai?.chatCompletions) {
     throw new Error(
-      'OpenRouter is only available in the Electron app (AI bridge missing). Restart Electron after updating.',
+      'Live AI is only available in the Electron app (AI bridge missing). Restart Electron after updating.',
     );
   }
   return window.ai;
 }
 
 /**
- * Live OpenRouter provider. API key stays in the Electron main process.
+ * Live provider over a main-process chat backend: OpenRouter (API key), or
+ * Claude Code / Codex (CLI subscription login or API key). Credentials stay in
+ * the Electron main process.
  * Quiz generation uses prompt engineering + markdown parse/guardrails.
  * Open-ended, cloze, and code grading use a live model judge with deterministic baselines.
  */
-export class OpenRouterProvider implements AiProvider {
-  readonly id = 'openrouter';
+export class ChatModelProvider implements AiProvider {
+  readonly id: ChatBackendId;
   readonly label: string;
-  readonly model: string;
+  /** Omitted for Codex, which uses the model from the user's Codex config. */
+  readonly model: string | undefined;
 
-  constructor(model: string = OPENROUTER_MODEL_DEFAULT) {
+  constructor(backend: ChatBackendId, model?: string) {
+    this.id = backend;
     this.model = model;
-    this.label = `OpenRouter (${openRouterModelLabel(model)})`;
+    this.label =
+      backend === 'openrouter'
+        ? `OpenRouter (${openRouterModelLabel(model ?? '')})`
+        : backend === 'claude'
+          ? `Claude (${claudeModelLabel(model ?? '')})`
+          : 'Codex';
+  }
+
+  /** The AI bridge with every completion routed to this provider's backend. */
+  private bridge() {
+    const ai = requireAiBridge();
+    return {
+      chatCompletions: (request: AiChatCompletionsRequest) =>
+        ai.chatCompletions({ ...request, backend: this.id }),
+      recordActivity: ai.recordActivity,
+    };
   }
 
   async complete(request: CompleteRequest): Promise<string> {
-    const ai = requireAiBridge();
+    const ai = this.bridge();
     const messages: ChatMessage[] = [
       {
         role: 'user',
@@ -103,7 +122,7 @@ export class OpenRouterProvider implements AiProvider {
   }
 
   async generateQuiz(request: GenerateQuizRequest): Promise<QuizDocument> {
-    const ai = requireAiBridge();
+    const ai = this.bridge();
     const topic = request.topic.trim() || 'Untitled';
     const userPrompt = buildQuizGenerationUserPrompt({
       topic,
@@ -207,7 +226,7 @@ export class OpenRouterProvider implements AiProvider {
   }
 
   async generateQuizFollowUp(request: GenerateQuizFollowUpRequest): Promise<string> {
-    const ai = requireAiBridge();
+    const ai = this.bridge();
     const prompt = `Write exactly ONE short optional follow-up question (maximum 25 words) to help the student explain their reasoning. Do not give away the answer or introduce new facts. Return only the question.
 
 Original question: ${request.question}
@@ -284,7 +303,7 @@ Ideas not covered yet: ${request.missing.length ? request.missing.join('; ') : '
     });
     if (openItems.length === 0 && clozeItems.length === 0 && codeItems.length === 0) return baseline;
 
-    const ai = requireAiBridge();
+    const ai = this.bridge();
     const sections: string[] = [];
     if (openItems.length > 0) {
       sections.push(
@@ -433,15 +452,5 @@ ${sections.join('\n\n---\n\n')}`;
       perQuestion,
       stubbed: false,
     };
-  }
-}
-
-export async function isOpenRouterConfigured(): Promise<boolean> {
-  if (typeof window === 'undefined' || !window.ai?.status) return false;
-  try {
-    const status = await window.ai.status();
-    return Boolean(status.configured);
-  } catch {
-    return false;
   }
 }
