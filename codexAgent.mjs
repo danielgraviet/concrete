@@ -1,9 +1,12 @@
 /**
  * Codex BYO agent — ESM module (SDK is ESM-only).
  * Spawned from Electron main via dynamic import().
+ * Uses the user's Codex login (ChatGPT subscription) unless an OpenAI API key
+ * is configured, which the SDK passes to the CLI as CODEX_API_KEY.
  */
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { Codex } from '@openai/codex-sdk';
@@ -28,10 +31,9 @@ function codexEnv() {
 function resolveCodexBin() {
   const override = process.env.CODEX_PATH?.trim();
   if (override && existsSync(override)) return override;
-  for (const candidate of [
-    '/opt/homebrew/bin/codex',
-    '/usr/local/bin/codex',
-  ]) {
+  const pathDirs = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
+  for (const dir of ['/opt/homebrew/bin', '/usr/local/bin', ...pathDirs]) {
+    const candidate = path.join(dir, 'codex');
     if (existsSync(candidate)) return candidate;
   }
   return null;
@@ -136,6 +138,7 @@ function progressFromEvent(event, vaultRoot) {
 }
 
 /**
+ * @param {{ apiKey?: string }} [options]
  * @returns {Promise<{
  *   available: boolean;
  *   authenticated: boolean;
@@ -143,7 +146,7 @@ function progressFromEvent(event, vaultRoot) {
  *   message: string;
  * }>}
  */
-export async function getAgentStatus() {
+export async function getAgentStatus({ apiKey } = {}) {
   const cliPath = resolveCodexBin();
   if (!cliPath) {
     return {
@@ -152,6 +155,14 @@ export async function getAgentStatus() {
       cliPath: null,
       message:
         'Codex CLI not found. Install Codex and ensure `codex` is on your PATH, then restart Concrete.',
+    };
+  }
+  if (apiKey) {
+    return {
+      available: true,
+      authenticated: true,
+      cliPath,
+      message: `Codex ready (OpenAI API key …${apiKey.slice(-4)})`,
     };
   }
 
@@ -203,6 +214,7 @@ export async function getAgentStatus() {
  *   vaultRoot: string;
  *   notePath?: string | null;
  *   prompt: string;
+ *   apiKey?: string;
  *   concreteMcp?: {
  *     command: string;
  *     args: string[];
@@ -231,7 +243,7 @@ export async function runAgentTurn(input, onProgress, onEvent) {
   if (!vaultRoot) throw new Error('No vault open');
   if (!prompt) throw new Error('Prompt is empty');
 
-  const status = await getAgentStatus();
+  const status = await getAgentStatus({ apiKey: input.apiKey });
   if (!status.available) throw new Error(status.message);
   if (!status.authenticated) throw new Error(status.message);
 
@@ -251,6 +263,7 @@ export async function runAgentTurn(input, onProgress, onEvent) {
     const codexOptions = {
       codexPathOverride: status.cliPath ?? undefined,
       env: codexEnv(),
+      ...(input.apiKey ? { apiKey: input.apiKey } : {}),
     };
 
     if (concreteMcp) {
@@ -405,4 +418,50 @@ export function cancelAgentTurn() {
   if (!activeRun) return false;
   activeRun.abort.abort();
   return true;
+}
+
+/**
+ * One plain text completion in a read-only thread outside the vault. Codex has
+ * no system prompt option, so system messages lead the prompt. Temperature and
+ * token limits are not exposed by the CLI, so they are ignored; the model comes
+ * from the user's Codex config.
+ *
+ * @param {{
+ *   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+ *   apiKey?: string;
+ * }} request
+ * @returns {Promise<{ content: string; model: string; usage: unknown }>}
+ */
+export async function completeChat({ messages, apiKey }) {
+  const status = await getAgentStatus({ apiKey });
+  if (!status.available || !status.authenticated) throw new Error(status.message);
+
+  const codex = new Codex({
+    codexPathOverride: status.cliPath ?? undefined,
+    env: codexEnv(),
+    ...(apiKey ? { apiKey } : {}),
+  });
+  const thread = codex.startThread({
+    workingDirectory: os.tmpdir(),
+    skipGitRepoCheck: true,
+    sandboxMode: 'read-only',
+    approvalPolicy: 'never',
+    networkAccessEnabled: false,
+    webSearchMode: 'disabled',
+  });
+  const system = messages.filter((m) => m.role === 'system').map((m) => m.content);
+  const turns = messages.filter((m) => m.role !== 'system');
+  const conversation =
+    turns.length === 1
+      ? turns[0].content
+      : turns.map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n\n');
+  const prompt = [
+    ...system,
+    'Answer directly in your reply. Do not run commands or edit files.',
+    conversation,
+  ].join('\n\n');
+
+  const turn = await thread.run(prompt);
+  if (!turn.finalResponse?.trim()) throw new Error('Codex returned an empty completion.');
+  return { content: turn.finalResponse, model: 'codex', usage: turn.usage };
 }

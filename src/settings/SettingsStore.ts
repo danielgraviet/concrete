@@ -12,6 +12,7 @@ import {
 } from './types';
 import { isThemePackId } from './themePacks';
 import { resolveOpenRouterModelId } from '../ai/openRouterModels';
+import { resolveClaudeModelId } from '../ai/claudeModels';
 
 const STORAGE_KEY = 'mv:settings';
 
@@ -34,6 +35,7 @@ function readStorage(): AppSettings {
       providerId:
         typeof parsed.providerId === 'string' ? parsed.providerId : DEFAULT_SETTINGS.providerId,
       openRouterModelId: resolveOpenRouterModelId(parsed.openRouterModelId),
+      claudeModelId: resolveClaudeModelId(parsed.claudeModelId),
       agentProviderId: resolveAgentProviderId(parsed.agentProviderId),
       sandboxProviderId:
         typeof parsed.sandboxProviderId === 'string' && parsed.sandboxProviderId
@@ -105,6 +107,12 @@ export class SettingsStore {
       ...this.settings,
       openRouterModelId: resolveOpenRouterModelId(modelId),
     };
+    this.persist();
+    return this.get();
+  }
+
+  setClaudeModelId(modelId: string): AppSettings {
+    this.settings = { ...this.settings, claudeModelId: resolveClaudeModelId(modelId) };
     this.persist();
     return this.get();
   }

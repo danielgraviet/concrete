@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import type { AiClient } from './AiClient';
+import { ChatModelProvider } from './ChatModelProvider';
 import type { AgentProviderId } from '../settings/types';
 
 /** Renders chat text as markdown (bold/italics/code/lists/links) with soft line breaks. */
@@ -175,11 +176,14 @@ export function AiOrb({
           notePath ? `Starting on ${notePath}…` : `Starting ${agentLabel}…`,
           'status',
         );
+        const tutor = client.getProvider();
         const result = await window.ai.agentRun({
           vaultRoot,
           notePath: notePath || null,
           prompt,
           agentProviderId: agentProviderId === 'claude' ? 'claude' : 'codex',
+          // The agent's generate_quiz tool writes quizzes with the tutor's model.
+          ...(tutor instanceof ChatModelProvider ? { aiBackend: tutor.id, aiModel: tutor.model } : {}),
         });
         const changed =
           result.changedPaths?.length > 0
@@ -210,6 +214,7 @@ export function AiOrb({
       agentEnabled,
       agentLabel,
       agentProviderId,
+      client,
       appendLog,
       busy,
       notePath,
