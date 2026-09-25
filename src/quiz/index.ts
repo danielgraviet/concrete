@@ -45,6 +45,8 @@ export {
 export { presentQuiz, clozeSegments } from './present';
 export { useQuizTake } from './useQuizTake';
 export { QuizHistoryStore, buildQuizAttempt } from './history';
+export { quizGradingJobs } from './gradingJobs';
+export type { QuizGradingJob } from './gradingJobs';
 export type { QuizAttempt, QuestionAttempt, QuizHistoryFile } from './history';
 export { QuizShell } from './QuizShell';
 export { ProgressPanel } from './ProgressPanel';

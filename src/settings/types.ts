@@ -52,7 +52,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   themePack: DEFAULT_THEME_PACK,
   autosaveMs: 800,
   providerId: 'mock',
-  openRouterModelId: 'openai/gpt-4o-mini',
+  openRouterModelId: 'deepseek/deepseek-v4-flash-0731',
   agentProviderId: 'off',
   sandboxProviderId: 'docker',
   quiz: { ...DEFAULT_QUIZ_SETTINGS },

@@ -246,14 +246,15 @@ async function handleGenerateQuiz(args) {
     noteContext,
   ].join('\n');
 
+  const model = ctx.openRouterModel || DEFAULT_OPENROUTER_MODEL;
   const content = await openRouterChat({
-    model: ctx.openRouterModel || DEFAULT_OPENROUTER_MODEL,
+    model,
     messages: [
       { role: 'system', content: QUIZ_GENERATION_SYSTEM_PROMPT },
       { role: 'user', content: userPrompt },
     ],
     temperature: 0.55,
-    max_tokens: 4096,
+    max_tokens: 8192,
   });
 
   let markdown = extractQuizMarkdown(content);

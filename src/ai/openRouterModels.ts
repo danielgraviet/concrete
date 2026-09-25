@@ -11,8 +11,8 @@ export const OPENROUTER_MODEL_DEEPSEEK_V4_FLASH =
 export const OPENROUTER_MODEL_LUNA = 'openai/gpt-5.6-luna';
 export const OPENROUTER_MODEL_GPT4O_MINI = 'openai/gpt-4o-mini';
 
-/** Default live model after smoke-test — DeepSeek V4 Flash. */
-export const OPENROUTER_MODEL_DEFAULT = OPENROUTER_MODEL_GPT4O_MINI;
+/** Default live model for quiz generation and grading. */
+export const OPENROUTER_MODEL_DEFAULT = OPENROUTER_MODEL_DEEPSEEK_V4_FLASH;
 
 export const OPENROUTER_MODEL_OPTIONS: OpenRouterModelOption[] = [
   {

@@ -2,6 +2,7 @@ import type {
   AiProvider,
   CompleteRequest,
   GenerateQuizRequest,
+  GenerateQuizFollowUpRequest,
   GradeQuizRequest,
   GradeReport,
   QuizDocument,
@@ -44,12 +45,7 @@ export type OpenRouterChatRequest = {
   max_tokens?: number;
 };
 
-const MAX_PROBES = 3;
-
 const KEY_POINT_RULES = `When key points are listed, score mainly by how many the student meaningfully covers, giving credit for equivalent ideas in different words. Reasoning matters: naming a term without explaining why it applies earns at most half credit for that point. Never reward padding or vague statements.`;
-
-const PROBE_RULES = `FOLLOW-UP PROBES
-For open-ended and code answers with a score between 0.2 and 0.75 (vague, partial, naming a technique without saying why, or missing a key point while showing a foothold), set "followUp" to ONE short probing question (max 25 words) that pushes the student to explain the gap, for example "Why would that break once the data no longer fits in memory?" or "What would you change to fix it, and why does that help?". Do not reveal the answer or name the missing key point. Set "followUp" to null when the answer is already strong (score above 0.75) or empty or irrelevant (score below 0.2).`;
 
 function keyPointText(points: string[] | undefined): string {
   return points?.length ? `Key points:\n${points.map((p) => `- ${p}`).join('\n')}\n` : '';
@@ -73,7 +69,7 @@ function requireAiBridge() {
 /**
  * Live OpenRouter provider. API key stays in the Electron main process.
  * Quiz generation uses prompt engineering + markdown parse/guardrails.
- * Grading remains stubbed until the next pass.
+ * Open-ended, cloze, and code grading use a live model judge with deterministic baselines.
  */
 export class OpenRouterProvider implements AiProvider {
   readonly id = 'openrouter';
@@ -141,25 +137,27 @@ export class OpenRouterProvider implements AiProvider {
     };
 
     let result;
+    let usedFallback = false;
     try {
       result = await ai.chatCompletions({
         model: this.model,
         messages,
         temperature: 0.55,
-        max_tokens: 4096,
+        max_tokens: 16384,
         operation: 'quiz_generation',
         metadata,
         capture: 'full',
       });
     } catch (primaryError) {
       // DeepSeek V4 Flash can occasionally return an empty completion. Retry
-      // the same quiz request on Luna, but keep other model failures visible.
+      // the same quiz request on Luna.
       if (this.model !== OPENROUTER_MODEL_DEEPSEEK_V4_FLASH) throw primaryError;
+      usedFallback = true;
       result = await ai.chatCompletions({
         model: OPENROUTER_MODEL_LUNA,
         messages,
         temperature: 0.55,
-        max_tokens: 4096,
+        max_tokens: 16384,
         operation: 'quiz_generation_fallback',
         metadata: {
           ...metadata,
@@ -175,6 +173,23 @@ export class OpenRouterProvider implements AiProvider {
       return quizDocumentFromModelText(result.content, title);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (this.model === OPENROUTER_MODEL_DEEPSEEK_V4_FLASH && !usedFallback) {
+        result = await ai.chatCompletions({
+          model: OPENROUTER_MODEL_LUNA,
+          messages,
+          temperature: 0.55,
+          max_tokens: 16384,
+          operation: 'quiz_generation_fallback',
+          metadata: { ...metadata, fallbackFrom: this.model, fallbackReason: `Quiz parse failed: ${message}` },
+          capture: 'full',
+        });
+        try {
+          return quizDocumentFromModelText(result.content, title);
+        } catch (fallbackError) {
+          const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+          throw new Error(`DeepSeek response could not be parsed (${message}); Luna fallback also failed (${fallbackMessage}).`);
+        }
+      }
       // The API call succeeded, so keep the raw reply where the user can read it.
       void ai
         .recordActivity?.({
@@ -191,6 +206,49 @@ export class OpenRouterProvider implements AiProvider {
     }
   }
 
+  async generateQuizFollowUp(request: GenerateQuizFollowUpRequest): Promise<string> {
+    const ai = requireAiBridge();
+    const prompt = `Write exactly ONE short optional follow-up question (maximum 25 words) to help the student explain their reasoning. Do not give away the answer or introduce new facts. Return only the question.
+
+Original question: ${request.question}
+Student answer: ${request.studentAnswer}
+Grader feedback: ${request.feedback}
+Ideas not covered yet: ${request.missing.length ? request.missing.join('; ') : 'No specific gap was identified.'}`;
+    const messages: ChatMessage[] = [
+      { role: 'system', content: 'You are a concise tutor. Ask a supportive question that probes understanding. Do not answer it.' },
+      { role: 'user', content: prompt },
+    ];
+    let result;
+    try {
+      result = await ai.chatCompletions({
+        model: this.model,
+        messages,
+        temperature: 0.3,
+        max_tokens: 512,
+        operation: 'quiz_followup_generation',
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes('empty completion') || this.model !== OPENROUTER_MODEL_DEEPSEEK_V4_FLASH) throw error;
+      result = await ai.chatCompletions({
+        model: OPENROUTER_MODEL_LUNA,
+        messages,
+        temperature: 0.3,
+        max_tokens: 512,
+        operation: 'quiz_followup_generation_fallback',
+        metadata: { fallbackFrom: this.model, fallbackReason: message },
+      });
+    }
+    const question = result.content
+      .replace(/^```(?:text|markdown)?\s*/i, '')
+      .replace(/\s*```$/, '')
+      .replace(/^follow[- ]?up\s*:\s*/i, '')
+      .trim()
+      .replace(/^(["'`])([\s\S]*)\1$/, '$2');
+    if (!question) throw new Error('The model did not return a follow-up question.');
+    return question;
+  }
+
   async gradeQuiz(request: GradeQuizRequest): Promise<GradeReport> {
     const baseline = stubGradeQuiz(request);
     const responseFor = (id: string) => request.responses.find((r) => r.questionId === id);
@@ -199,7 +257,6 @@ export class OpenRouterProvider implements AiProvider {
     const followUps = new Map((request.followUps ?? []).map((f) => [f.questionId, f]));
     const secondPass = followUps.size > 0;
     const inScope = (id: string) => !secondPass || followUps.has(id);
-    const probing = Boolean(request.allowProbes) && !secondPass;
 
     const openItems = request.quiz.questions.flatMap((question) => {
       const response = responseFor(question.id);
@@ -259,29 +316,43 @@ ${KEY_POINT_RULES}
 ${codeItems.map(({ question, response }) => `Question ID: ${question.id}\nKind: ${question.kind}\nQuestion: ${question.prompt}\n${question.snippet.trim() ? `Code (${question.language}):\n${question.snippet}\n` : ''}Expected: ${question.expected}\n${keyPointText(question.keyPoints)}${question.explanation ? `Why: ${question.explanation}\n` : ''}Student answer: ${response.text}${followUpText(followUps.get(question.id))}`).join('\n\n')}`,
       );
     }
-    const probeRules = probing
-      ? PROBE_RULES
-      : secondPass
-        ? 'These questions had a follow-up probe. Grade the original answer and the follow-up answer TOGETHER as the student\'s total understanding. Set "followUp" to null.'
-        : 'Set "followUp" to null.';
+    const probeRules = secondPass
+      ? 'This is optional follow-up practice. Grade the original answer and follow-up answer TOGETHER as the student\'s understanding. Set "followUp" to null.'
+      : 'Set "followUp" to null.';
     const prompt = `Grade the quiz answers below. Return ONLY JSON with this shape: {"results":[{"questionId":"...","score":0,"blanks":[0],"missing":["..."],"followUp":null,"feedback":"..."}]}. Omit "blanks" for open-ended and code answers; omit "score" for fill-in-the-blank answers. For open-ended and code answers with key points, "missing" lists the key points the student did not cover (short strings; empty array if all covered). Be concise and specific.
 
 ${probeRules}
 
 ${sections.join('\n\n---\n\n')}`;
-    const result = await ai.chatCompletions({
-      model: this.model,
+    const gradingRequest = {
       operation: 'quiz_grading',
       metadata: {
         openQuestionCount: openItems.length,
         clozeQuestionCount: clozeItems.length,
         codeQuestionCount: codeItems.length,
       },
-      capture: 'full',
-      messages: [{ role: 'system', content: 'You are a fair, careful quiz grader. Follow the requested JSON format exactly.' }, { role: 'user', content: prompt }],
+      capture: 'full' as const,
+      messages: [{ role: 'system' as const, content: 'You are a fair, careful quiz grader. Follow the requested JSON format exactly.' }, { role: 'user' as const, content: prompt }],
       temperature: 0,
-      max_tokens: 2600,
-    });
+      max_tokens: 8192,
+    };
+    let result;
+    let usedFallback = false;
+    try {
+      result = await ai.chatCompletions({ model: this.model, ...gradingRequest });
+    } catch (error) {
+      // A provider can occasionally return an empty completion even though the
+      // request itself was valid. Retry grading once on Luna.
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes('empty completion') || this.model !== OPENROUTER_MODEL_DEEPSEEK_V4_FLASH) throw error;
+      usedFallback = true;
+      result = await ai.chatCompletions({
+        model: OPENROUTER_MODEL_LUNA,
+        ...gradingRequest,
+        operation: 'quiz_grading_fallback',
+        metadata: { ...gradingRequest.metadata, fallbackFrom: this.model, fallbackReason: message },
+      });
+    }
     let parsed: {
       results?: Array<{
         questionId?: string;
@@ -296,7 +367,20 @@ ${sections.join('\n\n---\n\n')}`;
       const json = result.content.replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim();
       parsed = JSON.parse(json) as typeof parsed;
     } catch {
-      return baseline;
+      if (this.model !== OPENROUTER_MODEL_DEEPSEEK_V4_FLASH || usedFallback) return baseline;
+      const fallback = await ai.chatCompletions({
+        model: OPENROUTER_MODEL_LUNA,
+        ...gradingRequest,
+        operation: 'quiz_grading_fallback',
+        metadata: { ...gradingRequest.metadata, fallbackFrom: this.model, fallbackReason: 'Grading response was not valid JSON' },
+      });
+      try {
+        const fallbackJson = fallback.content.replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim();
+        parsed = JSON.parse(fallbackJson) as typeof parsed;
+        result = fallback;
+      } catch {
+        return baseline;
+      }
     }
     const clamp = (n: unknown) => Math.max(0, Math.min(1, Number(n) || 0));
     const graded = new Map((parsed.results ?? []).map((item) => [item.questionId, item]));
@@ -327,27 +411,15 @@ ${sections.join('\n\n---\n\n')}`;
       const missing = Array.isArray(aiGrade.missing)
         ? aiGrade.missing.filter((m): m is string => typeof m === 'string' && m.trim().length > 0).slice(0, 6)
         : [];
-      const followUp =
-        probing && typeof aiGrade.followUp === 'string' && aiGrade.followUp.trim()
-          ? aiGrade.followUp.trim().slice(0, 300)
-          : undefined;
       const followed = followUps.get(item.questionId);
       return {
         ...item,
         score: clamp(aiGrade.score),
         feedback,
         ...(missing.length ? { missing } : {}),
-        ...(followUp ? { followUp } : {}),
         ...(followed ? { probe: { question: followed.question, answer: followed.answer } } : {}),
       };
     });
-    // Cap probes per quiz: keep the first few, drop the rest.
-    let probeBudget = MAX_PROBES;
-    for (let i = 0; i < perQuestion.length; i += 1) {
-      if (!perQuestion[i].followUp) continue;
-      if (probeBudget > 0) probeBudget -= 1;
-      else perQuestion[i] = { ...perQuestion[i], followUp: undefined };
-    }
     // Totals must follow the judged per-question scores, not the exact-match baseline.
     const score = perQuestion.reduce((sum, item) => sum + item.score, 0);
     const maxScore = baseline.maxScore;

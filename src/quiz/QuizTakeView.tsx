@@ -4,7 +4,8 @@ import { QuizQuestionCard } from './QuizQuestionCard';
 import { useQuizTake } from './useQuizTake';
 import type { QuizHistoryStore } from './history';
 import { ProgressPanel } from './ProgressPanel';
-import { QuizProbeView } from './QuizProbeView';
+import { QuizAttempts } from './QuizAttempts';
+import { QuizCelebration } from './QuizCelebration';
 import { folderOf } from './progressStats';
 
 type Props = {
@@ -22,33 +23,28 @@ export function QuizTakeView({ markdown, documentPath, client, onEdit, historySt
     responses,
     phase,
     report,
-    probes,
     error,
+    sessionSeed,
+    quizNumber,
+    history,
     setResponse,
     reshuffle,
     submit,
-    answerProbes,
-    skipProbes,
     retake,
   } = useQuizTake(markdown, documentPath, client, historyStore);
 
-  if (phase === 'probing' || (phase === 'grading' && probes.length > 0)) {
-    return (
-      <QuizProbeView
-        probes={probes}
-        questions={quiz.questions}
-        responses={responses}
-        busy={phase === 'grading'}
-        onSubmit={(answers) => void answerProbes(answers)}
-        onSkip={skipProbes}
-      />
-    );
-  }
+  const celebration = quizNumber ? (
+    <QuizCelebration quizNumber={quizNumber} seed={sessionSeed} />
+  ) : null;
 
   if (phase === 'graded' && report) {
     return (
       <>
-        <QuizGradeView report={report} questions={quiz.questions} onRetake={retake} onEdit={onEdit} />
+        {celebration}
+        <QuizGradeView report={report} quiz={quiz} responses={responses} client={client} onRetake={retake} onEdit={onEdit} />
+        <div className="quiz-grade-attempts">
+          <QuizAttempts store={history} quizPath={documentPath} currentId={sessionSeed} />
+        </div>
         {historyStore ? <ProgressPanel store={historyStore} folder={folderOf(documentPath)} /> : null}
       </>
     );
@@ -56,6 +52,7 @@ export function QuizTakeView({ markdown, documentPath, client, onEdit, historySt
 
   return (
     <div className="quiz-take">
+      {phase === 'grading' ? celebration : null}
       <header className="quiz-take-header">
         <div>
           <div className="quiz-kicker">Quiz</div>
@@ -71,6 +68,8 @@ export function QuizTakeView({ markdown, documentPath, client, onEdit, historySt
           </button>
         </div>
       </header>
+
+      <QuizAttempts store={history} quizPath={documentPath} />
 
       <div className="quiz-questions">
         {presented.map((question, index) => (
@@ -92,10 +91,13 @@ export function QuizTakeView({ markdown, documentPath, client, onEdit, historySt
           type="button"
           className="quiz-btn primary"
           disabled={phase === 'grading' || presented.length === 0}
-          onClick={() => void submit()}
+          onClick={submit}
         >
           {phase === 'grading' ? 'Grading…' : 'Submit for grading'}
         </button>
+        {phase === 'grading' ? (
+          <p className="quiz-muted">Grading keeps running if you open another note — you'll be notified when it's done.</p>
+        ) : null}
         <p className="quiz-muted">Graded with a stub rubric until an API key is configured.</p>
       </div>
     </div>

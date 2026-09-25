@@ -179,7 +179,7 @@ const PING_OPENROUTER_MODEL = 'openai/gpt-4o-mini';
 /** Default completion model when the renderer omits one. */
 // Keep the default on a broadly available model; unavailable model IDs leave
 // the tutor stuck behind the renderer's "Thinking…" state.
-const DEFAULT_OPENROUTER_MODEL = 'openai/gpt-4o-mini';
+const DEFAULT_OPENROUTER_MODEL = 'deepseek/deepseek-v4-flash-0731';
 
 async function ensureConcreteBridge() {
   if (concreteBridgeInfo) return concreteBridgeInfo;
@@ -298,6 +298,13 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true
     }
+  });
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    // Command-clicked Markdown links should open in the user's browser rather
+    // than creating another Electron window.
+    if (/^(https?:|mailto:)/i.test(url)) void shell.openExternal(url);
+    return { action: 'deny' };
   });
 
   mainWindow.once('ready-to-show', () => {
@@ -1010,14 +1017,40 @@ ipcMain.handle('ai:chatCompletions', async (_, payload = {}) => {
     throw new Error(`OpenRouter error (${response.status}): ${message}`);
   }
 
-  const content = data?.choices?.[0]?.message?.content;
+  const rawContent = data?.choices?.[0]?.message?.content;
+  // OpenRouter normally returns a string, but some providers return content
+  // parts. Preserve text from those responses instead of misclassifying it as
+  // an empty completion.
+  const content = Array.isArray(rawContent)
+    ? rawContent
+        .map((part) => (typeof part === 'string' ? part : part?.text))
+        .filter((part) => typeof part === 'string')
+        .join('')
+    : rawContent;
   if (typeof content !== 'string' || !content.trim()) {
-    throw new Error('OpenRouter returned an empty completion');
+    const choice = data?.choices?.[0] ?? {};
+    const reason = choice.finish_reason || choice.native_finish_reason || 'unknown';
+    const refusal = choice.message?.refusal;
+    const detail = refusal ? ` refusal=${String(refusal).slice(0, 180)}` : '';
+    const error = `OpenRouter returned an empty completion (finish_reason=${reason}).${detail}`;
+    await recordAiActivity({
+      requestId,
+      operation,
+      startedAt,
+      durationMs: Date.now() - startedAt,
+      status: 'error',
+      model: data?.model ?? body.model,
+      error,
+      metadata: payload.metadata ?? null,
+    });
+    throw new Error(error);
   }
 
   const activity = {
     requestId, operation, startedAt, completedAt: Date.now(), durationMs: Date.now() - startedAt,
     status: 'success', model: data.model ?? body.model,
+    finishReason: data?.choices?.[0]?.finish_reason ?? null,
+    nativeFinishReason: data?.choices?.[0]?.native_finish_reason ?? null,
     temperature: body.temperature, maxTokens: body.max_tokens,
     promptChars: messages.reduce((sum, message) => sum + String(message.content).length, 0),
     responseChars: content.length, usage: data.usage ?? null,

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import type { AiClient } from '../ai/AiClient';
 import { presentQuiz } from './present';
 import { parseQuizMarkdown } from './parseQuizMarkdown';
@@ -8,19 +8,16 @@ import type {
   QuizDocument,
   QuizResponse,
 } from './types';
-import { buildQuizAttempt, QuizHistoryStore } from './history';
-import { finalizeWithoutProbes, mergeProbeResults, probesFromReport, type Probe } from './probe';
+import { QuizHistoryStore } from './history';
+import { quizGradingJobs } from './gradingJobs';
 
-export type QuizTakePhase = 'taking' | 'grading' | 'probing' | 'graded';
+export type QuizTakePhase = 'taking' | 'grading' | 'graded';
 
 type State = {
+  path: string;
   sessionSeed: string;
+  startedAt: number;
   responses: Record<string, QuizResponse>;
-  phase: QuizTakePhase;
-  report: GradeReport | null;
-  /** First-pass report held while the student answers follow-up probes. */
-  pendingReport: GradeReport | null;
-  probes: Probe[];
   error: string | null;
 };
 
@@ -30,30 +27,49 @@ function newSessionSeed(path: string): string {
 
 function freshState(path: string): State {
   return {
+    path,
     sessionSeed: newSessionSeed(path),
+    startedAt: Date.now(),
     responses: {},
-    phase: 'taking',
-    report: null,
-    pendingReport: null,
-    probes: [],
     error: null,
   };
+}
+
+/** Resume a grading job that was started (or finished) while this quiz was closed. */
+function initialState(path: string): State {
+  const job = quizGradingJobs.get(path);
+  if (!job) return freshState(path);
+  return { path, sessionSeed: job.sessionSeed, startedAt: job.startedAt, responses: job.responses, error: null };
 }
 
 export function useQuizTake(markdown: string, documentPath: string, client: AiClient, historyStore?: QuizHistoryStore) {
   const quiz: QuizDocument = useMemo(() => parseQuizMarkdown(markdown), [markdown]);
 
-  const [state, setState] = useState<State>(() => freshState(documentPath));
+  const [stored, setState] = useState<State>(() => initialState(documentPath));
+  // Switched to another quiz: adopt its state during render, before painting the old one.
+  const state = stored.path === documentPath ? stored : initialState(documentPath);
+  if (state !== stored) setState(state);
+
   const defaultHistory = useMemo(() => new QuizHistoryStore(), []);
   const history = historyStore ?? defaultHistory;
-  const startedAt = useRef(Date.now());
-  const savedSession = useRef<string | null>(null);
 
+  const job = useSyncExternalStore(quizGradingJobs.subscribe, () => quizGradingJobs.get(documentPath));
+  const activeJob = job?.sessionSeed === state.sessionSeed ? job : undefined;
+
+  // The student is looking at this quiz, so its result is no longer "unseen".
   useEffect(() => {
-    setState(freshState(documentPath));
-    startedAt.current = Date.now();
-    savedSession.current = null;
-  }, [documentPath]);
+    if (!activeJob?.unseen) return;
+    if (activeJob.status === 'error') {
+      setState((prev) => ({ ...prev, error: activeJob.error ?? 'Grading failed' }));
+      quizGradingJobs.clear(documentPath);
+    } else {
+      quizGradingJobs.markSeen(documentPath);
+    }
+  }, [activeJob, documentPath]);
+
+  const phase: QuizTakePhase =
+    activeJob?.status === 'grading' ? 'grading' : activeJob?.status === 'graded' ? 'graded' : 'taking';
+  const report: GradeReport | null = activeJob?.status === 'graded' ? activeJob.report ?? null : null;
 
   const presented: PresentedQuestion[] = useMemo(
     () => presentQuiz(quiz, state.sessionSeed),
@@ -61,117 +77,29 @@ export function useQuizTake(markdown: string, documentPath: string, client: AiCl
   );
 
   const setResponse = useCallback((response: QuizResponse) => {
-    setState((prev) => ({
-      ...prev,
-      responses: { ...prev.responses, [response.questionId]: response },
-      phase: prev.phase === 'graded' ? 'taking' : prev.phase,
-      report: prev.phase === 'graded' ? null : prev.report,
-    }));
+    setState((prev) => ({ ...prev, responses: { ...prev.responses, [response.questionId]: response } }));
   }, []);
 
   const reshuffle = useCallback(() => {
-    setState((prev) => ({
-      ...prev,
-      sessionSeed: newSessionSeed(documentPath),
-      phase: 'taking',
-      report: null,
-      pendingReport: null,
-      probes: [],
-      error: null,
-    }));
+    quizGradingJobs.clear(documentPath);
+    setState((prev) => ({ ...prev, sessionSeed: newSessionSeed(documentPath), error: null }));
   }, [documentPath]);
 
-  /** Add the reference answer to any question that was not fully correct. */
-  const enrich = useCallback(
-    (report: GradeReport): GradeReport => ({
-      ...report,
-      perQuestion: report.perQuestion.map((item) => {
-        const question = quiz.questions.find((q) => q.id === item.questionId);
-        if (!question || item.score >= item.maxScore) return item;
-        const correctAnswer = question.type === 'mcq'
-          ? question.options.filter((option) => option.correct).map((option) => option.text).join(', ')
-          : question.type === 'cloze'
-            ? question.answers.join(', ')
-            : question.type === 'code'
-              ? question.expected
-              : question.answer;
-        return { ...item, correctAnswer };
-      }),
-    }),
-    [quiz],
-  );
-
-  const finish = useCallback(
-    (report: GradeReport) => {
-      const finalReport = enrich(report);
-      setState((prev) => ({ ...prev, phase: 'graded', report: finalReport, pendingReport: null, probes: [] }));
-      if (savedSession.current !== state.sessionSeed) {
-        history.add(buildQuizAttempt(quiz, finalReport, documentPath, startedAt.current, Date.now(), state.sessionSeed));
-        savedSession.current = state.sessionSeed;
-      }
-    },
-    [documentPath, enrich, history, quiz, state.sessionSeed],
-  );
-
-  const submit = useCallback(async () => {
-    setState((prev) => ({ ...prev, phase: 'grading', error: null }));
-    try {
-      const report = await client.gradeQuiz({
-        quiz,
-        responses: Object.values(state.responses),
-        rubric: quiz.rubric,
-        allowProbes: true,
-      });
-      const probes = probesFromReport(report);
-      if (probes.length > 0) {
-        // Vague answers: ask a "why?" follow-up before finalizing the grade.
-        setState((prev) => ({ ...prev, phase: 'probing', pendingReport: report, probes }));
-      } else {
-        finish(report);
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Grading failed';
-      setState((prev) => ({ ...prev, phase: 'taking', error: message }));
-    }
-  }, [client, finish, quiz, state.responses]);
-
-  const answerProbes = useCallback(
-    async (answers: Record<string, string>) => {
-      const first = state.pendingReport;
-      if (!first) return;
-      const followUps = state.probes
-        .filter((probe) => (answers[probe.questionId] ?? '').trim())
-        .map((probe) => ({
-          questionId: probe.questionId,
-          question: probe.followUp,
-          answer: answers[probe.questionId].trim(),
-        }));
-      if (followUps.length === 0) {
-        finish(finalizeWithoutProbes(first));
-        return;
-      }
-      setState((prev) => ({ ...prev, phase: 'grading', error: null }));
-      try {
-        const second = await client.gradeQuiz({
-          quiz,
-          responses: Object.values(state.responses),
-          rubric: quiz.rubric,
-          followUps,
-        });
-        finish(mergeProbeResults(first, second, new Set(followUps.map((f) => f.questionId))));
-      } catch {
-        // Re-grading failed: keep the first-round grades rather than losing the attempt.
-        finish(finalizeWithoutProbes(first));
-      }
-    },
-    [client, finish, quiz, state.pendingReport, state.probes, state.responses],
-  );
-
-  const skipProbes = useCallback(() => {
-    if (state.pendingReport) finish(finalizeWithoutProbes(state.pendingReport));
-  }, [finish, state.pendingReport]);
+  const submit = useCallback(() => {
+    setState((prev) => ({ ...prev, error: null }));
+    quizGradingJobs.start({
+      path: documentPath,
+      quiz,
+      responses: state.responses,
+      sessionSeed: state.sessionSeed,
+      startedAt: state.startedAt,
+      client,
+      history,
+    });
+  }, [client, documentPath, history, quiz, state.responses, state.sessionSeed, state.startedAt]);
 
   const retake = useCallback(() => {
+    quizGradingJobs.clear(documentPath);
     setState(freshState(documentPath));
   }, [documentPath]);
 
@@ -179,15 +107,16 @@ export function useQuizTake(markdown: string, documentPath: string, client: AiCl
     quiz,
     presented,
     responses: state.responses,
-    phase: state.phase,
-    report: state.report,
-    probes: state.probes,
+    phase,
+    report,
     error: state.error,
+    sessionSeed: state.sessionSeed,
+    /** Set once submitted: this attempt's place among all quizzes taken. */
+    quizNumber: activeJob?.quizNumber ?? null,
+    history,
     setResponse,
     reshuffle,
     submit,
-    answerProbes,
-    skipProbes,
     retake,
   };
 }

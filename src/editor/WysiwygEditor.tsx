@@ -35,6 +35,7 @@ import { inlineCodeExitPlugin } from './inlineCode';
 import { slashMenuPlugin } from './slash';
 import { mathPlugin, normalizeMathMarkdown, preferOneLineDisplayMath } from './math';
 import { arrowPlugin } from './arrow';
+import { emDashPlugin } from './emDash/emDashPlugin';
 
 export type WysiwygEditorProps = {
   /** Stable id for the open document — remounts/syncs when it changes. */
@@ -115,6 +116,7 @@ export function createDefaultWysiwygPlugins(): NonNullable<MDXEditorProps['plugi
     markdownShortcutPlugin(),
     mathPlugin(),
     arrowPlugin(),
+    emDashPlugin(),
     slashMenuPlugin(),
     quoteExitPlugin(),
     inlineCodeExitPlugin(),
@@ -142,6 +144,7 @@ export function createLiteWysiwygPlugins(): NonNullable<MDXEditorProps['plugins'
     markdownShortcutPlugin(),
     quoteExitPlugin(),
     inlineCodeExitPlugin(),
+    emDashPlugin(),
   ];
 }
 
@@ -214,7 +217,7 @@ export const WysiwygEditor = forwardRef<WysiwygEditorHandle, WysiwygEditorProps>
         ? createLiteWysiwygPlugins()
         : createDefaultWysiwygPlugins();
       return extraPlugins ? [...base, ...extraPlugins] : base;
-    }, [pluginsOverride, extraPlugins, useLitePlugins, markdown.length]);
+    }, [pluginsOverride, extraPlugins, useLitePlugins]);
 
     const initialMarkdown = useMemo(
       () => normalizeMathMarkdown(markdown),
@@ -224,20 +227,34 @@ export const WysiwygEditor = forwardRef<WysiwygEditorHandle, WysiwygEditorProps>
     );
 
     return (
-      <MDXEditor
-        key={documentId ?? 'editor'}
-        ref={editorRef}
-        className={className}
-        markdown={initialMarkdown}
-        onChange={(next) => onChange?.(preferOneLineDisplayMath(next))}
-        onBlur={onBlur}
-        readOnly={readOnly}
-        placeholder={placeholder}
-        plugins={plugins}
-        // Popups (language picker, etc.) default to <body>, outside the theme
-        // wrapper, so theme CSS variables wouldn't resolve there.
-        overlayContainer={document.querySelector<HTMLElement>('.radix-themes')}
-      />
+      <div
+        onClickCapture={(event) => {
+          // Preserve normal clicks for editing; Command-click follows a link.
+          if (!event.metaKey && !event.ctrlKey) return;
+          const target = event.target;
+          if (!(target instanceof Element)) return;
+          const anchor = target.closest('a[href]');
+          if (!(anchor instanceof HTMLAnchorElement)) return;
+          event.preventDefault();
+          event.stopPropagation();
+          window.open(anchor.href, '_blank', 'noopener,noreferrer');
+        }}
+      >
+        <MDXEditor
+          key={documentId ?? 'editor'}
+          ref={editorRef}
+          className={className}
+          markdown={initialMarkdown}
+          onChange={(next) => onChange?.(preferOneLineDisplayMath(next))}
+          onBlur={onBlur}
+          readOnly={readOnly}
+          placeholder={placeholder}
+          plugins={plugins}
+          // Popups (language picker, etc.) default to <body>, outside the theme
+          // wrapper, so theme CSS variables wouldn't resolve there.
+          overlayContainer={document.querySelector<HTMLElement>('.radix-themes')}
+        />
+      </div>
     );
   },
 );

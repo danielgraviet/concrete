@@ -13,8 +13,13 @@ import type { VaultFolderNode, VaultTreeNode } from './types';
 
 export type TreeItemKind = 'file' | 'folder';
 
-/** Paths flagged "New" (e.g. freshly generated, not yet opened). */
-const NewPathsContext = createContext<ReadonlySet<string>>(new Set());
+/** Status pill on a file row: freshly generated, or a quiz grading in the background. */
+export type TreeBadge = 'new' | 'grading' | 'graded';
+
+const BADGE_LABELS: Record<TreeBadge, string> = { new: 'New', grading: 'Grading', graded: 'Graded' };
+
+/** Paths with a badge, until the user opens them. */
+const BadgesContext = createContext<ReadonlyMap<string, TreeBadge>>(new Map());
 
 type FileTreeViewProps = {
   files: string[];
@@ -27,6 +32,8 @@ type FileTreeViewProps = {
   filterPaths?: string[] | null;
   /** Files to badge as new until the user opens them. */
   newPaths?: string[];
+  /** Quizzes grading in the background, or graded and not yet opened. */
+  quizStatus?: Record<string, 'grading' | 'graded'>;
   onSelectFile: (path: string) => void;
   onSelectFolder: (path: string) => void;
   onRename: (path: string, kind: TreeItemKind, nextName: string) => void | Promise<void>;
@@ -116,9 +123,9 @@ function FolderBranch({
   const isOpen = expanded.has(node.path);
   const isActive = activeFolder === node.path;
   const isRenaming = renaming?.kind === 'folder' && renaming.path === node.path;
-  const newPathSet = useContext(NewPathsContext);
+  const badges = useContext(BadgesContext);
   const hasNewInside =
-    !isOpen && [...newPathSet].some((path) => path.startsWith(`${node.path}/`));
+    !isOpen && [...badges.keys()].some((path) => path.startsWith(`${node.path}/`));
 
   return (
     <div className="tree-branch">
@@ -185,7 +192,7 @@ function FolderBranch({
                   {node.name}
                 </Text>
               )}
-              {hasNewInside ? <span className="new-dot" aria-label="Contains a new quiz" /> : null}
+              {hasNewInside ? <span className="new-dot" aria-label="Contains a new or graded quiz" /> : null}
             </div>
           </div>
         </ContextMenu.Trigger>
@@ -284,7 +291,7 @@ function TreeNode({
   const isPdf = isPdfFileName(node.name);
   const isRenaming = renaming?.kind === 'file' && renaming.path === node.path;
   const label = noteTitle(node.path);
-  const isNew = useContext(NewPathsContext).has(node.path);
+  const badge = useContext(BadgesContext).get(node.path);
 
   return (
     <ContextMenu.Root>
@@ -326,7 +333,7 @@ function TreeNode({
               {label}
             </Text>
           )}
-          {isNew ? <span className="new-badge">New</span> : null}
+          {badge ? <span className={`new-badge ${badge}`}>{BADGE_LABELS[badge]}</span> : null}
         </button>
       </ContextMenu.Trigger>
       <ContextMenu.Content size="1" variant="soft">
@@ -371,6 +378,7 @@ export function FileTreeView({
   activeFolder,
   filterPaths = null,
   newPaths,
+  quizStatus,
   onSelectFile,
   onSelectFolder,
   onRename,
@@ -398,7 +406,13 @@ export function FileTreeView({
     });
   }, [activeFolder]);
 
-  const newPathSet = useMemo(() => new Set(newPaths ?? []), [newPaths]);
+  const badges = useMemo(() => {
+    const map = new Map<string, TreeBadge>();
+    for (const path of newPaths ?? []) map.set(path, 'new');
+    for (const [path, status] of Object.entries(quizStatus ?? {})) map.set(path, status);
+    return map;
+  }, [newPaths, quizStatus]);
+  const newPathSet = useMemo(() => new Set(badges.keys()), [badges]);
 
   // Reveal items that become new while running, so the badge is visible. Ones
   // already new at launch stay collapsed (folders start closed).
@@ -448,7 +462,7 @@ export function FileTreeView({
         if (source) commitRename(source, 'file', `@root/${source.split('/').pop() ?? source}`);
       }}
     >
-      <NewPathsContext.Provider value={newPathSet}>
+      <BadgesContext.Provider value={badges}>
         {tree.children.map((child) => (
           <TreeNode
             key={`${child.type}:${child.path}`}
@@ -467,7 +481,7 @@ export function FileTreeView({
             onDelete={onDelete}
           />
         ))}
-      </NewPathsContext.Provider>
+      </BadgesContext.Provider>
     </div>
   );
 }

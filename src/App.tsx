@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Button, Flex, IconButton, Text } from '@radix-ui/themes';
 import {
   ChatBubbleIcon,
@@ -71,6 +71,7 @@ import {
   QuizShell,
   type GenerateQuizDialogResult,
   ProgressPanel,
+  quizGradingJobs,
 } from './quiz';
 import { QuizHistoryStore } from './quiz';
 import { settingsStore } from './settings';
@@ -229,6 +230,16 @@ export default function App() {
     | { status: 'error'; title: string; message: string }
   >({ status: 'idle' });
   const generatingQuiz = quizJob.status === 'running';
+  // Quizzes grading in the background keep going when another note is opened.
+  const gradingJobs = useSyncExternalStore(quizGradingJobs.subscribe, quizGradingJobs.getAll);
+  const quizStatus = useMemo(() => {
+    const status: Record<string, 'grading' | 'graded'> = {};
+    for (const job of gradingJobs) {
+      if (job.status === 'grading') status[job.path] = 'grading';
+      else if (job.status === 'graded' && job.unseen) status[job.path] = 'graded';
+    }
+    return status;
+  }, [gradingJobs]);
   const quizJobRef = useRef(0);
   const [agentProviderId, setAgentProviderId] = useState<AgentProviderId>(
     () => settingsStore.get().agentProviderId,
@@ -792,6 +803,15 @@ export default function App() {
       }
     }
   };
+  const openFromToast = async (path: string) => {
+    if (controller.isDirty) await controller.persistence.flush();
+    const body = await loadNoteBody(path);
+    setContents((prev) => ({ ...prev, [path]: body }));
+    setSelected(path);
+    setTreeFocus({ kind: 'file', path });
+    controller.loadContent(body);
+  };
+
   const createFolder = async () => {
     const name = await askText(
       activeFolder ? `New folder inside ${activeFolder}` : 'New folder name',
@@ -1255,6 +1275,7 @@ export default function App() {
               activeFolder={activeFolder}
               filterPaths={filterPaths}
               newPaths={newQuizPaths}
+              quizStatus={quizStatus}
               onSelectFile={select}
               onSelectFolder={(path) => {
                 setActiveFolder(path);
@@ -1518,6 +1539,43 @@ export default function App() {
         </Suspense>
       )}
 
+      <div className="mv-toast-stack">
+      {gradingJobs
+        .filter((job) => job.path !== selected && !job.toastDismissed && (job.status === 'grading' || job.unseen))
+        .map((job) => (
+          <div key={job.path} className={`mv-toast mv-toast-${job.status === 'graded' ? 'done' : job.status}`} role="status" aria-live="polite">
+            {job.status === 'grading' ? (
+              <UpdateIcon width={16} height={16} className="mv-toast-spin" aria-hidden />
+            ) : job.status === 'graded' ? (
+              <ClipboardIcon width={16} height={16} aria-hidden />
+            ) : null}
+            <div className="mv-toast-body">
+              <strong>
+                {job.status === 'grading'
+                  ? 'Grading quiz'
+                  : job.status === 'graded'
+                    ? `Quiz graded · ${job.report?.percent ?? 0}%`
+                    : 'Grading failed'}
+              </strong>
+              <span>{job.status === 'error' ? job.error : job.title}</span>
+            </div>
+            {job.status !== 'grading' ? (
+              <Button size="1" highContrast onClick={() => void openFromToast(job.path)}>
+                {job.status === 'graded' ? 'View' : 'Open'}
+              </Button>
+            ) : null}
+            <IconButton
+              type="button"
+              size="1"
+              variant="ghost"
+              color="gray"
+              aria-label="Dismiss"
+              onClick={() => quizGradingJobs.dismissToast(job.path)}
+            >
+              <Cross1Icon width={12} height={12} />
+            </IconButton>
+          </div>
+        ))}
       {quizJob.status !== 'idle' && (
         <div
           className={`mv-toast mv-toast-${quizJob.status}`}
@@ -1547,14 +1605,7 @@ export default function App() {
                 onClick={() => {
                   const path = quizJob.path;
                   setQuizJob({ status: 'idle' });
-                  void (async () => {
-                    if (controller.isDirty) await controller.persistence.flush();
-                    const body = await loadNoteBody(path);
-                    setContents((prev) => ({ ...prev, [path]: body }));
-                    setSelected(path);
-                    setTreeFocus({ kind: 'file', path });
-                    controller.loadContent(body);
-                  })();
+                  void openFromToast(path);
                 }}
               >
                 Open
@@ -1583,6 +1634,7 @@ export default function App() {
           ) : null}
         </div>
       )}
+      </div>
 
       {onboarding && (
         <div
