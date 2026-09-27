@@ -13,7 +13,9 @@ export type SlashCommandId =
   | 'image'
   | 'table'
   | 'columns'
-  | 'divider';
+  | 'divider'
+  | 'card'
+  | 'cloze';
 
 export type SlashCommand = {
   id: SlashCommandId;
@@ -145,6 +147,22 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     keywords: ['line', 'thematic'],
     symbol: '—',
     hint: 'Insert a horizontal rule',
+  },
+  {
+    id: 'card',
+    title: 'Flashcard',
+    aliases: ['card', 'flashcard'],
+    keywords: ['review', 'anki', 'question', 'answer', 'srs'],
+    symbol: '::',
+    hint: 'Question :: Answer card (⌘⇧K)',
+  },
+  {
+    id: 'cloze',
+    title: 'Cloze blank',
+    aliases: ['cloze', 'blank'],
+    keywords: ['review', 'anki', 'fill', 'flashcard', 'srs'],
+    symbol: '{}',
+    hint: 'Fill-in-the-blank {{answer}} (⌘⇧C)',
   },
 ];
 

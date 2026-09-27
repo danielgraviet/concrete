@@ -36,6 +36,7 @@ import { slashMenuPlugin } from './slash';
 import { mathPlugin, normalizeMathMarkdown, preferOneLineDisplayMath } from './math';
 import { arrowPlugin } from './arrow';
 import { emDashPlugin } from './emDash/emDashPlugin';
+import { cardShortcutsPlugin } from './cards/cardShortcutsPlugin';
 
 export type WysiwygEditorProps = {
   /** Stable id for the open document — remounts/syncs when it changes. */
@@ -120,6 +121,7 @@ export function createDefaultWysiwygPlugins(): NonNullable<MDXEditorProps['plugi
     slashMenuPlugin(),
     quoteExitPlugin(),
     inlineCodeExitPlugin(),
+    cardShortcutsPlugin(),
   ];
 }
 
@@ -145,6 +147,7 @@ export function createLiteWysiwygPlugins(): NonNullable<MDXEditorProps['plugins'
     quoteExitPlugin(),
     inlineCodeExitPlugin(),
     emDashPlugin(),
+    cardShortcutsPlugin(),
   ];
 }
 

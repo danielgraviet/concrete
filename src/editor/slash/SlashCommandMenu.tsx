@@ -32,6 +32,7 @@ import {
 } from '@mdxeditor/editor';
 import { $insertNodeToNearestRoot } from '@lexical/utils';
 import { handoffSlashToAi } from '../../ai/slashHandoff';
+import { insertCardSeparator, insertClozeBlank } from '../cards/cardShortcutsPlugin';
 import {
   filterSlashCommands,
   isAmbiguousSlashPrefix,
@@ -208,6 +209,12 @@ function applySlashCommand(
       break;
     case 'divider':
       helpers.insertThematicBreak();
+      break;
+    case 'card':
+      insertCardSeparator(editor);
+      break;
+    case 'cloze':
+      insertClozeBlank(editor);
       break;
     default:
       break;

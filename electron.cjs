@@ -606,6 +606,41 @@ ipcMain.handle('vault:write', async (_, root, name, content) => {
   return true;
 });
 
+// App data under `.vault/` (review state, review log). Only plain JSON/JSONL
+// files directly inside `.vault/` — never notes or anything outside the root.
+function resolveDataFile(root, name) {
+  if (typeof name !== 'string' || !/^\.vault\/[\w.-]+\.(?:json|jsonl)$/.test(name)) {
+    throw new Error('Invalid vault data file');
+  }
+  return resolveWithinRoot(root, name).resolved;
+}
+
+ipcMain.handle('vault:readData', async (_, root, name) => {
+  try {
+    return await fs.readFile(resolveDataFile(root, name), 'utf8');
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  }
+});
+
+ipcMain.handle('vault:writeData', async (_, root, name, content) => {
+  const resolved = resolveDataFile(root, name);
+  await fs.mkdir(path.dirname(resolved), { recursive: true });
+  // Write-then-rename so a crash mid-write never leaves a truncated file.
+  const temp = `${resolved}.${process.pid}.tmp`;
+  await fs.writeFile(temp, content, 'utf8');
+  await fs.rename(temp, resolved);
+  return true;
+});
+
+ipcMain.handle('vault:appendData', async (_, root, name, content) => {
+  const resolved = resolveDataFile(root, name);
+  await fs.mkdir(path.dirname(resolved), { recursive: true });
+  await fs.appendFile(resolved, content, 'utf8');
+  return true;
+});
+
 ipcMain.handle('vault:create', async (_, root, name) => {
   const safeName = ensureMdExtension(name.replace(/\\/g, '/'));
   assertMarkdown(safeName);

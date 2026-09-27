@@ -25,6 +25,7 @@ type SettingsSection =
   | 'appearance'
   | 'editor'
   | 'quiz'
+  | 'review'
   | 'ai'
   | 'agent'
   | 'vault'
@@ -151,6 +152,7 @@ export function SettingsPanel({
           ['appearance', 'Appearance'],
           ['editor', 'Editor'],
           ['quiz', 'Quiz'],
+          ['review', 'Review'],
           ['ai', 'Tutor AI'],
           ['agent', 'Agent'],
           ['vault', 'Vault'],
@@ -221,6 +223,70 @@ export function SettingsPanel({
         </TextField.Root>
         <Text size="1" color="gray">
           Autosave delay
+        </Text>
+      </Flex>
+
+      <Flex direction="column" gap="3" className={`mv-settings-group ${section === 'review' ? 'active' : ''}`}>
+        <Text size="2" weight="medium">
+          Spaced repetition
+        </Text>
+        <Text size="1" color="gray">
+          Cards are scheduled with FSRS, the algorithm Anki uses. Higher retention means more
+          reviews but fewer forgotten cards.
+        </Text>
+        <Flex gap="3" wrap="wrap">
+          <label className="mv-quiz-count-field">
+            <Text size="1" color="gray">
+              Target retention %
+            </Text>
+            <TextField.Root
+              type="number"
+              min={70}
+              max={97}
+              value={String(Math.round(settings.review.retention * 100))}
+              onChange={(e) => store.setReviewSettings({ retention: (Number(e.target.value) || 90) / 100 })}
+            />
+          </label>
+          <label className="mv-quiz-count-field">
+            <Text size="1" color="gray">
+              New cards / day
+            </Text>
+            <TextField.Root
+              type="number"
+              min={0}
+              value={String(settings.review.newPerDay)}
+              onChange={(e) => store.setReviewSettings({ newPerDay: Number(e.target.value) || 0 })}
+            />
+          </label>
+          <label className="mv-quiz-count-field">
+            <Text size="1" color="gray">
+              Max reviews / day
+            </Text>
+            <TextField.Root
+              type="number"
+              min={0}
+              value={String(settings.review.maxReviewsPerDay)}
+              onChange={(e) => store.setReviewSettings({ maxReviewsPerDay: Number(e.target.value) || 0 })}
+            />
+          </label>
+        </Flex>
+        <Text size="2" weight="medium">
+          Cloze answers
+        </Text>
+        <Select.Root
+          value={settings.review.typeCloze ? 'type' : 'reveal'}
+          onValueChange={(value) => store.setReviewSettings({ typeCloze: value === 'type' })}
+        >
+          <Select.Trigger />
+          <Select.Content>
+            <Select.Item value="reveal">Reveal the answer</Select.Item>
+            <Select.Item value="type">Type the answer</Select.Item>
+          </Select.Content>
+        </Select.Root>
+        <Text size="1" color="gray">
+          Write cards in any note: <code>Question :: Answer</code>, <code>Term ::: Definition</code>{' '}
+          (both directions), or <code>{'{{cloze}}'}</code> blanks. Review history is saved in{' '}
+          <code>.vault/srs.json</code> inside your vault.
         </Text>
       </Flex>
 
