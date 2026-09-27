@@ -9,9 +9,6 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { marked } from 'marked';
 
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const DEFAULT_OPENROUTER_MODEL = 'deepseek/deepseek-v4-flash-0731';
-
 const QUIZ_GENERATION_SYSTEM_PROMPT = `You generate study quizzes as Markdown for a local note vault.
 
 Return ONLY valid quiz Markdown. No preamble, no explanation, no code fences unless the whole document is inside one markdown fence.
@@ -63,7 +60,8 @@ Hard rules:
  *   url: string | null,
  *   token: string | null,
  *   getMainWindow: () => import('electron').BrowserWindow | null,
- *   getContext: () => { vaultRoot: string | null, notePath: string | null, openRouterModel: string },
+ *   getContext: () => { vaultRoot: string | null, notePath: string | null },
+ *   chat: ((request: { messages: Array<{ role: string, content: string }>, temperature?: number, max_tokens?: number }) => Promise<{ content: string }>) | null,
  *   BrowserWindow: typeof import('electron').BrowserWindow | null,
  * }} */
 const state = {
@@ -71,11 +69,8 @@ const state = {
   url: null,
   token: null,
   getMainWindow: () => null,
-  getContext: () => ({
-    vaultRoot: null,
-    notePath: null,
-    openRouterModel: DEFAULT_OPENROUTER_MODEL,
-  }),
+  getContext: () => ({ vaultRoot: null, notePath: null }),
+  chat: null,
   BrowserWindow: null,
 };
 
@@ -152,47 +147,6 @@ function parentDir(relativePath) {
   return parts.slice(0, -1).join('/');
 }
 
-async function openRouterChat({ model, messages, temperature, max_tokens }) {
-  const apiKey = process.env.OPENROUTER_API_KEY?.trim();
-  if (!apiKey) {
-    throw new Error(
-      'OPENROUTER_API_KEY missing. Add it to .env and restart Concrete.',
-    );
-  }
-  const response = await fetch(OPENROUTER_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://github.com/danielgraviet/concrete',
-      'X-Title': 'Concrete',
-    },
-    body: JSON.stringify({
-      model: model || DEFAULT_OPENROUTER_MODEL,
-      messages,
-      temperature: temperature ?? 0.55,
-      max_tokens: max_tokens ?? 4096,
-    }),
-  });
-  const rawText = await response.text();
-  let data;
-  try {
-    data = JSON.parse(rawText);
-  } catch {
-    throw new Error(`OpenRouter non-JSON: ${rawText.slice(0, 200)}`);
-  }
-  if (!response.ok) {
-    throw new Error(
-      data?.error?.message || data?.message || `OpenRouter HTTP ${response.status}`,
-    );
-  }
-  const content = data?.choices?.[0]?.message?.content;
-  if (!content || typeof content !== 'string') {
-    throw new Error('OpenRouter returned empty content');
-  }
-  return content;
-}
-
 async function handleSetTheme(args) {
   const theme = args?.theme;
   if (!['concrete', 'martian', 'daytona'].includes(theme)) {
@@ -246,9 +200,8 @@ async function handleGenerateQuiz(args) {
     noteContext,
   ].join('\n');
 
-  const model = ctx.openRouterModel || DEFAULT_OPENROUTER_MODEL;
-  const content = await openRouterChat({
-    model,
+  if (!state.chat) throw new Error('No chat model is configured');
+  const { content } = await state.chat({
     messages: [
       { role: 'system', content: QUIZ_GENERATION_SYSTEM_PROMPT },
       { role: 'user', content: userPrompt },
@@ -354,7 +307,8 @@ async function dispatchTool(name, args) {
 /**
  * @param {{
  *   getMainWindow: () => import('electron').BrowserWindow | null,
- *   getContext: () => { vaultRoot: string | null, notePath: string | null, openRouterModel: string },
+ *   getContext: () => { vaultRoot: string | null, notePath: string | null },
+ *   chat: (request: { messages: Array<{ role: string, content: string }>, temperature?: number, max_tokens?: number }) => Promise<{ content: string }>,
  *   BrowserWindow: typeof import('electron').BrowserWindow,
  * }} deps
  */
@@ -365,6 +319,7 @@ export async function startConcreteBridge(deps) {
 
   state.getMainWindow = deps.getMainWindow;
   state.getContext = deps.getContext;
+  state.chat = deps.chat;
   state.BrowserWindow = deps.BrowserWindow;
   state.token = crypto.randomBytes(24).toString('hex');
 

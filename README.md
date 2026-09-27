@@ -32,8 +32,10 @@ Most note-taking tools stop at storage, and most AI tools are disconnected from 
 
 - macOS
 - Node.js 20 or newer
-- An OpenRouter API key for live quiz generation and tutoring
-- Codex or Claude CLI credentials if you want agent workflows
+- For live quiz generation, tutoring, and agent workflows, one of:
+  - the Claude Code CLI, logged in (Claude Pro/Max) or with an Anthropic API key,
+  - the Codex CLI, logged in (ChatGPT plan) or with an OpenAI API key,
+  - an OpenRouter API key (quizzes and tutoring only).
 
 ### Run locally
 
@@ -44,7 +46,7 @@ npm install
 npm run dev
 ```
 
-Open or create a Markdown vault, then use the quiz controls from a note to generate practice material. API keys and AI settings are managed from Settings; the key stays in the Electron main process.
+Open or create a Markdown vault, then use the quiz controls from a note to generate practice material. Pick the model backend under Settings → Tutor AI. Claude Code and Codex use your CLI login unless you save an API key; keys stay in the Electron main process.
 
 ### Build the desktop app
 

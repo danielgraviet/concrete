@@ -3,6 +3,8 @@
  * Spawned from Electron main via dynamic import().
  * Reuses the user's own installed Claude Code CLI + its login session
  * (mirrors codexAgent.mjs) instead of the SDK's bundled platform binary.
+ * An Anthropic API key, when configured, is passed as ANTHROPIC_API_KEY and
+ * takes precedence over the subscription login.
  */
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -22,11 +24,12 @@ function homebrewPathPrefix() {
   return `${path.join(os.homedir(), '.local', 'bin')}:/opt/homebrew/bin:/usr/local/bin`;
 }
 
-function claudeEnv() {
+function claudeEnv(apiKey) {
   const envPath = process.env.PATH || '';
   return {
     ...process.env,
     PATH: `${homebrewPathPrefix()}:${envPath}`,
+    ...(apiKey ? { ANTHROPIC_API_KEY: apiKey } : {}),
   };
 }
 
@@ -66,6 +69,7 @@ function parseAuthStatus(stdout) {
 }
 
 /**
+ * @param {{ apiKey?: string }} [options]
  * @returns {Promise<{
  *   available: boolean;
  *   authenticated: boolean;
@@ -73,7 +77,7 @@ function parseAuthStatus(stdout) {
  *   message: string;
  * }>}
  */
-export async function getAgentStatus() {
+export async function getAgentStatus({ apiKey } = {}) {
   const cliPath = resolveClaudeBin();
   if (!cliPath) {
     return {
@@ -82,6 +86,14 @@ export async function getAgentStatus() {
       cliPath: null,
       message:
         'Claude Code CLI not found. Install it from claude.com/code and ensure `claude` is on your PATH, then restart Concrete.',
+    };
+  }
+  if (apiKey) {
+    return {
+      available: true,
+      authenticated: true,
+      cliPath,
+      message: `Claude ready (Anthropic API key …${apiKey.slice(-4)})`,
     };
   }
 
@@ -194,6 +206,7 @@ function toolEndProgress(meta, resultBlock, vaultRoot, changedPaths) {
  *   vaultRoot: string;
  *   notePath?: string | null;
  *   prompt: string;
+ *   apiKey?: string;
  *   concreteMcp?: {
  *     command: string;
  *     args: string[];
@@ -222,7 +235,7 @@ export async function runAgentTurn(input, onProgress, onEvent) {
   if (!vaultRoot) throw new Error('No vault open');
   if (!prompt) throw new Error('Prompt is empty');
 
-  const status = await getAgentStatus();
+  const status = await getAgentStatus({ apiKey: input.apiKey });
   if (!status.available) throw new Error(status.message);
   if (!status.authenticated) throw new Error(status.message);
 
@@ -282,7 +295,7 @@ export async function runAgentTurn(input, onProgress, onEvent) {
       options: {
         cwd: vaultRoot,
         pathToClaudeCodeExecutable: status.cliPath,
-        env: claudeEnv(),
+        env: claudeEnv(input.apiKey),
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
         mcpServers,
@@ -351,4 +364,56 @@ export function cancelAgentTurn() {
   if (!activeRun) return false;
   activeRun.abortController.abort();
   return true;
+}
+
+/**
+ * One plain text completion: no tools, no MCP, no user settings or CLAUDE.md.
+ * Temperature and token limits are not exposed by the CLI, so they are ignored.
+ *
+ * @param {{
+ *   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+ *   model?: string;
+ *   apiKey?: string;
+ * }} request
+ * @returns {Promise<{ content: string; model: string; usage: unknown }>}
+ */
+export async function completeChat({ messages, model, apiKey }) {
+  const status = await getAgentStatus({ apiKey });
+  if (!status.available || !status.authenticated) throw new Error(status.message);
+
+  const system = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n');
+  const stream = query({
+    prompt: transcriptPrompt(messages),
+    options: {
+      cwd: os.tmpdir(),
+      pathToClaudeCodeExecutable: status.cliPath,
+      env: claudeEnv(apiKey),
+      ...(system ? { systemPrompt: system } : {}),
+      ...(model ? { model } : {}),
+      tools: [],
+      settingSources: [],
+      persistSession: false,
+      maxTurns: 1,
+    },
+  });
+
+  let resolvedModel = model || 'claude';
+  for await (const message of stream) {
+    if (message.type === 'system' && message.subtype === 'init') resolvedModel = message.model;
+    if (message.type !== 'result') continue;
+    if (message.subtype !== 'success' || message.is_error) {
+      const detail = message.subtype === 'success' ? message.result : message.errors?.[0] || message.subtype;
+      throw new Error(`Claude request failed: ${detail}`);
+    }
+    if (!message.result?.trim()) throw new Error('Claude returned an empty completion.');
+    return { content: message.result, model: resolvedModel, usage: message.usage ?? null };
+  }
+  throw new Error('Claude ended without a result.');
+}
+
+/** Single-turn prompt from chat messages; system messages go in the system prompt. */
+function transcriptPrompt(messages) {
+  const turns = messages.filter((m) => m.role !== 'system');
+  if (turns.length === 1) return turns[0].content;
+  return turns.map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n\n');
 }
