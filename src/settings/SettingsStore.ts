@@ -2,12 +2,14 @@ import type {
   AgentProviderId,
   AppSettings,
   QuizGenerationSettings,
+  ReviewSettings,
   ThemePackId,
 } from './types';
 import {
   DEFAULT_SETTINGS,
   resolveAgentProviderId,
   resolveQuizSettings,
+  resolveReviewSettings,
   resolveThemePack,
 } from './types';
 import { isThemePackId } from './themePacks';
@@ -40,6 +42,7 @@ function readStorage(): AppSettings {
           ? parsed.sandboxProviderId
           : DEFAULT_SETTINGS.sandboxProviderId,
       quiz: resolveQuizSettings(parsed.quiz),
+      review: resolveReviewSettings(parsed.review),
     };
   } catch {
     return structuredClone(DEFAULT_SETTINGS);
@@ -61,6 +64,7 @@ export class SettingsStore {
     return {
       ...this.settings,
       quiz: { ...this.settings.quiz },
+      review: { ...this.settings.review },
     };
   }
 
@@ -128,6 +132,15 @@ export class SettingsStore {
     this.settings = {
       ...this.settings,
       quiz: resolveQuizSettings({ ...this.settings.quiz, ...patch }),
+    };
+    this.persist();
+    return this.get();
+  }
+
+  setReviewSettings(patch: Partial<ReviewSettings>): AppSettings {
+    this.settings = {
+      ...this.settings,
+      review: resolveReviewSettings({ ...this.settings.review, ...patch }),
     };
     this.persist();
     return this.get();

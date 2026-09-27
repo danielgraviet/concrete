@@ -8,6 +8,7 @@ import {
   ChevronUpIcon,
   ClipboardIcon,
   Cross1Icon,
+  LayersIcon,
   EnterFullScreenIcon,
   ExitFullScreenIcon,
   FilePlusIcon,
@@ -51,11 +52,16 @@ function tabTitleFor(path: string): string {
 import { useSearch } from './search';
 import { MetaService } from './meta';
 import {
-  CardStore,
-  QuizView,
-  ReviewQueue,
-  Sm2SchedulerStrategy,
-  type Flashcard,
+  appendCardLines,
+  deckFilter,
+  NoteCardsPanel,
+  QuizReviewToggle,
+  ReviewSession,
+  ReviewSidebar,
+  ReviewView,
+  useReviewSystem,
+  type Deck,
+  type ReviewCard,
 } from './learn';
 import {
   aiClient,
@@ -86,6 +92,9 @@ const SettingsPanel = lazy(() =>
 const GenerateQuizDialog = lazy(() =>
   import('./quiz/GenerateQuizDialog').then((m) => ({ default: m.GenerateQuizDialog })),
 );
+const GenerateCardsDialog = lazy(() =>
+  import('./learn/GenerateCardsDialog').then((m) => ({ default: m.GenerateCardsDialog })),
+);
 const AiOrb = lazy(() =>
   import('./ai/AiOrb').then((m) => ({ default: m.AiOrb })),
 );
@@ -110,7 +119,7 @@ const demoContent: Record<string, string> = {
     '# Machine Learning\n\nA topic folder for ML notes, papers, and experiments.\n',
 };
 
-type RailView = 'files' | 'tags' | 'ai';
+type RailView = 'files' | 'tags' | 'review' | 'ai';
 type Overlay = 'settings' | null;
 
 const LAYOUT_KEY = 'mv:layout';
@@ -219,8 +228,8 @@ export default function App() {
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [aiChatOpen, setAiChatOpen] = useState(false);
   const [aiSeedPrompt, setAiSeedPrompt] = useState<string | null>(null);
-  const [quizCards, setQuizCards] = useState<Flashcard[] | null>(null);
-  const [dueTick, setDueTick] = useState(0);
+  const [reviewRun, setReviewRun] = useState<{ id: number; session: ReviewSession; deck: Deck; paused: boolean } | null>(null);
+  const [generateCardsOpen, setGenerateCardsOpen] = useState(false);
   const [layout, setLayout] = useState<LayoutState>(() => loadLayout());
   const [generateQuizOpen, setGenerateQuizOpen] = useState(false);
   const [quizJob, setQuizJob] = useState<
@@ -321,12 +330,9 @@ export default function App() {
   const files = vault.files;
   const pdfFiles = vault.pdfFiles;
 
-  const cardStore = useMemo(() => new CardStore(root ?? ''), [root]);
-  const reviewQueue = useMemo(
-    () => new ReviewQueue(cardStore, new Sm2SchedulerStrategy()),
-    [cardStore],
-  );
   const quizHistory = useMemo(() => new QuizHistoryStore(root ?? ''), [root]);
+  const review = useReviewSystem(root, quizHistory);
+  const reviewIndex = review.index;
 
   useEffect(() => {
     const settings = settingsStore.hydrate();
@@ -424,11 +430,8 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once when Electron vault API is ready
   }, []);
 
-  useEffect(() => {
-    cardStore.setVaultRoot(root ?? '');
-    void cardStore.load().then(() => setDueTick((n) => n + 1));
-    return cardStore.subscribe(() => setDueTick((n) => n + 1));
-  }, [cardStore, root]);
+  // A different vault means different cards; drop any review in progress.
+  useEffect(() => setReviewRun(null), [root]);
 
   const rootRef = useRef(root);
   const contentRef = useRef('');
@@ -529,6 +532,13 @@ export default function App() {
         }),
       );
       if (cancelled) return;
+      reviewIndex.replaceAll(
+        entries.map(([path, text]) =>
+          path === selectedRef.current && editorPathRef.current === path && contentRef.current
+            ? ([path, contentRef.current] as const)
+            : ([path, text] as const),
+        ),
+      );
       setContents((prev) => {
         const next = { ...prev };
         for (const [path, text] of entries) {
@@ -549,6 +559,38 @@ export default function App() {
       cancelled = true;
     };
   }, [root, files]);
+
+  // Demo mode has no disk to scan; index the in-memory notes instead.
+  useEffect(() => {
+    if (root) return;
+    reviewIndex.replaceAll(files.map((path) => [path, contents[path] ?? demoContent[path] ?? ''] as const));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild when the file list changes
+  }, [root, files, reviewIndex]);
+
+  // Keep cards current when notes change on disk (other apps, agents, sync).
+  useEffect(() => {
+    if (!root) return;
+    return VaultService.onWatch((event) => {
+      if (event.root !== root || !/\.md$/i.test(event.path)) return;
+      if (event.type === 'unlink') {
+        reviewIndex.remove(event.path);
+        return;
+      }
+      if (event.type !== 'add' && event.type !== 'change') return;
+      // The open note is indexed from the editor instead.
+      if (event.path === selectedRef.current) return;
+      void VaultService.read(root, event.path).then((text) => reviewIndex.update(event.path, text));
+    });
+  }, [root, reviewIndex]);
+
+  // Cards typed into the open note show up as you write.
+  useEffect(() => {
+    if (!selected || editorPathRef.current !== selected) return;
+    const path = selected;
+    const text = controller.content;
+    const timer = window.setTimeout(() => reviewIndex.update(path, text), 500);
+    return () => window.clearTimeout(timer);
+  }, [selected, controller.content, reviewIndex]);
 
   const { backlinks } = useBacklinks(selected, notes);
   const { results: searchResults } = useSearch(query, notes);
@@ -603,6 +645,8 @@ export default function App() {
       return;
     }
     if (controller.isDirty) void controller.persistence.flush();
+    // Opening a note sets a running review aside; its tab resumes it.
+    setReviewRun((current) => (current && !current.paused ? { ...current, paused: true } : current));
     setSelected(name);
     setTreeFocus({ kind: 'file', path: name });
     // Keep activeFolder as the last explicit folder/root click — don't
@@ -810,6 +854,42 @@ export default function App() {
     setSelected(path);
     setTreeFocus({ kind: 'file', path });
     controller.loadContent(body);
+  };
+
+  const startReview = async (deck: Deck) => {
+    if (controller.isDirty) await controller.persistence.flush();
+    // Pick up edits to the open note that the debounce hasn't indexed yet.
+    if (selected && editorPathRef.current === selected) reviewIndex.update(selected, controller.content);
+    const cards = reviewIndex.all().filter(deckFilter(deck, reviewIndex));
+    const session = new ReviewSession(cards, review.store, review.scheduler, review.settings, Date.now());
+    setReviewRun({ id: Date.now(), session, deck, paused: false });
+    setLayout((current) => ({ ...current, focusMode: false }));
+  };
+
+  /** Jump from a card to the note it was written in; the review waits in the tab bar. */
+  const openCardSource = (card: ReviewCard) => {
+    setReviewRun((current) => (current ? { ...current, paused: true } : current));
+    if (card.source.path !== selected) select(card.source.path);
+  };
+
+  const insertGeneratedCards = async (lines: string[]) => {
+    setGenerateCardsOpen(false);
+    const path = selected;
+    if (!path || lines.length === 0) return;
+    const next = appendCardLines(controller.content, lines);
+    if (canUseDiskVault(root)) {
+      try {
+        await VaultService.write(root, path, next);
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : 'Could not save the new cards.');
+        return;
+      }
+    }
+    setContents((prev) => ({ ...prev, [path]: next }));
+    controller.loadContent(next);
+    controller.markSaved();
+    setEditorRevision((n) => n + 1);
+    reviewIndex.update(path, next);
   };
 
   const createFolder = async () => {
@@ -1072,6 +1152,8 @@ export default function App() {
   }, [treeFocus, selected]);
 
   const saved = !controller.isDirty;
+  const reviewDueCount = review.due.newCount + review.due.learning + review.due.review;
+  const reviewing = Boolean(reviewRun && !reviewRun.paused);
   const findMatches = findQuery.trim()
     ? (controller.content.toLowerCase().match(new RegExp(findQuery.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) ?? []).length
     : 0;
@@ -1130,6 +1212,27 @@ export default function App() {
         </IconButton>
         <IconButton
           type="button"
+          className={
+            rail === 'review' && layout.sidebarOpen && !layout.focusMode
+              ? 'rail-button rail-button-review active'
+              : 'rail-button rail-button-review'
+          }
+          size="2"
+          variant="ghost"
+          color="gray"
+          highContrast
+          aria-label={`Review${reviewDueCount ? ` (${reviewDueCount} waiting)` : ''}`}
+          title="Review flashcards"
+          aria-pressed={rail === 'review' && layout.sidebarOpen && !layout.focusMode}
+          onClick={() => selectRail('review')}
+        >
+          <LayersIcon width={18} height={18} />
+          {reviewDueCount > 0 ? (
+            <span className="rail-badge">{reviewDueCount > 99 ? '99+' : reviewDueCount}</span>
+          ) : null}
+        </IconButton>
+        <IconButton
+          type="button"
           className={rail === 'ai' || aiChatOpen ? 'rail-button active' : 'rail-button'}
           size="2"
           variant="ghost"
@@ -1174,7 +1277,13 @@ export default function App() {
       </aside>
 
       <aside className="sidebar" aria-hidden={!layout.sidebarOpen || layout.focusMode}>
-        {rail === 'tags' ? (
+        {rail === 'review' ? (
+          <ReviewSidebar
+            system={review}
+            onStart={(deck) => void startReview(deck)}
+            onClose={() => setSidebarOpen(false)}
+          />
+        ) : rail === 'tags' ? (
           <>
             <Flex className="sidebar-heading" align="center" justify="between" px="3">
               <Text size="1" color="gray" weight="bold">
@@ -1312,7 +1421,36 @@ export default function App() {
               )}
             </IconButton>
           )}
-          <div className="tab active" title={selected}>
+          {reviewRun ? (
+            <button
+              type="button"
+              className={`tab tab-review ${reviewing ? 'active' : ''}`}
+              title={reviewing ? 'Reviewing' : 'Resume review'}
+              onClick={() => setReviewRun((current) => (current ? { ...current, paused: false } : current))}
+            >
+              <LayersIcon width={14} height={14} />
+              <span className="tab-title">Review · {reviewRun.deck.label}</span>
+              <span
+                role="button"
+                tabIndex={-1}
+                className="tab-close"
+                aria-label="End review"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setReviewRun(null);
+                }}
+              >
+                <Cross1Icon width={10} height={10} />
+              </span>
+            </button>
+          ) : null}
+          <div
+            className={`tab ${reviewing ? '' : 'active'}`}
+            title={selected}
+            onClick={() => {
+              if (reviewing) setReviewRun((current) => (current ? { ...current, paused: true } : current));
+            }}
+          >
             {isQuizPath(selected) ? (
               <ClipboardIcon width={14} height={14} />
             ) : (
@@ -1324,7 +1462,7 @@ export default function App() {
             {!saved && <span className="dirty">•</span>}
           </div>
           <div className="tab-spacer" />
-          {!isQuizPath(selected) && noteTags.length > 0 && (
+          {!reviewing && !isQuizPath(selected) && noteTags.length > 0 && (
             <div className="note-tags">
               {noteTags.map((t) => (
                 <span key={t}>{t}</span>
@@ -1360,7 +1498,8 @@ export default function App() {
                 )}
               </IconButton>
             )}
-            {!isQuizPath(selected) && selected ? (
+            {!reviewing && isQuizPath(selected) ? <QuizReviewToggle system={review} path={selected} /> : null}
+            {!reviewing && !isQuizPath(selected) && selected ? (
               <Button
                 size="1"
                 highContrast
@@ -1427,7 +1566,18 @@ export default function App() {
               <button type="button" onClick={() => setFindOpen(false)} aria-label="Close find">×</button>
             </div>
           ) : null}
-          {isQuizPath(selected) ? (
+          {reviewRun && !reviewRun.paused ? (
+            <ReviewView
+              key={reviewRun.id}
+              session={reviewRun.session}
+              deckLabel={reviewRun.deck.label}
+              store={review.store}
+              scheduler={review.scheduler}
+              typeCloze={review.settings.typeCloze}
+              onExit={() => setReviewRun(null)}
+              onOpenSource={openCardSource}
+            />
+          ) : isQuizPath(selected) ? (
             <QuizShell
               documentPath={selected}
               historyStore={quizHistory}
@@ -1515,9 +1665,18 @@ export default function App() {
             ))}
           </div>
         )}
+        {selected && !isQuizPath(selected) ? (
+          <div className="panel-section">
+            <NoteCardsPanel
+              system={review}
+              path={selected}
+              onReview={() => void startReview({ kind: 'note', label: noteTitle(selected), path: selected })}
+              onGenerate={() => setGenerateCardsOpen(true)}
+            />
+          </div>
+        ) : null}
         <div className="panel-section">
           <ProgressPanel store={quizHistory} folder={parentDir(selected)} />
-          <span className="sr-only">{dueTick}</span>
         </div>
       </aside>
 
@@ -1758,14 +1917,19 @@ export default function App() {
           </div>
         </div>
       )}
-      {quizCards && (
-        <div className="mv-overlay mv-overlay-quiz" role="dialog">
-          <QuizView
-            cards={quizCards}
-            queue={reviewQueue}
-            onClose={() => setQuizCards(null)}
+      {generateCardsOpen && selected && (
+        <Suspense fallback={null}>
+          <GenerateCardsDialog
+            client={aiClient}
+            path={selected}
+            content={controller.content}
+            existing={(reviewIndex.note(selected)?.cards ?? []).flatMap((card) =>
+              card.kind === 'basic' ? [`${card.front} :: ${card.back}`] : card.kind === 'cloze' ? [card.text] : [],
+            )}
+            onInsert={(lines) => void insertGeneratedCards(lines)}
+            onCancel={() => setGenerateCardsOpen(false)}
           />
-        </div>
+        </Suspense>
       )}
     </div>
   );

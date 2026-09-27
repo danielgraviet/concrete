@@ -67,6 +67,10 @@ interface Window {
     read: (root: string, name: string) => Promise<string>;
     write: (root: string, name: string, content: string) => Promise<boolean>;
     create: (root: string, name: string) => Promise<string>;
+    /** App data under `.vault/` (JSON/JSONL only). Missing on older Electron builds. */
+    readData?: (root: string, name: string) => Promise<string | null>;
+    writeData?: (root: string, name: string, content: string) => Promise<boolean>;
+    appendData?: (root: string, name: string, content: string) => Promise<boolean>;
     mkdir: (root: string, name: string) => Promise<string>;
     ensureDefault: () => Promise<VaultOpenResult>;
     importObsidian: (root: string) => Promise<VaultOpenResult>;
