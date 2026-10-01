@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import type { AiClient } from '../ai/AiClient';
 import { QuizGradeView } from './QuizGradeView';
 import { QuizQuestionCard } from './QuizQuestionCard';
@@ -37,10 +38,14 @@ export function QuizTakeView({ markdown, documentPath, client, onEdit, historySt
     <QuizCelebration quizNumber={quizNumber} seed={sessionSeed} />
   ) : null;
 
+  useEffect(() => {
+    if (phase !== 'graded' || !report) return;
+    document.querySelector<HTMLElement>('.editor-wrap')?.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [phase, report]);
+
   if (phase === 'graded' && report) {
     return (
       <>
-        {celebration}
         <QuizGradeView report={report} quiz={quiz} responses={responses} client={client} onRetake={retake} onEdit={onEdit} />
         <div className="quiz-grade-attempts">
           <QuizAttempts store={history} quizPath={documentPath} currentId={sessionSeed} />
