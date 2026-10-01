@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, IconButton } from '@radix-ui/themes';
-import { Cross1Icon, ExternalLinkIcon, ResetIcon } from '@radix-ui/react-icons';
+import { Cross1Icon, ExternalLinkIcon, Pencil1Icon, ResetIcon } from '@radix-ui/react-icons';
+import type { QuizQuestion } from '../quiz/types';
 import { noteTitle } from '../vault/fileTree';
+import { CardEditor } from './CardEditor';
 import { CardFace, mcqOptions as shuffledMcqOptions, suggestedRating, type FaceState } from './CardFace';
+import { canEditCard, type CardEdit } from './editCard';
 import type { ReviewSession } from './ReviewSession';
 import { formatInterval, type Scheduler } from './scheduler';
 import type { ReviewStateStore } from './ReviewStateStore';
@@ -19,6 +22,10 @@ type Props = {
   typeCloze: boolean;
   onExit: () => void;
   onOpenSource: (card: ReviewCard) => void;
+  /** Rewrite a card in its note. Resolves to an error message, or null once saved. */
+  onEditCard: (card: ReviewCard, edit: CardEdit) => Promise<string | null>;
+  /** The quiz question behind a quiz card, for editing it. */
+  quizQuestionFor: (card: ReviewCard) => QuizQuestion | null;
 };
 
 function freshFace(): FaceState {
@@ -31,11 +38,24 @@ function isTyping(target: EventTarget | null): boolean {
 }
 
 /** Full-width review: one card, reveal, rate. Everything is reachable from the keyboard. */
-export function ReviewView({ session, deckLabel, store, scheduler, typeCloze, onExit, onOpenSource }: Props) {
+export function ReviewView({
+  session,
+  deckLabel,
+  store,
+  scheduler,
+  typeCloze,
+  onExit,
+  onOpenSource,
+  onEditCard,
+  quizQuestionFor,
+}: Props) {
   const [now, setNow] = useState(() => Date.now());
   const [face, setFace] = useState<FaceState>(freshFace);
   const [, setTick] = useState(0);
+  /** Open editor; `question` is set when the card comes from a quiz. */
+  const [editing, setEditing] = useState<{ question: QuizQuestion | null } | null>(null);
   const card = session.current(now);
+  const editable = card ? canEditCard(card) : false;
   const counts = session.counts();
   const total = session.reviewed + counts.newCount + counts.learning + counts.review;
   const progress = total ? session.reviewed / total : 1;
@@ -96,10 +116,37 @@ export function ReviewView({ session, deckLabel, store, scheduler, typeCloze, on
     [card, face.revealed],
   );
 
+  const startEdit = useCallback(() => {
+    if (!card || !canEditCard(card)) return;
+    if (card.source.origin !== 'quiz') {
+      setEditing({ question: null });
+      return;
+    }
+    const question = quizQuestionFor(card);
+    // The quiz changed under us: fall back to opening it.
+    if (question) setEditing({ question });
+    else onOpenSource(card);
+  }, [card, onOpenSource, quizQuestionFor]);
+
+  const saveEdit = useCallback(
+    async (edit: CardEdit) => {
+      if (!card) return null;
+      const error = await onEditCard(card, edit);
+      if (error) return error;
+      // The edited card keeps its place (and whether its answer is showing).
+      setEditing(null);
+      setTick((n) => n + 1);
+      return null;
+    },
+    [card, onEditCard],
+  );
+
   const mcqOptions = useMemo(() => (card?.kind === 'mcq' ? shuffledMcqOptions(card, face.seed) : []), [card, face.seed]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      // The editor handles its own keys (Esc cancels the edit, not the review).
+      if (editing) return;
       if (event.metaKey || event.ctrlKey || event.altKey) {
         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
           event.preventDefault();
@@ -120,9 +167,14 @@ export function ReviewView({ session, deckLabel, store, scheduler, typeCloze, on
         return;
       }
       if (!card) return;
-      if (key === 'o' || key === 'e') {
+      if (key === 'o' || (key === 'e' && !canEditCard(card))) {
         event.preventDefault();
         onOpenSource(card);
+        return;
+      }
+      if (key === 'e') {
+        event.preventDefault();
+        startEdit();
         return;
       }
       if (!face.revealed) {
@@ -155,7 +207,7 @@ export function ReviewView({ session, deckLabel, store, scheduler, typeCloze, on
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [card, face, mcqOptions, onExit, onOpenSource, rate, reveal, toggleOption, typeCloze, undo]);
+  }, [card, editing, face, mcqOptions, onExit, onOpenSource, rate, reveal, startEdit, toggleOption, typeCloze, undo]);
 
   const queue = card ? session.queueOf(card.id) : null;
   const suggested = card && face.revealed ? suggestedRating(card, face, typeCloze) : null;
@@ -192,44 +244,59 @@ export function ReviewView({ session, deckLabel, store, scheduler, typeCloze, on
                 {noteTitle(card.source.path)}
                 <ExternalLinkIcon width={11} height={11} />
               </button>
-              <span className="srs-kind">{card.kind === 'mcq' ? 'multiple choice' : card.kind}</span>
+              <span className="srs-card-meta-right">
+                <span className="srs-kind">{card.kind === 'mcq' ? 'multiple choice' : card.kind}</span>
+                {editable && !editing ? (
+                  <button type="button" className="srs-edit" aria-label="Edit card (E)" title="Edit card (E)" onClick={startEdit}>
+                    <Pencil1Icon width={13} height={13} />
+                  </button>
+                ) : null}
+              </span>
             </div>
-            <CardFace
-              card={card}
-              state={face}
-              typeCloze={typeCloze}
-              onToggleOption={toggleOption}
-              onTyped={(typed) => setFace((current) => ({ ...current, typed }))}
-              onSubmit={() => (face.revealed ? rate(suggestedRating(card, face, typeCloze)) : reveal())}
-            />
+            {editing ? (
+              <CardEditor card={card} question={editing.question} onSave={saveEdit} onCancel={() => setEditing(null)} />
+            ) : (
+              <CardFace
+                card={card}
+                state={face}
+                typeCloze={typeCloze}
+                onToggleOption={toggleOption}
+                onTyped={(typed) => setFace((current) => ({ ...current, typed }))}
+                onSubmit={() => (face.revealed ? rate(suggestedRating(card, face, typeCloze)) : reveal())}
+              />
+            )}
           </article>
 
-          <footer className="srs-actions">
-            {!face.revealed ? (
-              <Button size="3" highContrast className="srs-reveal" disabled={card.kind === 'mcq' && face.selected.length === 0} onClick={reveal}>
-                {card.kind === 'mcq' ? 'Check' : 'Show answer'}
-                <kbd>Space</kbd>
-              </Button>
-            ) : (
-              <div className="srs-ratings">
-                {RATINGS.map((rating, index) => (
-                  <button
-                    key={rating}
-                    type="button"
-                    className={`srs-rate srs-rate-${rating} ${suggested === rating ? 'suggested' : ''}`}
-                    onClick={() => rate(rating)}
-                  >
-                    <span className="srs-rate-interval">{preview ? formatInterval(preview[rating] - Date.now()) : ''}</span>
-                    <span className="srs-rate-label">{RATING_LABEL[rating]}</span>
-                    <kbd>{index + 1}</kbd>
-                  </button>
-                ))}
-              </div>
-            )}
-          </footer>
-          <p className="srs-hints">
-            {face.revealed ? 'Space picks the highlighted rating · ' : ''}U undo · O open note · Esc exit
-          </p>
+          {editing ? null : (
+            <>
+              <footer className="srs-actions">
+                {!face.revealed ? (
+                  <Button size="3" highContrast className="srs-reveal" disabled={card.kind === 'mcq' && face.selected.length === 0} onClick={reveal}>
+                    {card.kind === 'mcq' ? 'Check' : 'Show answer'}
+                    <kbd>Space</kbd>
+                  </Button>
+                ) : (
+                  <div className="srs-ratings">
+                    {RATINGS.map((rating, index) => (
+                      <button
+                        key={rating}
+                        type="button"
+                        className={`srs-rate srs-rate-${rating} ${suggested === rating ? 'suggested' : ''}`}
+                        onClick={() => rate(rating)}
+                      >
+                        <span className="srs-rate-interval">{preview ? formatInterval(preview[rating] - Date.now()) : ''}</span>
+                        <span className="srs-rate-label">{RATING_LABEL[rating]}</span>
+                        <kbd>{index + 1}</kbd>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </footer>
+              <p className="srs-hints">
+                {face.revealed ? 'Space picks the highlighted rating · ' : ''}U undo · {editable ? 'E edit · ' : ''}O open note · Esc exit
+              </p>
+            </>
+          )}
         </>
       ) : (
         <div className="srs-done">

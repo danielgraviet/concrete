@@ -35,14 +35,18 @@ function presentQuestion(
   return presented;
 }
 
-/** Split cloze prompt into text/blank segments for the take UI. */
+/**
+ * Split cloze prompt into text/blank segments for the take UI. A blank wrapped in
+ * inline code (`` `{{answer}}` ``) takes its backticks with it and is marked `code`,
+ * so the surrounding text isn't left with stray backticks.
+ */
 export function clozeSegments(
   prompt: string,
-): Array<{ type: 'text'; value: string } | { type: 'blank'; answer: string; index: number }> {
+): Array<{ type: 'text'; value: string } | { type: 'blank'; answer: string; index: number; code: boolean }> {
   const segments: Array<
-    { type: 'text'; value: string } | { type: 'blank'; answer: string; index: number }
+    { type: 'text'; value: string } | { type: 'blank'; answer: string; index: number; code: boolean }
   > = [];
-  const re = /\{\{([^}]+)\}\}/g;
+  const re = /(`?)\{\{([^}]+)\}\}\1/g;
   let last = 0;
   let blankIndex = 0;
   let match: RegExpExecArray | null;
@@ -50,7 +54,7 @@ export function clozeSegments(
     if (match.index > last) {
       segments.push({ type: 'text', value: prompt.slice(last, match.index) });
     }
-    segments.push({ type: 'blank', answer: match[1].trim(), index: blankIndex });
+    segments.push({ type: 'blank', answer: match[2].trim(), index: blankIndex, code: match[1] === '`' });
     blankIndex += 1;
     last = match.index + match[0].length;
   }

@@ -33,7 +33,12 @@ import { RUN_CODE_EVENT, runnableCodeBlockDescriptor } from './RunnableCodeBlock
 import { quoteExitPlugin } from './quote';
 import { inlineCodeExitPlugin } from './inlineCode';
 import { slashMenuPlugin } from './slash';
-import { mathPlugin, normalizeMathMarkdown, preferOneLineDisplayMath } from './math';
+import {
+  mathPlugin,
+  normalizeMathMarkdown,
+  normalizePastedMathMarkdown,
+  preferOneLineDisplayMath,
+} from './math';
 import { arrowPlugin } from './arrow';
 import { emDashPlugin } from './emDash/emDashPlugin';
 import { cardShortcutsPlugin } from './cards/cardShortcutsPlugin';
@@ -231,6 +236,15 @@ export const WysiwygEditor = forwardRef<WysiwygEditorHandle, WysiwygEditorProps>
 
     return (
       <div
+        onPasteCapture={(event) => {
+          const text = event.clipboardData.getData('text/plain');
+          // Let the editor retain rich HTML paste behavior for ordinary text.
+          // Intercept LaTeX delimiters so they pass through the same math
+          // normalization used when a note is loaded.
+          if (!/\\\[|\\\(|\\\$[^\n]*?\\\$/.test(text)) return;
+          event.preventDefault();
+          editorRef.current?.insertMarkdown(normalizePastedMathMarkdown(text));
+        }}
         onClickCapture={(event) => {
           // Preserve normal clicks for editing; Command-click follows a link.
           if (!event.metaKey && !event.ctrlKey) return;

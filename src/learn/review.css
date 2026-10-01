@@ -242,3 +242,29 @@
 }
 .srs-generate-row:not(.selected) { opacity: 0.55; }
 .srs-generate-row input { margin-top: 3px; }
+
+/* Editing a card during review */
+.srs-edit { border: 0; padding: 0; background: none; color: var(--mv-muted); cursor: pointer; display: inline-flex; }
+.srs-edit:hover { color: var(--mv-text); }
+.srs-card-meta-right { display: inline-flex; align-items: center; gap: 10px; }
+.srs-editor { display: flex; flex-direction: column; gap: 6px; }
+.srs-editor-label { font-size: 11px; color: var(--mv-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.srs-editor-row { display: flex; flex-direction: column; gap: 6px; }
+.srs-editor-row + .srs-editor-row { margin-top: 10px; }
+.srs-editor-field {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--mv-text);
+  background: var(--mv-bg, transparent);
+  border: 1px solid var(--mv-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  outline: 0;
+}
+.srs-editor-field:focus { border-color: var(--srs-new); }
+.srs-editor-error { margin: 4px 0 0; font-size: 12px; color: var(--srs-learning); }
+.srs-editor-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.srs-editor-actions .srs-muted { margin-right: auto; }
+.srs-editor-actions kbd { font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; opacity: 0.7; }

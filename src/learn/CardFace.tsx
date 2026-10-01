@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { QuizMarkdown } from '../quiz/QuizMarkdown';
+import { QuizInlineText as InlineText, QuizMarkdown } from '../quiz/QuizMarkdown';
 import { createRng, hashSeed, optionLetter, shuffledCopy } from '../quiz/shuffle';
 import { clozeDisplaySegments } from './parseNoteCards';
 import type { ClozeCard, McqCard, ReviewCard } from './types';
@@ -14,18 +14,6 @@ export function clozeAnswer(card: ClozeCard): string {
   return clozeDisplaySegments(card.text, card.group)
     .flatMap((seg) => (seg.type === 'blank' && seg.hidden ? [seg.answer] : []))
     .join(' · ');
-}
-
-/** Inline markdown that keeps the spaces at its edges (markdown would trim them). */
-function InlineText({ text }: { text: string }) {
-  const [, lead, body, trail] = /^(\s*)([\s\S]*?)(\s*)$/.exec(text) ?? ['', '', text, ''];
-  return (
-    <>
-      {lead ? ' ' : null}
-      {body ? <QuizMarkdown inline>{body}</QuizMarkdown> : null}
-      {trail ? ' ' : null}
-    </>
-  );
 }
 
 function ClozeFace({

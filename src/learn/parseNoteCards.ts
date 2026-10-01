@@ -21,6 +21,18 @@ export type ParsedNoteCard =
   | { kind: 'basic'; front: string; back: string; line: number }
   | { kind: 'cloze'; text: string; group: string; line: number };
 
+/** Where a parsed card sits in the note and how it was written, for editing it in place. */
+export type NoteCardSpan = ParsedNoteCard & {
+  /** Line after the card's last line. */
+  end: number;
+  /** `inline` = `Q :: A`; `block` = the multi-line `?` form; `cloze` = a `{{…}}` paragraph. */
+  layout: 'inline' | 'block' | 'cloze';
+  /** Written with `:::` / `??`, so the note holds this card and its reverse. */
+  paired: boolean;
+  /** This is the generated reverse of a paired card. */
+  reverse: boolean;
+};
+
 export type ClozeBlank = {
   start: number;
   end: number;
@@ -142,9 +154,14 @@ function splitOn(line: string, masked: string, sep: string): [string, string] | 
 }
 
 export function parseNoteCards(markdown: string): ParsedNoteCard[] {
+  return parseNoteCardSpans(markdown).map(({ end: _end, layout: _layout, paired: _paired, reverse: _reverse, ...card }) => card);
+}
+
+/** Like `parseNoteCards`, plus each card's line span and syntax. */
+export function parseNoteCardSpans(markdown: string): NoteCardSpan[] {
   const raw = markdown.replace(/\r\n?/g, '\n').split('\n');
   const lines = classifyLines(raw, frontmatterEnd(raw));
-  const cards: ParsedNoteCard[] = [];
+  const cards: NoteCardSpan[] = [];
   const consumed = new Set<number>();
 
   // Multi-line `?` cards first so their lines aren't re-read as other cards.
@@ -183,8 +200,10 @@ export function parseNoteCards(markdown: string): ParsedNoteCard[] {
     const back = raw.slice(backStart, end).join('\n').trim();
     for (let k = top; k < end; k += 1) consumed.add(k);
     if (!front || !back) continue;
-    cards.push({ kind: 'basic', front, back, line: top });
-    if (sep[1] === '??') cards.push({ kind: 'basic', front: back, back: front, line: top });
+    const paired = sep[1] === '??';
+    const span = { line: top, end, layout: 'block' as const, paired };
+    cards.push({ kind: 'basic', front, back, ...span, reverse: false });
+    if (paired) cards.push({ kind: 'basic', front: back, back: front, ...span, reverse: true });
     i = end - 1;
   }
 
@@ -200,8 +219,9 @@ export function parseNoteCards(markdown: string): ParsedNoteCard[] {
     const back = pair[1].trim();
     if (!front || !back) continue;
     consumed.add(i);
-    cards.push({ kind: 'basic', front, back, line: i });
-    if (reversed) cards.push({ kind: 'basic', front: back, back: front, line: i });
+    const span = { line: i, end: i + 1, layout: 'inline' as const, paired: Boolean(reversed) };
+    cards.push({ kind: 'basic', front, back, ...span, reverse: false });
+    if (reversed) cards.push({ kind: 'basic', front: back, back: front, ...span, reverse: true });
   }
 
   // Cloze: a paragraph (consecutive plain lines) or a single list item / heading.
@@ -227,7 +247,9 @@ export function parseNoteCards(markdown: string): ParsedNoteCard[] {
       .join('\n')
       .trim();
     const groups = [...new Set(parseClozeBlanks(text).map((blank) => blank.group))];
-    for (const group of groups) cards.push({ kind: 'cloze', text, group, line: i });
+    for (const group of groups) {
+      cards.push({ kind: 'cloze', text, group, line: i, end, layout: 'cloze', paired: false, reverse: false });
+    }
     i = end - 1;
   }
 

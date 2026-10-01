@@ -16,3 +16,5 @@ export { ReviewSidebar } from './ReviewSidebar';
 export { NoteCardsPanel } from './NoteCardsPanel';
 export { QuizReviewToggle } from './QuizReviewToggle';
 export { appendCardLines } from './appendCardLines';
+export { applyCardEdit, canEditCard, quizQuestionForCard } from './editCard';
+export type { CardEdit } from './editCard';

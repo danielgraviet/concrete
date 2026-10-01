@@ -12,6 +12,7 @@
 .typeahead-popover{position:fixed;z-index:1000;width:280px;max-height:320px;overflow:auto;background:var(--mv-surface-2,#292929);border:1px solid var(--mv-border,#454545);color:var(--mv-text,#ddd);box-shadow:0 12px 30px #000a;border-radius:7px;padding:6px}
 .slash-menu button.selected,.slash-menu button[aria-selected="true"]{background:var(--accent-4,#3a3a3a)}
 .find-bar{position:sticky;top:0;z-index:4;display:flex;align-items:center;gap:8px;width:min(420px,100%);margin:0 0 18px auto;padding:6px 8px;background:var(--mv-surface);border:1px solid var(--mv-border);border-radius:6px;box-shadow:0 8px 20px #0003;color:var(--mv-muted);font-size:11px}.find-bar input{min-width:0;flex:1;border:0;outline:0;background:transparent;color:var(--mv-text);font:inherit}.find-bar button{border:0;background:transparent;color:var(--mv-muted);font-size:18px;line-height:1;cursor:pointer}.find-bar button:hover{color:var(--mv-text)}
+::highlight(find-matches){background-color:#d4a84b66;color:inherit}::highlight(find-active-match){background-color:#f1bd4f;color:#191919}
 
 /* Concrete theme tokens — bridge layout CSS to Radix Themes */
 :root,
@@ -1379,26 +1380,26 @@ body{
 }
 .panel-title-row .panel-title{padding-right:0}
 
-/* Checklist / task items — keep box + text on one line, vault accent */
+/* Checklist / task items — box in the gutter, text flows inline (text, code and
+   math are sibling nodes of the li, so a flex li would split them into columns) */
 .wysiwyg [class*="listItemChecked"],
 .wysiwyg [class*="listItemUnchecked"]{
-  display:flex;
-  align-items:flex-start;
-  gap:10px;
+  display:block;
   margin:6px 0;
   margin-inline-start:0!important;
-  padding-left:0!important;
+  padding-left:26px!important;
   padding-right:0!important;
   list-style:none;
   line-height:1.5;
 }
 .wysiwyg [class*="listItemChecked"]:before,
 .wysiwyg [class*="listItemUnchecked"]:before{
-  position:static!important;
-  flex:0 0 16px;
+  position:absolute!important;
+  left:0!important;
+  top:3px!important;
   width:16px!important;
   height:16px!important;
-  margin-top:3px;
+  margin:0!important;
   border-radius:4px!important;
   box-sizing:border-box;
 }
@@ -1412,7 +1413,7 @@ body{
   box-shadow:none!important;
 }
 .wysiwyg [class*="listItemChecked"]:after{
-  /* rebuild checkmark relative to the flex item */
+  /* checkmark inside the gutter box */
   position:absolute!important;
   left:5px!important;
   top:5px!important;
@@ -2087,11 +2088,12 @@ div[class*="selectContainer"] [class*="selectItem"][data-state="checked"]{
   display:inline-grid;place-items:center;min-width:22px;height:22px;border-radius:4px;
   background:#333;color:#c5ceff;font-size:12px;font-weight:700;
 }
-.quiz-cloze-prompt{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.quiz-cloze-prompt{white-space:normal;line-height:2.1}
 .quiz-cloze-input{
-  min-width:120px;border:1px solid #4a4a4a;border-radius:5px;background:#1a1a1a;
+  min-width:120px;margin:0 2px;border:1px solid #4a4a4a;border-radius:5px;background:#1a1a1a;
   color:#eee;padding:6px 8px;font:inherit;
 }
+.quiz-cloze-input-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em}
 .quiz-open-input,.quiz-source{
   width:100%;border:1px solid #3a3a3a;border-radius:8px;background:#1a1a1a;color:#ddd;
   padding:12px;font:14px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;resize:vertical;

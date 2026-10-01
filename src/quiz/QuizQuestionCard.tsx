@@ -1,6 +1,6 @@
 import { clozeSegments } from './present';
 import { CodeSnippet } from './CodeSnippet';
-import { QuizMarkdown } from './QuizMarkdown';
+import { QuizInlineText, QuizMarkdown } from './QuizMarkdown';
 import type {
   ClozeResponse,
   CodeKind,
@@ -133,16 +133,14 @@ function ClozeBody({
 
   return (
     <div className="quiz-cloze">
-      <p className="quiz-prompt quiz-cloze-prompt">
+      <p className="quiz-prompt quiz-cloze-prompt quiz-md">
         {segments.map((seg, i) =>
           seg.type === 'text' ? (
-            <span key={i} className="quiz-md">
-              <QuizMarkdown inline>{seg.value}</QuizMarkdown>
-            </span>
+            <QuizInlineText key={i} text={seg.value} />
           ) : (
             <input
               key={i}
-              className="quiz-cloze-input"
+              className={`quiz-cloze-input${seg.code ? ' quiz-cloze-input-code' : ''}`}
               value={fills[seg.index] ?? ''}
               onChange={(e) => setFill(seg.index, e.target.value)}
               aria-label={`Blank ${seg.index + 1}`}

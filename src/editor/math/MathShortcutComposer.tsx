@@ -1,13 +1,15 @@
 import { useEffect } from 'react';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import {
+  $createParagraphNode,
   $createTextNode,
+  $getRoot,
   $getSelection,
   $isRangeSelection,
   $isTextNode,
   type TextNode,
 } from 'lexical';
-import { $createMathNode } from './MathNode';
+import { $createMathNode, $isMathNode, MathNode } from './MathNode';
 
 /**
  * Convert a trailing `$...$` or `$$...$$` in the current text node into a MathNode.
@@ -57,7 +59,27 @@ export function MathShortcutComposer(): null {
   const [editor] = useLexicalComposerContext();
 
   useEffect(() => {
-    return editor.registerUpdateListener(({ editorState, dirtyElements, dirtyLeaves, tags }) => {
+    // A display-math decorator is a block node. Lexical does not provide an
+    // editable position after a final decorator, so leave an empty paragraph
+    // after it for the next line of text.
+    const unregisterTrailingParagraph = editor.registerNodeTransform(
+      MathNode,
+      (node) => {
+        if (!node.getInline() && node.getNextSibling() === null) {
+          node.insertAfter($createParagraphNode());
+        }
+      },
+    );
+    // The initial markdown can be imported before this composer child mounts.
+    // Cover that first state as well as later inserted equations.
+    editor.update(() => {
+      const last = $getRoot().getLastChild();
+      if ($isMathNode(last) && !last.getInline()) {
+        last.insertAfter($createParagraphNode());
+      }
+    });
+
+    const unregisterUpdateListener = editor.registerUpdateListener(({ editorState, dirtyElements, dirtyLeaves, tags }) => {
       if (tags.has('historic') || tags.has('collaboration')) return;
       if (dirtyElements.size === 0 && dirtyLeaves.size === 0) return;
 
@@ -81,6 +103,11 @@ export function MathShortcutComposer(): null {
         });
       });
     });
+
+    return () => {
+      unregisterTrailingParagraph();
+      unregisterUpdateListener();
+    };
   }, [editor]);
 
   return null;
