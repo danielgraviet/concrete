@@ -95,9 +95,8 @@ export function QuizTakeView({ markdown, documentPath, client, onEdit, historySt
           {phase === 'grading' ? 'Grading…' : 'Submit for grading'}
         </button>
         {phase === 'grading' ? (
-          <p className="quiz-muted">Grading keeps running if you open another note — you'll be notified when it's done.</p>
+          <p className="quiz-muted">You'll be notified when it's done.</p>
         ) : null}
-        <p className="quiz-muted">Graded with a stub rubric until an API key is configured.</p>
       </div>
     </div>
   );
