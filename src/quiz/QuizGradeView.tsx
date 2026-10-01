@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useLayoutEffect, useRef, useState } from 'react';
 import { runSandboxCode, type SandboxRunResult } from '../sandbox';
 import { settingsStore } from '../settings';
 import type { AiClient } from '../ai/AiClient';
@@ -18,9 +18,20 @@ type Props = {
 };
 
 export function QuizGradeView({ report, quiz, responses, client, onRetake, onEdit }: Props) {
+  const scoreSummaryRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const summary = scoreSummaryRef.current;
+      const page = summary?.closest<HTMLElement>('.editor-wrap');
+      if (page) page.scrollTop = 0;
+      else summary?.scrollIntoView({ block: 'start' });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
   return (
     <div className="quiz-grade">
-      <div className="quiz-grade-summary">
+      <div ref={scoreSummaryRef} className="quiz-grade-summary">
         <div className="quiz-grade-score">
           {report.percent}
           <small>%</small>
