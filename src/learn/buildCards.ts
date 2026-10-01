@@ -27,16 +27,20 @@ export function cardsFromNote(path: string, markdown: string): ReviewCard[] {
   return withIds(drafts);
 }
 
-function quizQuestionDraft(question: QuizQuestion, path: string, line: number): Draft | null {
+export function quizQuestionDraft(question: QuizQuestion, path: string, line: number): Draft | null {
   const source = { path, line, origin: 'quiz' as const };
   switch (question.type) {
     case 'mcq':
       return question.options.some((option) => option.correct) ? { kind: 'mcq', question, source } : null;
     case 'cloze':
-      // Every blank in a quiz cloze is one question, so hide them together.
+      // Every blank in a quiz cloze is one question, so hide them together. A blank
+      // wrapped in inline code moves the backticks inside, since note-card parsing
+      // never looks for blanks in code.
       return {
         kind: 'cloze',
-        text: question.prompt.replace(/\{\{([^}]+)\}\}/g, (_, answer: string) => `{{1::${answer.trim()}}}`),
+        text: question.prompt.replace(/(`?)\{\{([^}]+)\}\}\1/g, (_, tick: string, answer: string) =>
+          `{{1::${tick}${answer.trim()}${tick}}}`,
+        ),
         group: '1',
         source,
       };
@@ -59,15 +63,8 @@ function quizQuestionDraft(question: QuizQuestion, path: string, line: number): 
   }
 }
 
-/** Every question of a quiz file as a card (whether it's in review is decided by the store). */
-export function cardsFromQuiz(path: string, markdown: string): ReviewCard[] {
-  let questions: QuizQuestion[];
-  try {
-    questions = parseQuizMarkdown(markdown).questions;
-  } catch {
-    return [];
-  }
-  // Each `##` heading outside a code fence starts a question (mirrors parseQuizMarkdown).
+/** Line of each question's `##` heading, skipping code fences (mirrors parseQuizMarkdown). */
+export function quizHeadingLines(markdown: string): number[] {
   const headingLines: number[] = [];
   let fence: string | null = null;
   markdown.split('\n').forEach((line, index) => {
@@ -80,6 +77,18 @@ export function cardsFromQuiz(path: string, markdown: string): ReviewCard[] {
       headingLines.push(index);
     }
   });
+  return headingLines;
+}
+
+/** Every question of a quiz file as a card (whether it's in review is decided by the store). */
+export function cardsFromQuiz(path: string, markdown: string): ReviewCard[] {
+  let questions: QuizQuestion[];
+  try {
+    questions = parseQuizMarkdown(markdown).questions;
+  } catch {
+    return [];
+  }
+  const headingLines = quizHeadingLines(markdown);
   const drafts = questions.flatMap((question, index) => {
     const draft = quizQuestionDraft(question, path, headingLines[index] ?? 0);
     return draft ? [draft] : [];

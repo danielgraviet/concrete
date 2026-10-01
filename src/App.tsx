@@ -50,16 +50,20 @@ function tabTitleFor(path: string): string {
     : title;
 }
 import { useSearch } from './search';
+import { applyTextHighlights, clearTextHighlights, findTextRanges, revealTextRange } from './search/inFileFind';
 import { MetaService } from './meta';
 import {
   appendCardLines,
+  applyCardEdit,
   deckFilter,
+  quizQuestionForCard,
   NoteCardsPanel,
   QuizReviewToggle,
   ReviewSession,
   ReviewSidebar,
   ReviewView,
   useReviewSystem,
+  type CardEdit,
   type Deck,
   type ReviewCard,
 } from './learn';
@@ -230,6 +234,9 @@ export default function App() {
   const [query, setQuery] = useState('');
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState('');
+  const [findIndex, setFindIndex] = useState(0);
+  const [findMatchCount, setFindMatchCount] = useState(0);
+  const findRangesRef = useRef<Range[]>([]);
   const findInputRef = useRef<HTMLInputElement>(null);
   const [rail, setRail] = useState<RailView>('files');
   const [overlay, setOverlay] = useState<Overlay>(null);
@@ -873,6 +880,39 @@ export default function App() {
     if (card.source.path !== selected) select(card.source.path);
   };
 
+  /** Rewrite a card in its note from the review screen, keeping its review history. */
+  const editCard = async (card: ReviewCard, edit: CardEdit): Promise<string | null> => {
+    const path = card.source.path;
+    const isOpen = path === selected && editorPathRef.current === path;
+    if (controller.isDirty) await controller.persistence.flush();
+    let markdown: string;
+    try {
+      markdown = isOpen ? controller.content : canUseDiskVault(root) ? await VaultService.read(root, path) : await loadNoteBody(path);
+    } catch {
+      return 'Could not read the note.';
+    }
+    const result = applyCardEdit(markdown, card, edit);
+    if (!result.ok) return result.error;
+    if (canUseDiskVault(root)) {
+      try {
+        await VaultService.write(root, path, result.markdown);
+      } catch (error) {
+        return error instanceof Error ? error.message : 'Could not save the card.';
+      }
+    }
+    setContents((prev) => ({ ...prev, [path]: result.markdown }));
+    if (isOpen) {
+      controller.loadContent(result.markdown);
+      controller.markSaved();
+      setEditorRevision((n) => n + 1);
+    }
+    reviewIndex.update(path, result.markdown);
+    const cards = reviewIndex.note(path)?.cards ?? [result.card];
+    review.store.rekey(result.migrations, cards);
+    reviewRun?.session.rekey(result.migrations, cards);
+    return null;
+  };
+
   const insertGeneratedCards = async (lines: string[]) => {
     setGenerateCardsOpen(false);
     const path = selected;
@@ -1155,16 +1195,39 @@ export default function App() {
   const saved = !controller.isDirty;
   const reviewDueCount = review.due.newCount + review.due.learning + review.due.review;
   const reviewing = Boolean(reviewRun && !reviewRun.paused);
-  const findMatches = findQuery.trim()
-    ? (controller.content.toLowerCase().match(new RegExp(findQuery.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) ?? []).length
-    : 0;
   useEffect(() => {
-    if (!findOpen || !findQuery.trim()) return;
-    const timer = window.setTimeout(() => {
-      (window as Window & { find?: (text: string, caseSensitive?: boolean, backwards?: boolean) => boolean }).find?.(findQuery, false, false);
-    }, 500);
-    return () => window.clearTimeout(timer);
-  }, [findOpen, findQuery, selected]);
+    if (!findOpen) {
+      findRangesRef.current = [];
+      setFindMatchCount(0);
+      clearTextHighlights();
+      return;
+    }
+    const root = document.querySelector<HTMLElement>('.editor-wrap');
+    const ranges = root ? findTextRanges(root, findQuery) : [];
+    findRangesRef.current = ranges;
+    setFindMatchCount(ranges.length);
+    const activeIndex = ranges.length ? Math.min(findIndex, ranges.length - 1) : 0;
+    if (activeIndex !== findIndex) setFindIndex(activeIndex);
+    applyTextHighlights(ranges, ranges[activeIndex]);
+    return () => clearTextHighlights();
+  }, [findOpen, findQuery, findIndex, selected, controller.content]);
+  const moveFindMatch = (direction: number) => {
+    const ranges = findRangesRef.current;
+    if (!ranges.length) return;
+    const index = (findIndex + direction + ranges.length) % ranges.length;
+    setFindIndex(index);
+    applyTextHighlights(ranges, ranges[index]);
+    const root = document.querySelector<HTMLElement>('.editor-wrap');
+    if (root) revealTextRange(root, ranges[index]);
+  };
+  const revealCurrentFindMatch = () => {
+    const ranges = findRangesRef.current;
+    if (!ranges.length) return;
+    const index = Math.min(findIndex, ranges.length - 1);
+    applyTextHighlights(ranges, ranges[index]);
+    const root = document.querySelector<HTMLElement>('.editor-wrap');
+    if (root) revealTextRange(root, ranges[index]);
+  };
   const shellClass = [
     'app-shell',
     layout.focusMode ? 'focus-mode' : '',
@@ -1522,32 +1585,31 @@ export default function App() {
                 value={findQuery}
                 placeholder="Find in file"
                 aria-label="Find in current file"
-                onChange={(event) => setFindQuery(event.target.value)}
+                onChange={(event) => {
+                  setFindQuery(event.target.value);
+                  setFindIndex(0);
+                }}
                 onKeyDown={(event) => {
                   event.stopPropagation();
                   if (event.key === 'Escape') {
                     event.preventDefault();
                     setFindOpen(false);
+                  } else if (event.key === 'Tab') {
+                    event.preventDefault();
+                    revealCurrentFindMatch();
                   } else if (event.key === 'Enter') {
                     event.preventDefault();
-                    (window as Window & { find?: (text: string, caseSensitive?: boolean, backwards?: boolean) => boolean }).find?.(
-                      findQuery,
-                      false,
-                      event.shiftKey,
-                    );
-                    requestAnimationFrame(() => findInputRef.current?.focus());
+                    moveFindMatch(event.shiftKey ? -1 : 1);
                   }
                 }}
               />
-              <span>{findMatches ? `${findMatches} match${findMatches === 1 ? '' : 'es'}` : 'No matches'}</span>
+              <span>{findMatchCount ? `${findIndex + 1} of ${findMatchCount}` : 'No matches'}</span>
               <button
                 type="button"
                 aria-label="Previous match"
                 title="Previous match (Shift+Enter)"
                 onClick={() => {
-                  findInputRef.current?.focus();
-                  (window as Window & { find?: (text: string, caseSensitive?: boolean, backwards?: boolean) => boolean }).find?.(findQuery, false, true);
-                  findInputRef.current?.focus();
+                  moveFindMatch(-1);
                 }}
               >
                 <ChevronUpIcon width={14} height={14} />
@@ -1557,9 +1619,7 @@ export default function App() {
                 aria-label="Next match"
                 title="Next match (Enter)"
                 onClick={() => {
-                  findInputRef.current?.focus();
-                  (window as Window & { find?: (text: string, caseSensitive?: boolean, backwards?: boolean) => boolean }).find?.(findQuery, false, false);
-                  findInputRef.current?.focus();
+                  moveFindMatch(1);
                 }}
               >
                 <ChevronDownIcon width={14} height={14} />
@@ -1577,6 +1637,11 @@ export default function App() {
               typeCloze={review.settings.typeCloze}
               onExit={() => setReviewRun(null)}
               onOpenSource={openCardSource}
+              onEditCard={editCard}
+              quizQuestionFor={(card) => {
+                const markdown = reviewIndex.note(card.source.path)?.quizMarkdown;
+                return markdown ? (quizQuestionForCard(markdown, card)?.question ?? null) : null;
+              }}
             />
           ) : isQuizPath(selected) ? (
             <QuizShell

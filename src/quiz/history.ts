@@ -70,7 +70,7 @@ function promptText(question: QuizQuestion): string {
 }
 
 /** The student's answer as readable text ('' when left blank). */
-function answerText(question: QuizQuestion, response: QuizResponse | undefined): string {
+export function answerText(question: QuizQuestion, response: QuizResponse | undefined): string {
   if (!response) return '';
   if (response.type === 'mcq') {
     if (question.type !== 'mcq') return '';

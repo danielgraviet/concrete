@@ -4,7 +4,7 @@ import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { normalizeMathMarkdown } from '../editor/math';
+import { escapeCurrencyDollars, normalizeMathMarkdown } from '../editor/math';
 import { ensureKatexCss } from '../editor/math/ensureKatexCss';
 import { CodeSnippet } from './CodeSnippet';
 
@@ -67,7 +67,19 @@ export function QuizMarkdown({ children, inline = false }: { children: string; i
       rehypePlugins={[rehypeKatex]}
       components={inline ? inlineComponents : baseComponents}
     >
-      {normalizeMathMarkdown(children)}
+      {normalizeMathMarkdown(escapeCurrencyDollars(children))}
     </ReactMarkdown>
+  );
+}
+
+/** Inline markdown that keeps the spaces at its edges (markdown would trim them). */
+export function QuizInlineText({ text }: { text: string }) {
+  const [, lead, body, trail] = /^(\s*)([\s\S]*?)(\s*)$/.exec(text) ?? ['', '', text, ''];
+  return (
+    <>
+      {lead ? ' ' : null}
+      {body ? <QuizMarkdown inline>{body}</QuizMarkdown> : null}
+      {trail ? ' ' : null}
+    </>
   );
 }

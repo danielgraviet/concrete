@@ -192,6 +192,26 @@ export class ReviewStateStore {
     return last.id;
   }
 
+  /**
+   * Move history to a card's new id after it was edited in the app, so it
+   * stays the same card instead of relying on `reconcile`'s text matching.
+   */
+  rekey(migrations: Array<{ from: string; to: string }>, cards: ReviewCard[]): void {
+    const moves = migrations.filter(({ from, to }) => from !== to && this.data.cards[from]);
+    if (moves.length === 0) return;
+    const byId = new Map(cards.map((card) => [card.id, card]));
+    const entries = moves.map(({ from }) => this.data.cards[from]);
+    for (const { from } of moves) delete this.data.cards[from];
+    moves.forEach(({ to }, i) => {
+      const { orphanedAt: _orphaned, ...entry } = entries[i];
+      const card = byId.get(to);
+      this.data.cards[to] = card ? { ...entry, path: card.source.path, fp: cardFingerprint(card) } : entry;
+    });
+    const renamed = new Map(moves.map(({ from, to }) => [from, to]));
+    for (const undo of this.undoStack) undo.id = renamed.get(undo.id) ?? undo.id;
+    this.changed();
+  }
+
   /** Forget a card's history so it starts over as new. */
   reset(id: string): void {
     delete this.data.cards[id];

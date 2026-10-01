@@ -105,4 +105,17 @@ describe('cardsFromQuiz', () => {
     const cloze = cards[1];
     expect(cloze.kind === 'cloze' && parseClozeBlanks(cloze.text).every((b) => b.group === '1')).toBe(true);
   });
+
+  it('hides a quiz blank that is wrapped in inline code', () => {
+    const md = [
+      '## Q1 · cloze',
+      'In `[x for x in xs if c]`, the filter is the `{{if condition}}` clause.',
+    ].join('\n');
+    const [card] = cardsFromQuiz('Quiz Lists.md', md);
+    expect(card.kind === 'cloze' && clozeDisplaySegments(card.text, card.group)).toEqual([
+      { type: 'text', value: 'In `[x for x in xs if c]`, the filter is the ' },
+      { type: 'blank', answer: '`if condition`', hint: undefined, hidden: true },
+      { type: 'text', value: ' clause.' },
+    ]);
+  });
 });

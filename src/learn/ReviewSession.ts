@@ -169,6 +169,22 @@ export class ReviewSession {
     this.reviewed = Math.max(0, this.reviewed - 1);
   }
 
+  /** A card edited mid-session got new ids: keep its place in the queue under them. */
+  rekey(migrations: Array<{ from: string; to: string }>, cards: ReviewCard[]): void {
+    const renamed = new Map(migrations.map(({ from, to }) => [from, to]));
+    const rename = (id: string) => renamed.get(id) ?? id;
+    const byId = new Map(cards.map((card) => [card.id, card]));
+    for (const [from, to] of renamed) {
+      if (!this.cards.has(from)) continue;
+      this.cards.delete(from);
+      const card = byId.get(to);
+      if (card) this.cards.set(to, card);
+    }
+    this.main = this.main.map(rename);
+    this.learning = this.learning.map(rename);
+    this.history = this.history.map(rename);
+  }
+
   /** Swap in fresh card content (a card edited mid-session) without changing the queue. */
   refresh(cards: ReviewCard[]): void {
     for (const card of cards) if (this.cards.has(card.id)) this.cards.set(card.id, card);

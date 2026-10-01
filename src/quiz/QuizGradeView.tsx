@@ -3,6 +3,7 @@ import { runSandboxCode, type SandboxRunResult } from '../sandbox';
 import { settingsStore } from '../settings';
 import type { AiClient } from '../ai/AiClient';
 import { CodeSnippet } from './CodeSnippet';
+import { answerText } from './history';
 import { QuizFollowUp } from './QuizFollowUp';
 import { QuizMarkdown } from './QuizMarkdown';
 import type { CodeQuestion, GradeReport, QuizDocument, QuizQuestion, QuizResponse } from './types';
@@ -68,6 +69,12 @@ export function QuizGradeView({ report, quiz, responses, client, onRetake, onEdi
               </div>
             ) : null}
             {item.correctAnswer ? (
+              <YourAnswer
+                question={quiz.questions.find((q) => q.id === item.questionId)}
+                response={responses[item.questionId]}
+              />
+            ) : null}
+            {item.correctAnswer ? (
               <div className="quiz-correct-answer quiz-md">
                 <strong>Correct answer:</strong> <QuizMarkdown inline>{item.correctAnswer}</QuizMarkdown>
               </div>
@@ -105,6 +112,18 @@ export function QuizGradeView({ report, quiz, responses, client, onRetake, onEdi
           </button>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/** What the student picked or filled in, for choice and blank questions they missed. */
+function YourAnswer({ question, response }: { question?: QuizQuestion; response?: QuizResponse }) {
+  if (!question || (question.type !== 'mcq' && question.type !== 'cloze')) return null;
+  const answer = answerText(question, response);
+  return (
+    <div className="quiz-your-answer quiz-md">
+      <strong>Your answer:</strong>{' '}
+      {answer ? <QuizMarkdown inline>{answer}</QuizMarkdown> : <span className="quiz-muted">(left blank)</span>}
     </div>
   );
 }

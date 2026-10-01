@@ -21,7 +21,8 @@ function keyPointLines(points: string[] | undefined): string[] {
   return points?.length ? ['', '### Key points', '', ...points.map((point) => `- ${point}`)] : [];
 }
 
-function serializeQuestion(question: QuizQuestion, index: number): string {
+/** One `## Qn · type` section, ending in a newline. */
+export function serializeQuestion(question: QuizQuestion, index: number): string {
   const heading = `## Q${index + 1} · ${question.type}`;
   if (question.type === 'mcq') {
     const options = question.options
