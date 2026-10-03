@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { Button, IconButton, SegmentedControl, Text, TextArea, TextField } from '@radix-ui/themes';
 import { Cross1Icon, LightningBoltIcon, PlusIcon, TrashIcon } from '@radix-ui/react-icons';
 import type { AiClient } from '../ai/AiClient';
-import { truncateNoteContext } from '../ai';
 import { QuizMarkdown } from '../quiz/QuizMarkdown';
 import { noteTitle } from '../vault/fileTree';
 import {
@@ -13,6 +12,7 @@ import {
 import {
   buildCardGenerationPrompt,
   cardBlocksFromModel,
+  completeCardGeneration,
   existingCardSummaries,
   type CardStyle,
 } from './cardGeneration';
@@ -108,27 +108,27 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
   const generate = async () => {
     const idea = concept.trim();
     if (!idea) {
-      setAiError('Describe a rough card concept first.');
+      setAiError('Type a concept or draft in the box first.');
       setAiStatus('error');
       return;
     }
     setAiStatus('running');
     setAiError('');
     try {
-      const reply = await client.getProvider().complete({
+      const reply = await completeCardGeneration(client, {
         prompt: buildCardGenerationPrompt(aiStyle, idea, existing),
-        context: truncateNoteContext(content, 12000),
+        context: content,
       });
       const found = cardBlocksFromModel(reply);
       setSuggestions(found);
       setPicked(new Set(found.map((_, i) => i)));
       setAiStatus('done');
       if (found.length === 0) {
-        setAiError('The model did not return any cards. Check your AI provider in Settings and try again.');
+        setAiError('Qwen Flash did not return any cards. Check OpenRouter in Settings and try again.');
       }
     } catch (err) {
       setAiStatus('error');
-      setAiError(err instanceof Error ? err.message : 'Card generation failed.');
+      setAiError(err instanceof Error ? err.message : 'Card generation failed. Check OpenRouter in Settings.');
     }
   };
 
@@ -281,15 +281,15 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
           {aiOpen ? (
             <div className="srs-create-ai-body">
               <Text size="1" color="gray">
-                Describe a rough concept. Generation runs only when you click Generate.
+                Type a concept or rough draft — Qwen Flash turns that text into cards when you click Generate.
               </Text>
               <TextArea
                 size="2"
                 resize="vertical"
-                rows={3}
+                rows={4}
                 value={concept}
                 onChange={(e) => setConcept(e.target.value)}
-                placeholder="e.g. TCP congestion control — slow start vs congestion avoidance"
+                placeholder="Paste notes or a rough idea, e.g. TCP congestion control — slow start doubles the window each RTT until ssthresh, then AIMD…"
               />
               <SegmentedControl.Root value={aiStyle} onValueChange={(value) => setAiStyle(value as CardStyle)} size="1">
                 <SegmentedControl.Item value="mixed">Mixed</SegmentedControl.Item>

@@ -39,9 +39,10 @@ describe('appendCardLines', () => {
 });
 
 describe('buildCardGenerationPrompt', () => {
-  it('includes the concept and mcq format rules', () => {
-    const prompt = buildCardGenerationPrompt('mcq', 'congestion control', []);
-    expect(prompt).toContain('Concept: congestion control');
+  it('puts the typed draft front and center with mcq format rules', () => {
+    const prompt = buildCardGenerationPrompt('mcq', 'congestion control — AIMD', []);
+    expect(prompt).toContain('USER DRAFT:');
+    expect(prompt).toContain('congestion control — AIMD');
     expect(prompt).toContain('?mcq');
     expect(prompt).toContain('Only multiple-choice cards.');
   });

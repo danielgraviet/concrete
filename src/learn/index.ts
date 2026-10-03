@@ -19,4 +19,4 @@ export { QuizReviewToggle } from './QuizReviewToggle';
 export { appendCardLines } from './appendCardLines';
 export { applyCardEdit, canEditCard, quizQuestionForCard } from './editCard';
 export type { CardEdit } from './editCard';
-export { cardBlocksFromModel, buildCardGenerationPrompt } from './cardGeneration';
+export { cardBlocksFromModel, buildCardGenerationPrompt, completeCardGeneration } from './cardGeneration';
