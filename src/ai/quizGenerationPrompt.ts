@@ -68,23 +68,49 @@ Hard rules:
 1. Follow the requested counts for mcq, cloze, open, and code exactly when given.
 2. MCQ options must NOT start with A), B), C), D) or similar letters. Plain option text only.
 3. Exactly one [x] correct option per MCQ unless the stem clearly requires multi-select.
-4. Do not make the correct MCQ option the longest option by default. Vary lengths.
-5. Distractors must be plausible misconceptions, not joke answers.
-6. Ground every item in the provided note context when present. Do not invent unrelated topics.
+4. Every question must follow the STANDALONE RULES below.
+5. Every question and answer must follow the ACCURACY RULES below.
+6. MCQ options must follow the MCQ OPTION RULES below.
 7. Cloze questions must follow the CLOZE RULES below.
 8. Rubric must be a single quoted line in frontmatter.
 9. Title must start with "Quiz ".
 10. Match the requested difficulty (easy = recall, medium = application, hard = transfer / edge cases).
+11. Draw topics from the provided note context when present. Do not invent unrelated topics.
+
+STANDALONE RULES (the student sees only the question and its options, never the note):
+- Never mention the source: no "the note", "the notes", "the text", "the passage", "the author", "the reading", "according to", "as described", "in this section", "the example above", "the list", "step 3".
+- Never test the note's layout or wording: no questions about which heading something is under, what order items were listed in, or what the note calls something when that name is not standard.
+- Name the concept explicitly. Replace pronouns and shorthand from the note ("it", "this approach", "the second method") with the actual term.
+- Include the context needed to answer: the field, the system, or the scenario. "What does the scheduler do when a task blocks?" is ambiguous; "In an operating system, what does the CPU scheduler do when a running process blocks on I/O?" is not.
+- If the note uses a made-up example (variables, names, numbers), restate that example inside the question rather than referring to it.
+- Self-check: would someone who understands the subject, but has never seen this note, know exactly what is being asked? If not, rewrite the question.
+
+ACCURACY RULES (notes are written by students and can contain mistakes):
+- Use the note to choose WHAT to ask, not as proof of what is true. Check every fact against well-established knowledge of the subject.
+- If the note states something incorrect or outdated, do not repeat the error. Either ask about the correct version or skip that point. Never mark a wrong statement as the correct answer.
+- When a cloze, open, or code item corrects something the note got wrong, say so briefly in its "### Answer" or "### Why" section (for example, "Common mix-up: ..."), so the student can learn from it. Never add extra sections to mcq items.
+- Skip claims you cannot verify, such as personal opinions, uncertain figures, or details only the note's author would know.
+- Every MCQ must have exactly one defensibly correct option. Each distractor must be clearly wrong to an expert, not just "less complete".
+- Reference answers, key points, and predict-output answers must be correct. Trace code by hand before writing its output.
+
+MCQ OPTION RULES (the correct answer must not stand out for any reason other than being correct):
+- Make all options similar in length, detail, and grammatical form. If the correct option needs a qualifier, add comparable qualifiers to the distractors.
+- Write distractors from real misconceptions, common confusions between related terms, or partial understanding. Each one should be tempting to a student who half-knows the material.
+- Keep all options in the same category as the correct answer (all data structures, all years, all causes).
+- Do not repeat distinctive words from the stem only in the correct option.
+- Do not use absolute words ("always", "never", "only") only in distractors, or hedges ("usually", "can") only in the correct option.
+- Never use "all of the above", "none of the above", or joke options.
+- Self-check: hide the stem, then read only the options. If one option is obviously the answer, rewrite the options.
 
 CLOZE RULES (the student fills blanks from memory, so the sentence itself must make the answer derivable):
-- Write a self-contained sentence that carries enough context to identify the answer: state the concept, purpose, or relationship around the blank. A reader who understood the note should be able to answer without having seen the exact wording.
+- Write a self-contained sentence that carries enough context to identify the answer: state the concept, purpose, or relationship around the blank. A reader who understands the topic should be able to answer without having seen the note.
 - Blank ONE key term per question, at most two, and only when they are independent. Never blank both sides of a relationship.
 - Blank only meaningful terms: names, technical vocabulary, numbers, causes, outcomes. Never blank articles, verbs like "is", generic words, or anything guessable from grammar alone.
 - Never lift a sentence verbatim from the note if it depends on surrounding text ("this", "it", "as above"). Rewrite it so it stands alone.
 - The answer inside {{ }} is 1-3 words, in its most canonical form, with no trailing punctuation. Prefer a single unambiguous term, so that a correct answer has few valid phrasings.
 - Cue the answer's category in the sentence when it could be ambiguous ("the data structure that...", "the year...", "the protocol used for...").
 - Put the blank late in the sentence, after the clues, not at the start.
-- Avoid blanks with several equally valid answers. If that is unavoidable, choose the term the note uses.
+- Avoid blanks with several equally valid answers. If that is unavoidable, choose the most standard term for the field.
 - Below each cloze, add a "### Answer" section with a one-line explanation of why the answer fits, so the grader can accept valid alternatives.
 
 CODE RULES (code-reading questions test whether the student can READ and reason about code, not write it):
@@ -149,7 +175,8 @@ export function buildQuizGenerationUserPrompt(input: {
     `Create a quiz titled "Quiz ${topic.replace(/^Quiz\s+/i, '')}".`,
     `Question types to include: ${types}.`,
     `Difficulty: ${difficulty}.`,
-    'Base every question on the source note(s) below. Prefer retrieval and application over trivia.',
+    'Choose topics from the source note(s) below. Prefer retrieval and application over trivia.',
+    'Each question must make sense on its own, without the note, and every answer must be factually correct.',
   ];
 
   if (hasCounts) {
@@ -176,7 +203,7 @@ export function buildQuizGenerationUserPrompt(input: {
   if (input.noteContext?.trim()) {
     parts.push(
       '',
-      'Source note content (authoritative — do not invent outside this):',
+      'Source note content (student-written study material: stay within its topics, but verify its facts and do not copy its mistakes):',
       '-----',
       input.noteContext.trim(),
       '-----',
