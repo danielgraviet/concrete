@@ -83,6 +83,25 @@ describe('applyCardEdit', () => {
     const md = 'The {{answer}} here.';
     expect(applyCardEdit(md, cardAt(md, 0), { kind: 'cloze', text: 'No blanks now.' }).ok).toBe(false);
   });
+
+  it('edits a note-native ?mcq card in place', () => {
+    const md = ['?mcq', 'Which layer?', '- [ ] Network', '- [x] Transport', '', 'After'].join('\n');
+    const card = cardAt(md, 0);
+    const result = edited(
+      applyCardEdit(md, card, {
+        kind: 'mcq',
+        prompt: 'Which OSI layer?',
+        options: [
+          { text: 'Network', correct: false },
+          { text: 'Transport', correct: true },
+          { text: 'Session', correct: false },
+        ],
+      }),
+    );
+    expect(result.markdown).toContain('?mcq\nWhich OSI layer?\n- [ ] Network\n- [x] Transport\n- [ ] Session');
+    expect(result.markdown).toContain('After');
+    expect(result.card.kind).toBe('mcq');
+  });
 });
 
 describe('rekeying history after an edit', () => {

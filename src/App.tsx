@@ -55,6 +55,7 @@ import { MetaService } from './meta';
 import {
   appendCardLines,
   applyCardEdit,
+  CreateCardsPanel,
   deckFilter,
   quizQuestionForCard,
   NoteCardsPanel,
@@ -95,9 +96,6 @@ const SettingsPanel = lazy(() =>
 );
 const GenerateQuizDialog = lazy(() =>
   import('./quiz/GenerateQuizDialog').then((m) => ({ default: m.GenerateQuizDialog })),
-);
-const GenerateCardsDialog = lazy(() =>
-  import('./learn/GenerateCardsDialog').then((m) => ({ default: m.GenerateCardsDialog })),
 );
 const AiOrb = lazy(() =>
   import('./ai/AiOrb').then((m) => ({ default: m.AiOrb })),
@@ -243,7 +241,7 @@ export default function App() {
   const [aiChatOpen, setAiChatOpen] = useState(false);
   const [aiSeedPrompt, setAiSeedPrompt] = useState<string | null>(null);
   const [reviewRun, setReviewRun] = useState<{ id: number; session: ReviewSession; deck: Deck; paused: boolean } | null>(null);
-  const [generateCardsOpen, setGenerateCardsOpen] = useState(false);
+  const [createCardsOpen, setCreateCardsOpen] = useState(false);
   const [layout, setLayout] = useState<LayoutState>(() => loadLayout());
   const [generateQuizOpen, setGenerateQuizOpen] = useState(false);
   const [quizJob, setQuizJob] = useState<
@@ -657,6 +655,7 @@ export default function App() {
     setReviewRun((current) => (current && !current.paused ? { ...current, paused: true } : current));
     setSelected(name);
     setTreeFocus({ kind: 'file', path: name });
+    if (isQuizPath(name)) setCreateCardsOpen(false);
     // Keep activeFolder as the last explicit folder/root click — don't
     // inherit a note's parent (that forced "New folder" into ML etc.).
     const cached = contents[name] ?? demoContent[name];
@@ -913,11 +912,10 @@ export default function App() {
     return null;
   };
 
-  const insertGeneratedCards = async (lines: string[]) => {
-    setGenerateCardsOpen(false);
+  const insertCardBlocks = async (blocks: string[]) => {
     const path = selected;
-    if (!path || lines.length === 0) return;
-    const next = appendCardLines(controller.content, lines);
+    if (!path || blocks.length === 0) return;
+    const next = appendCardLines(controller.content, blocks);
     if (canUseDiskVault(root)) {
       try {
         await VaultService.write(root, path, next);
@@ -931,6 +929,13 @@ export default function App() {
     controller.markSaved();
     setEditorRevision((n) => n + 1);
     reviewIndex.update(path, next);
+  };
+
+  const openCreateCards = () => {
+    if (!selected || isQuizPath(selected)) return;
+    setCreateCardsOpen(true);
+    setRightOpen(true);
+    setLayout((current) => ({ ...current, focusMode: false }));
   };
 
   const createFolder = async () => {
@@ -1233,6 +1238,7 @@ export default function App() {
     layout.focusMode ? 'focus-mode' : '',
     !layout.focusMode && !layout.sidebarOpen ? 'sidebar-collapsed' : '',
     !layout.focusMode && !layout.rightOpen ? 'right-collapsed' : '',
+    !layout.focusMode && layout.rightOpen && createCardsOpen ? 'create-cards-open' : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -1707,43 +1713,55 @@ export default function App() {
       </main>
 
       <aside className="right-panel" aria-hidden={!layout.rightOpen || layout.focusMode}>
-        <div className="panel-title-row">
-          <div className="panel-title">BACKLINKS</div>
-        </div>
-        {backlinks.length === 0 ? (
-          <div className="empty-panel">
-            <BadgeIcon width={18} height={18} />
-            <span>No backlinks yet</span>
-            <small>Links to this note will appear here.</small>
-          </div>
+        {createCardsOpen && selected && !isQuizPath(selected) ? (
+          <CreateCardsPanel
+            client={aiClient}
+            path={selected}
+            content={controller.content}
+            onInsert={insertCardBlocks}
+            onClose={() => setCreateCardsOpen(false)}
+          />
         ) : (
-          <div className="backlink-list">
-            {backlinks.map((hit) => (
-              <button
-                type="button"
-                className="backlink-row"
-                key={hit.path}
-                onClick={() => select(hit.path)}
-              >
-                <FileTextIcon width={14} height={14} />
-                <span>{hit.title}</span>
-              </button>
-            ))}
-          </div>
+          <>
+            <div className="panel-title-row">
+              <div className="panel-title">BACKLINKS</div>
+            </div>
+            {backlinks.length === 0 ? (
+              <div className="empty-panel">
+                <BadgeIcon width={18} height={18} />
+                <span>No backlinks yet</span>
+                <small>Links to this note will appear here.</small>
+              </div>
+            ) : (
+              <div className="backlink-list">
+                {backlinks.map((hit) => (
+                  <button
+                    type="button"
+                    className="backlink-row"
+                    key={hit.path}
+                    onClick={() => select(hit.path)}
+                  >
+                    <FileTextIcon width={14} height={14} />
+                    <span>{hit.title}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {selected && !isQuizPath(selected) ? (
+              <div className="panel-section">
+                <NoteCardsPanel
+                  system={review}
+                  path={selected}
+                  onReview={() => void startReview({ kind: 'note', label: noteTitle(selected), path: selected })}
+                  onCreate={openCreateCards}
+                />
+              </div>
+            ) : null}
+            <div className="panel-section">
+              <ProgressPanel store={quizHistory} folder={parentDir(selected)} />
+            </div>
+          </>
         )}
-        {selected && !isQuizPath(selected) ? (
-          <div className="panel-section">
-            <NoteCardsPanel
-              system={review}
-              path={selected}
-              onReview={() => void startReview({ kind: 'note', label: noteTitle(selected), path: selected })}
-              onGenerate={() => setGenerateCardsOpen(true)}
-            />
-          </div>
-        ) : null}
-        <div className="panel-section">
-          <ProgressPanel store={quizHistory} folder={parentDir(selected)} />
-        </div>
       </aside>
 
       {generateQuizOpen && (
@@ -1977,20 +1995,6 @@ export default function App() {
             </Suspense>
           </div>
         </div>
-      )}
-      {generateCardsOpen && selected && (
-        <Suspense fallback={null}>
-          <GenerateCardsDialog
-            client={aiClient}
-            path={selected}
-            content={controller.content}
-            existing={(reviewIndex.note(selected)?.cards ?? []).flatMap((card) =>
-              card.kind === 'basic' ? [`${card.front} :: ${card.back}`] : card.kind === 'cloze' ? [card.text] : [],
-            )}
-            onInsert={(lines) => void insertGeneratedCards(lines)}
-            onCancel={() => setGenerateCardsOpen(false)}
-          />
-        </Suspense>
       )}
     </div>
   );

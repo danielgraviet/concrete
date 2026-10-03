@@ -18,12 +18,45 @@ function withIds(drafts: Draft[]): ReviewCard[] {
 /** Cards written with card syntax in a regular note. */
 export function cardsFromNote(path: string, markdown: string): ReviewCard[] {
   if (!mightContainCards(markdown)) return [];
-  const drafts: Draft[] = parseNoteCards(markdown).map((card) => {
+  const drafts: Draft[] = [];
+  for (const card of parseNoteCards(markdown)) {
     const source = { path, line: card.line, origin: 'note' as const };
-    return card.kind === 'basic'
-      ? { kind: 'basic', front: card.front, back: card.back, source }
-      : { kind: 'cloze', text: card.text, group: card.group, source };
-  });
+    if (card.kind === 'basic') {
+      drafts.push({ kind: 'basic', front: card.front, back: card.back, source });
+      continue;
+    }
+    if (card.kind === 'cloze') {
+      drafts.push({ kind: 'cloze', text: card.text, group: card.group, source });
+      continue;
+    }
+    if (!card.options.some((option) => option.correct)) continue;
+    const draft: Draft = {
+      kind: 'mcq',
+      question: {
+        id: '',
+        type: 'mcq',
+        prompt: card.prompt,
+        options: card.options.map((option, index) => ({
+          id: `opt-${index + 1}`,
+          text: option.text,
+          correct: option.correct,
+        })),
+      },
+      source,
+    };
+    const idBase = cardIdFor(cardFingerprint(draft));
+    drafts.push({
+      ...draft,
+      question: {
+        ...draft.question,
+        id: `${idBase}-q`,
+        options: draft.question.options.map((option, index) => ({
+          ...option,
+          id: `${idBase}-opt-${index + 1}`,
+        })),
+      },
+    });
+  }
   return withIds(drafts);
 }
 

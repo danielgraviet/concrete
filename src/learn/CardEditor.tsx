@@ -48,7 +48,33 @@ function initialFields(card: ReviewCard, question: QuizQuestion | null): Field[]
   }
   if (card.kind === 'basic') return [field('front', 'Front', card.front), field('back', 'Back', card.back, 3)];
   if (card.kind === 'cloze') return [field('text', 'Text — wrap answers in {{…}}', card.text, 3)];
+  if (card.kind === 'mcq') {
+    return [
+      field('prompt', 'Question', card.question.prompt),
+      field(
+        'options',
+        'Options — one per line, mark correct ones with [x]',
+        card.question.options.map((o) => `[${o.correct ? 'x' : ' '}] ${o.text}`).join('\n'),
+        3,
+      ),
+    ];
+  }
   return [];
+}
+
+function parseOptionLines(text: string) {
+  return text
+    .split('\n')
+    .map((line) => line.replace(/^\s*[-*+]\s+/, '').trim())
+    .filter(Boolean)
+    .map((line, i) => {
+      const mark = /^\[([ xX]?)\]\s*/.exec(line);
+      return {
+        id: `opt-${i + 1}`,
+        text: mark ? line.slice(mark[0].length) : line,
+        correct: mark?.[1].toLowerCase() === 'x',
+      };
+    });
 }
 
 function toEdit(card: ReviewCard, question: QuizQuestion | null, values: Record<string, string>): CardEdit {
@@ -70,15 +96,21 @@ function toEdit(card: ReviewCard, question: QuizQuestion | null, values: Record<
           question: {
             ...question,
             prompt: values.prompt,
-            options: list(values.options).map((line, i) => {
-              const mark = /^\[([ xX]?)\]\s*/.exec(line);
-              return { id: `${question.id}-opt-${i + 1}`, text: mark ? line.slice(mark[0].length) : line, correct: mark?.[1].toLowerCase() === 'x' };
-            }),
+            options: parseOptionLines(values.options).map((option, i) => ({
+              ...option,
+              id: `${question.id}-opt-${i + 1}`,
+            })),
           },
         };
     }
   }
-  return card.kind === 'basic' ? { kind: 'basic', front: values.front, back: values.back } : { kind: 'cloze', text: values.text };
+  if (card.kind === 'basic') return { kind: 'basic', front: values.front, back: values.back };
+  if (card.kind === 'cloze') return { kind: 'cloze', text: values.text };
+  return {
+    kind: 'mcq',
+    prompt: values.prompt,
+    options: parseOptionLines(values.options).map(({ text, correct }) => ({ text, correct })),
+  };
 }
 
 /** Edit a card's text in place during review; saving rewrites its note or quiz and keeps its history. */

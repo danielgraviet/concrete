@@ -1,15 +1,16 @@
 import { parseQuizMarkdown } from '../quiz/parseQuizMarkdown';
 import { serializeQuestion } from '../quiz/serializeQuizMarkdown';
-import type { QuizQuestion } from '../quiz/types';
+import type { McqQuestion, QuizQuestion } from '../quiz/types';
 import { cardsFromNote, cardsFromQuiz, quizHeadingLines, quizQuestionDraft } from './buildCards';
 import { cardFingerprint } from './cardId';
-import { parseNoteCardSpans, type NoteCardSpan } from './parseNoteCards';
+import { parseNoteCardSpans, serializeNoteMcq, type NoteCardSpan, type ParsedMcqOption } from './parseNoteCards';
 import type { Migration } from './reconcile';
 import type { ReviewCard } from './types';
 
 export type CardEdit =
   | { kind: 'basic'; front: string; back: string }
   | { kind: 'cloze'; text: string }
+  | { kind: 'mcq'; prompt: string; options: ParsedMcqOption[] }
   /** A card from a quiz file: the whole question is edited and written back. */
   | { kind: 'quiz'; question: QuizQuestion };
 
@@ -19,9 +20,9 @@ export type CardEditResult =
 
 const PREFIX_RE = /^\s*(?:>\s?)*(?:#{1,6}\s+|(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?)?/;
 
-/** Multiple-choice cards only come from quizzes; every other card can be edited. */
-export function canEditCard(card: ReviewCard): boolean {
-  return card.source.origin === 'quiz' || card.kind !== 'mcq';
+/** Every review card can be edited in place (note MCQ via `?mcq`, quiz MCQ via the question). */
+export function canEditCard(_card: ReviewCard): boolean {
+  return true;
 }
 
 /** The quiz question a card was built from, or null if the quiz changed since. */
@@ -139,11 +140,23 @@ function applyQuizEdit(markdown: string, card: ReviewCard, edited: QuizQuestion)
 
 function spanMatches(span: NoteCardSpan, card: ReviewCard): boolean {
   if (span.line !== card.source.line || span.kind !== card.kind) return false;
-  const draft =
-    span.kind === 'basic'
-      ? { kind: 'basic' as const, front: span.front, back: span.back, source: card.source }
-      : { kind: 'cloze' as const, text: span.text, group: span.group, source: card.source };
-  return cardFingerprint(draft) === cardFingerprint(card);
+  if (span.kind === 'basic') {
+    return cardFingerprint({ kind: 'basic', front: span.front, back: span.back, source: card.source }) === cardFingerprint(card);
+  }
+  if (span.kind === 'cloze') {
+    return cardFingerprint({ kind: 'cloze', text: span.text, group: span.group, source: card.source }) === cardFingerprint(card);
+  }
+  const question: McqQuestion = {
+    id: card.kind === 'mcq' ? card.question.id : '',
+    type: 'mcq',
+    prompt: span.prompt,
+    options: span.options.map((option, index) => ({
+      id: card.kind === 'mcq' ? (card.question.options[index]?.id ?? `opt-${index + 1}`) : `opt-${index + 1}`,
+      text: option.text,
+      correct: option.correct,
+    })),
+  };
+  return cardFingerprint({ kind: 'mcq', question, source: card.source }) === cardFingerprint(card);
 }
 
 function basicLines(prefix: string, front: string, back: string, span: NoteCardSpan): string[] {
@@ -154,7 +167,8 @@ function basicLines(prefix: string, front: string, back: string, span: NoteCardS
 
 /** Pair the cards a span held before and after an edit, so each keeps its history. */
 function pairCards(before: ReviewCard[], after: ReviewCard[]): Migration[] {
-  const key = (card: ReviewCard, index: number) => (card.kind === 'cloze' ? `c:${card.group}` : `b:${index}`);
+  const key = (card: ReviewCard, index: number) =>
+    card.kind === 'cloze' ? `c:${card.group}` : card.kind === 'mcq' ? `m:${index}` : `b:${index}`;
   const afterByKey = new Map(after.map((card, index) => [key(card, index), card]));
   const pairs: Migration[] = [];
   const leftBefore: ReviewCard[] = [];
@@ -194,7 +208,7 @@ export function applyCardEdit(markdown: string, card: ReviewCard, edit: CardEdit
   const prefix = PREFIX_RE.exec(lines[span.line])?.[0] ?? '';
 
   let replacement: string[];
-  let wanted: { front: string; back: string } | { text: string };
+  let wanted: { front: string; back: string } | { text: string } | { prompt: string; options: ParsedMcqOption[] };
   if (edit.kind === 'basic') {
     const front = edit.front.trim();
     const back = edit.back.trim();
@@ -202,11 +216,19 @@ export function applyCardEdit(markdown: string, card: ReviewCard, edit: CardEdit
     // A reversed card is stored the other way round in the note.
     replacement = span.reverse ? basicLines(prefix, back, front, span) : basicLines(prefix, front, back, span);
     wanted = { front, back };
-  } else {
+  } else if (edit.kind === 'cloze') {
     const text = edit.text.trim();
     if (!text) return { ok: false, error: 'A cloze card needs some text.' };
     replacement = [`${prefix}${text}`];
     wanted = { text };
+  } else {
+    const prompt = edit.prompt.trim();
+    const options = edit.options.map((option) => ({ text: option.text.trim(), correct: option.correct })).filter((option) => option.text);
+    if (!prompt) return { ok: false, error: 'A multiple-choice card needs a question.' };
+    if (options.length < 2) return { ok: false, error: 'Add at least two options.' };
+    if (!options.some((option) => option.correct)) return { ok: false, error: 'Mark at least one option as correct.' };
+    replacement = serializeNoteMcq(prompt, options).split('\n');
+    wanted = { prompt, options };
   }
 
   const next = [...lines.slice(0, span.line), ...replacement.join('\n').split('\n'), ...lines.slice(span.end)].join(newline);
@@ -225,14 +247,23 @@ export function applyCardEdit(markdown: string, card: ReviewCard, edit: CardEdit
     edited &&
     ('text' in wanted
       ? edited.kind === 'cloze' && edited.text === wanted.text
-      : edited.kind === 'basic' && edited.front === wanted.front && edited.back === wanted.back);
+      : 'options' in wanted
+        ? edited.kind === 'mcq' &&
+          edited.question.prompt === wanted.prompt &&
+          edited.question.options.length === wanted.options.length &&
+          edited.question.options.every(
+            (option, index) => option.text === wanted.options[index].text && option.correct === wanted.options[index].correct,
+          )
+        : edited.kind === 'basic' && edited.front === wanted.front && edited.back === wanted.back);
   if (!edited || !matches) {
     return {
       ok: false,
       error:
         edit.kind === 'cloze'
           ? 'That text wouldn’t be read back as the same cloze card. Keep at least one {{blank}}.'
-          : 'That edit wouldn’t be read back as the same card (a blank line ends the answer). Edit it in the note instead.',
+          : edit.kind === 'mcq'
+            ? 'That edit wouldn’t be read back as a multiple-choice card. Keep the ?mcq block and mark a correct option.'
+            : 'That edit wouldn’t be read back as the same card (a blank line ends the answer). Edit it in the note instead.',
     };
   }
   return { ok: true, markdown: next, card: edited, migrations };

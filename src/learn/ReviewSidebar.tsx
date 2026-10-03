@@ -61,10 +61,11 @@ export function ReviewSidebar({ system, onStart, onClose }: Props) {
         {cards.length === 0 ? (
           <div className="srs-empty">
             <strong>No cards yet</strong>
-            <p>Write cards in any note:</p>
+            <p>Write cards in any note, or open Create cards in the right panel:</p>
             <code>Question :: Answer</code>
             <code>Term ::: Definition</code>
             <code>{'The {{answer}} is hidden'}</code>
+            <code>?mcq … - [x] option</code>
             <p>
               Or select text and press <kbd>⌘⇧C</kbd> to make a blank, or <kbd>⌘⇧K</kbd> to start a card.
             </p>
