@@ -36,7 +36,34 @@ function blankOptions(): ParsedMcqOption[] {
   ];
 }
 
-/** Half-panel composer: manual cards + optional on-demand AI from a rough concept. */
+/** Draft text from the composer fields — what Generate sends to the model. */
+export function draftFromComposer(
+  mode: Mode,
+  fields: {
+    front: string;
+    back: string;
+    cloze: string;
+    mcqPrompt: string;
+    mcqOptions: ParsedMcqOption[];
+  },
+): string {
+  if (mode === 'basic') {
+    const front = fields.front.trim();
+    const back = fields.back.trim();
+    if (front && back) return `Front: ${front}\nBack: ${back}`;
+    return front || back;
+  }
+  if (mode === 'cloze') return fields.cloze.trim();
+  const prompt = fields.mcqPrompt.trim();
+  const options = fields.mcqOptions
+    .map((option) => ({ text: option.text.trim(), correct: option.correct }))
+    .filter((option) => option.text);
+  if (!prompt && options.length === 0) return '';
+  const optionLines = options.map((option) => `- [${option.correct ? 'x' : ' '}] ${option.text}`).join('\n');
+  return [prompt && `Question: ${prompt}`, optionLines].filter(Boolean).join('\n');
+}
+
+/** Half-panel composer: type Front/Back (or Cloze/MCQ), add as-is or Generate with Qwen Flash. */
 export function CreateCardsPanel({ client, path, content, onInsert, onClose }: Props) {
   const [mode, setMode] = useState<Mode>('basic');
   const [front, setFront] = useState('');
@@ -46,24 +73,26 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
   const [mcqOptions, setMcqOptions] = useState<ParsedMcqOption[]>(blankOptions);
   const [manualError, setManualError] = useState('');
 
-  const [aiOpen, setAiOpen] = useState(false);
-  const [concept, setConcept] = useState('');
-  const [aiStyle, setAiStyle] = useState<CardStyle>('mixed');
   const [aiStatus, setAiStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [aiError, setAiError] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [picked, setPicked] = useState<Set<number>>(new Set());
 
   const existing = useMemo(() => existingCardSummaries(content), [content]);
+  const draft = draftFromComposer(mode, { front, back, cloze, mcqPrompt, mcqOptions });
 
   const resetManual = (next: Mode) => {
     setMode(next);
     setManualError('');
+    setAiError('');
     setFront('');
     setBack('');
     setCloze('');
     setMcqPrompt('');
     setMcqOptions(blankOptions());
+    setSuggestions([]);
+    setPicked(new Set());
+    setAiStatus('idle');
   };
 
   const addManual = async () => {
@@ -106,17 +135,17 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
   };
 
   const generate = async () => {
-    const idea = concept.trim();
-    if (!idea) {
-      setAiError('Type a concept or draft in the box first.');
+    if (!draft) {
+      setAiError(mode === 'basic' ? 'Type something in Front or Back first.' : 'Fill in the fields above first.');
       setAiStatus('error');
       return;
     }
     setAiStatus('running');
     setAiError('');
+    setManualError('');
     try {
       const reply = await completeCardGeneration(client, {
-        prompt: buildCardGenerationPrompt(aiStyle, idea, existing),
+        prompt: buildCardGenerationPrompt(mode as CardStyle, draft, existing),
         context: content,
       });
       const found = cardBlocksFromModel(reply);
@@ -144,9 +173,7 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
     const blocks = suggestions.filter((_, i) => picked.has(i));
     if (blocks.length === 0) return;
     await onInsert(blocks);
-    setSuggestions([]);
-    setPicked(new Set());
-    setAiStatus('idle');
+    resetManual(mode);
   };
 
   return (
@@ -260,91 +287,54 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
             </>
           ) : null}
 
-          {manualError ? (
+          {manualError || aiError ? (
             <Text size="1" color="red">
-              {manualError}
+              {manualError || aiError}
             </Text>
           ) : null}
 
-          <Button highContrast size="2" onClick={() => void addManual()}>
-            Add to note
-          </Button>
+          <div className="srs-create-actions">
+            <Button
+              size="2"
+              variant="soft"
+              color="gray"
+              loading={aiStatus === 'running'}
+              disabled={!draft || aiStatus === 'running'}
+              onClick={() => void generate()}
+            >
+              <LightningBoltIcon />
+              Generate
+            </Button>
+            <Button highContrast size="2" onClick={() => void addManual()}>
+              Add to note
+            </Button>
+          </div>
         </div>
 
-        <div className="srs-create-ai">
-          <button type="button" className="srs-create-ai-toggle" onClick={() => setAiOpen((open) => !open)}>
-            <LightningBoltIcon width={14} height={14} />
-            <span>AI assist</span>
-            <span className="srs-muted">{aiOpen ? 'Hide' : 'Show'}</span>
-          </button>
-
-          {aiOpen ? (
-            <div className="srs-create-ai-body">
-              <Text size="1" color="gray">
-                Type a concept or rough draft — Qwen Flash turns that text into cards when you click Generate.
-              </Text>
-              <TextArea
-                size="2"
-                resize="vertical"
-                rows={4}
-                value={concept}
-                onChange={(e) => setConcept(e.target.value)}
-                placeholder="Paste notes or a rough idea, e.g. TCP congestion control — slow start doubles the window each RTT until ssthresh, then AIMD…"
-              />
-              <SegmentedControl.Root value={aiStyle} onValueChange={(value) => setAiStyle(value as CardStyle)} size="1">
-                <SegmentedControl.Item value="mixed">Mixed</SegmentedControl.Item>
-                <SegmentedControl.Item value="basic">Q :: A</SegmentedControl.Item>
-                <SegmentedControl.Item value="cloze">Cloze</SegmentedControl.Item>
-                <SegmentedControl.Item value="mcq">MCQ</SegmentedControl.Item>
-              </SegmentedControl.Root>
-
-              {suggestions.length > 0 ? (
-                <ul className="srs-create-suggestions">
-                  {suggestions.map((block, index) => (
-                    <li key={index}>
-                      <label className={`srs-generate-row ${picked.has(index) ? 'selected' : ''}`}>
-                        <input type="checkbox" checked={picked.has(index)} onChange={() => togglePick(index)} />
-                        <span className="quiz-md">
-                          <QuizMarkdown>{block}</QuizMarkdown>
-                        </span>
-                      </label>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-
-              {aiError ? (
-                <Text size="1" color="red">
-                  {aiError}
-                </Text>
-              ) : null}
-
-              <div className="srs-create-ai-actions">
-                {suggestions.length > 0 && aiStatus !== 'running' ? (
-                  <>
-                    <Button size="1" variant="soft" color="gray" onClick={() => void generate()}>
-                      Regenerate
-                    </Button>
-                    <Button size="1" highContrast disabled={picked.size === 0} onClick={() => void addSelected()}>
-                      Add {picked.size} selected
-                    </Button>
-                  </>
-                ) : (
-                  <Button
-                    size="1"
-                    highContrast
-                    loading={aiStatus === 'running'}
-                    disabled={!concept.trim()}
-                    onClick={() => void generate()}
-                  >
-                    <LightningBoltIcon />
-                    Generate
-                  </Button>
-                )}
-              </div>
+        {suggestions.length > 0 ? (
+          <div className="srs-create-ai-body">
+            <ul className="srs-create-suggestions">
+              {suggestions.map((block, index) => (
+                <li key={index}>
+                  <label className={`srs-generate-row ${picked.has(index) ? 'selected' : ''}`}>
+                    <input type="checkbox" checked={picked.has(index)} onChange={() => togglePick(index)} />
+                    <span className="quiz-md">
+                      <QuizMarkdown>{block}</QuizMarkdown>
+                    </span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+            <div className="srs-create-ai-actions">
+              <Button size="1" variant="soft" color="gray" disabled={aiStatus === 'running'} onClick={() => void generate()}>
+                Regenerate
+              </Button>
+              <Button size="1" highContrast disabled={picked.size === 0} onClick={() => void addSelected()}>
+                Add {picked.size} selected
+              </Button>
             </div>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { appendCardLines, formatMcqCardBlock } from './appendCardLines';
 import { buildCardGenerationPrompt, cardBlocksFromModel } from './cardGeneration';
+import { draftFromComposer } from './CreateCardsPanel';
 import { parseNoteCards } from './parseNoteCards';
 
 describe('cardBlocksFromModel', () => {
@@ -45,5 +46,19 @@ describe('buildCardGenerationPrompt', () => {
     expect(prompt).toContain('congestion control — AIMD');
     expect(prompt).toContain('?mcq');
     expect(prompt).toContain('Only multiple-choice cards.');
+  });
+});
+
+describe('draftFromComposer', () => {
+  it('builds a draft from Front and Back fields', () => {
+    expect(
+      draftFromComposer('basic', {
+        front: 'What is TCP?',
+        back: 'Transport protocol',
+        cloze: '',
+        mcqPrompt: '',
+        mcqOptions: [],
+      }),
+    ).toBe('Front: What is TCP?\nBack: Transport protocol');
   });
 });
