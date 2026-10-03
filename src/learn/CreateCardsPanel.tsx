@@ -175,18 +175,18 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
           {mode === 'basic' ? (
             <>
               <label className="srs-create-label">
-                Front
+                <span className="srs-create-caption">Front</span>
                 <TextArea size="2" resize="vertical" rows={2} value={front} onChange={(e) => setFront(e.target.value)} placeholder="Question" />
               </label>
               <label className="srs-create-label">
-                Back
+                <span className="srs-create-caption">Back</span>
                 <TextArea size="2" resize="vertical" rows={3} value={back} onChange={(e) => setBack(e.target.value)} placeholder="Answer" />
               </label>
             </>
           ) : null}
           {mode === 'cloze' ? (
             <label className="srs-create-label">
-              Text
+              <span className="srs-create-caption">Text</span>
               <TextArea
                 size="2"
                 resize="vertical"
@@ -200,7 +200,7 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
           {mode === 'mcq' ? (
             <>
               <label className="srs-create-label">
-                Question
+                <span className="srs-create-caption">Question</span>
                 <TextArea
                   size="2"
                   resize="vertical"

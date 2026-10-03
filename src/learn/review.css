@@ -259,10 +259,19 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+.srs-create-caption {
   font-size: 11px;
   color: var(--mv-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+.srs-create-label textarea,
+.srs-create-label input {
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 13px;
+  color: var(--mv-text);
 }
 .srs-create-options { display: flex; flex-direction: column; gap: 8px; }
 .srs-create-option {
