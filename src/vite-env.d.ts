@@ -143,6 +143,8 @@ interface Window {
     activity: () => Promise<Array<Record<string, unknown>>>;
     trajectories: () => Promise<Array<{ file: string; records: Array<Record<string, unknown>>; location: string }>>;
     activityClear: () => Promise<boolean>;
+    telemetry: () => Promise<import('./telemetry/types').TelemetrySpan[]>;
+    telemetryClear: () => Promise<boolean>;
     /** Log a renderer-side failure (with the raw model reply) to AI Activity. */
     recordActivity: (event: {
       operation: string;

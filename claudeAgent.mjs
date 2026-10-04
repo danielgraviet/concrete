@@ -375,7 +375,7 @@ export function cancelAgentTurn() {
  *   model?: string;
  *   apiKey?: string;
  * }} request
- * @returns {Promise<{ content: string; model: string; usage: unknown }>}
+ * @returns {Promise<{ content: string; model: string; usage: unknown; costUsd: number | null }>}
  */
 export async function completeChat({ messages, model, apiKey }) {
   const status = await getAgentStatus({ apiKey });
@@ -406,7 +406,12 @@ export async function completeChat({ messages, model, apiKey }) {
       throw new Error(`Claude request failed: ${detail}`);
     }
     if (!message.result?.trim()) throw new Error('Claude returned an empty completion.');
-    return { content: message.result, model: resolvedModel, usage: message.usage ?? null };
+    return {
+      content: message.result,
+      model: resolvedModel,
+      usage: message.usage ?? null,
+      costUsd: typeof message.total_cost_usd === 'number' ? message.total_cost_usd : null,
+    };
   }
   throw new Error('Claude ended without a result.');
 }
