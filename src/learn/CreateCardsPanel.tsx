@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, IconButton, SegmentedControl, Text, TextArea, TextField } from '@radix-ui/themes';
-import { Cross1Icon, LightningBoltIcon, PlusIcon, TrashIcon } from '@radix-ui/react-icons';
+import { CheckIcon, Cross1Icon, LightningBoltIcon, PlusIcon, TrashIcon } from '@radix-ui/react-icons';
 import type { AiClient } from '../ai/AiClient';
 import { noteTitle } from '../vault/fileTree';
 import {
@@ -33,6 +33,10 @@ function blankOptions(): ParsedMcqOption[] {
   ];
 }
 
+function wait(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 /** Half-panel composer: type Front or Back, Generate fills the other side with Qwen Flash. */
 export function CreateCardsPanel({ client, path, content, onInsert, onClose }: Props) {
   const [mode, setMode] = useState<Mode>('basic');
@@ -42,26 +46,46 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
   const [mcqPrompt, setMcqPrompt] = useState('');
   const [mcqOptions, setMcqOptions] = useState<ParsedMcqOption[]>(blankOptions);
   const [manualError, setManualError] = useState('');
+  const [saving, setSaving] = useState(false);
   const [aiStatus, setAiStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [aiError, setAiError] = useState('');
-  const [aiOk, setAiOk] = useState('');
+  const [statusOk, setStatusOk] = useState('');
+  const statusTimer = useRef<number | null>(null);
 
-  const resetManual = (next: Mode) => {
-    setMode(next);
-    setManualError('');
-    setAiError('');
-    setAiOk('');
+  useEffect(() => {
+    return () => {
+      if (statusTimer.current !== null) window.clearTimeout(statusTimer.current);
+    };
+  }, []);
+
+  const showOk = (message: string) => {
+    setStatusOk(message);
+    if (statusTimer.current !== null) window.clearTimeout(statusTimer.current);
+    statusTimer.current = window.setTimeout(() => setStatusOk(''), 2500);
+  };
+
+  const clearFields = () => {
     setFront('');
     setBack('');
     setCloze('');
     setMcqPrompt('');
     setMcqOptions(blankOptions());
+  };
+
+  const resetManual = (next: Mode) => {
+    setMode(next);
+    setManualError('');
+    setAiError('');
+    setStatusOk('');
+    clearFields();
     setAiStatus('idle');
   };
 
   const addManual = async () => {
+    if (saving) return;
     setManualError('');
-    setAiOk('');
+    setAiError('');
+    setStatusOk('');
     let block = '';
     if (mode === 'basic') {
       if (!front.trim() || !back.trim()) {
@@ -95,15 +119,25 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
       }
       block = formatMcqCardBlock(mcqPrompt, options);
     }
-    await onInsert([block]);
-    resetManual(mode);
-    setAiOk('Added to note');
+
+    setSaving(true);
+    try {
+      // Keep the spinner visible even when the write is instant.
+      await Promise.all([onInsert([block]), wait(450)]);
+      clearFields();
+      setAiStatus('idle');
+      showOk('Added to note');
+    } catch (err) {
+      setManualError(err instanceof Error ? err.message : 'Could not add the card.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const generate = async () => {
     setManualError('');
     setAiError('');
-    setAiOk('');
+    setStatusOk('');
 
     if (mode !== 'basic') {
       setAiError('Generate currently fills Front ↔ Back. Switch to Front / Back.');
@@ -140,10 +174,10 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
       }
       if (kind === 'answer') {
         setBack(filled);
-        setAiOk('Filled Back');
+        showOk('Filled Back');
       } else {
         setFront(filled);
-        setAiOk('Filled Front');
+        showOk('Filled Front');
       }
       setAiStatus('done');
     } catch (err) {
@@ -272,10 +306,11 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
               {manualError || aiError}
             </Text>
           ) : null}
-          {aiOk && !manualError && !aiError ? (
-            <Text size="1" color="green">
-              {aiOk}
-            </Text>
+          {statusOk && !manualError && !aiError ? (
+            <div className="srs-create-success" role="status" aria-live="polite">
+              <CheckIcon width={14} height={14} />
+              <span>{statusOk}</span>
+            </div>
           ) : null}
 
           <div className="srs-create-actions">
@@ -284,14 +319,14 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
               variant="soft"
               color="gray"
               loading={aiStatus === 'running'}
-              disabled={!canGenerate || aiStatus === 'running'}
+              disabled={!canGenerate || aiStatus === 'running' || saving}
               onClick={() => void generate()}
             >
               <LightningBoltIcon />
               Generate
             </Button>
-            <Button highContrast size="2" onClick={() => void addManual()}>
-              Add to note
+            <Button highContrast size="2" loading={saving} disabled={saving || aiStatus === 'running'} onClick={() => void addManual()}>
+              {saving ? 'Adding…' : 'Add to note'}
             </Button>
           </div>
         </div>

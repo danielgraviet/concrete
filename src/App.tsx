@@ -920,8 +920,9 @@ export default function App() {
       try {
         await VaultService.write(root, path, next);
       } catch (error) {
-        window.alert(error instanceof Error ? error.message : 'Could not save the new cards.');
-        return;
+        const message = error instanceof Error ? error.message : 'Could not save the new cards.';
+        window.alert(message);
+        throw error instanceof Error ? error : new Error(message);
       }
     }
     setContents((prev) => ({ ...prev, [path]: next }));

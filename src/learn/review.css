@@ -286,6 +286,18 @@
   gap: 8px;
   justify-content: flex-end;
 }
+.srs-create-success {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--green-9, #30a46c) 45%, var(--mv-border));
+  background: color-mix(in srgb, var(--green-9, #30a46c) 14%, transparent);
+  color: var(--green-11, #3dd68c);
+  font-size: 12px;
+  font-weight: 600;
+}
 .srs-generate-row {
   display: flex;
   gap: 10px;
