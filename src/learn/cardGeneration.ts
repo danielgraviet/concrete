@@ -1,6 +1,6 @@
 import { CARD_GENERATION_MODEL, ChatModelProvider, type AiClient } from '../ai';
 import { truncateNoteContext } from '../ai';
-import { parseNoteCards, serializeNoteMcq } from './parseNoteCards';
+import { parseNoteCards, serializeNoteMcq, type ParsedMcqOption } from './parseNoteCards';
 
 export type CardStyle = 'mixed' | 'basic' | 'cloze' | 'mcq';
 
@@ -25,6 +25,34 @@ export function buildBasicFillPrompt(kind: BasicFillKind, text: string): string 
   ].join('\n');
 }
 
+/** Turn a rough idea or prompt into one cloze flashcard sentence. */
+export function buildClozeFillPrompt(text: string): string {
+  return [
+    'Turn the draft below into ONE cloze flashcard sentence.',
+    'Hide the key term(s) in double braces, e.g. The {{mitochondria}} produces ATP.',
+    'Reply with ONLY that sentence. No quotes, labels, prefixes, or explanation.',
+    '',
+    `Draft: ${text.trim()}`,
+  ].join('\n');
+}
+
+/** Given an MCQ question, ask for checkbox options only. */
+export function buildMcqFillPrompt(question: string): string {
+  return [
+    'Write multiple-choice options for this flashcard question.',
+    'Reply with ONLY 3–5 options as markdown checkboxes.',
+    'Mark exactly one correct option with [x]; wrong ones with [ ].',
+    'No question text, numbering, commentary, or extra lines.',
+    '',
+    'Format:',
+    '- [ ] Wrong option',
+    '- [x] Correct option',
+    '- [ ] Wrong option',
+    '',
+    `Question: ${question.trim()}`,
+  ].join('\n');
+}
+
 /** Strip model fluff so the reply can drop straight into Front or Back. */
 export function parseFillReply(text: string): string {
   const line = text
@@ -38,6 +66,43 @@ export function parseFillReply(text: string): string {
     .replace(/^["'`“”]+|["'`“”]+$/g, '')
     .replace(/^(?:answer|question|front|back)\s*[:：\-–—]\s*/i, '')
     .trim();
+}
+
+/** Keep a cloze sentence that contains at least one {{blank}}. */
+export function parseClozeFillReply(text: string): string {
+  const normalized = text.replace(/\r\n?/g, '\n').trim();
+  if (!normalized) return '';
+
+  const candidates = normalized
+    .split('\n')
+    .map((line) => line.replace(/^\s*(?:[-*+]|\d+[.)])\s+/, '').replace(/^`(.*)`$/, '$1').trim())
+    .filter(Boolean);
+
+  for (const line of candidates) {
+    if (/\{\{[^}]+\}\}/.test(line)) return line;
+  }
+
+  // Whole reply as one block (multi-line cloze is rare but allowed).
+  const block = candidates.join('\n');
+  return /\{\{[^}]+\}\}/.test(block) ? block : '';
+}
+
+const MCQ_OPTION_LINE_RE = /^\s*(?:[-*+]|\d+[.)])?\s*\[([ xX])\]\s+(.+?)\s*$/;
+
+/** Parse checkbox option lines from a model reply into MCQ options. */
+export function parseMcqOptionsReply(text: string): ParsedMcqOption[] {
+  const options: ParsedMcqOption[] = [];
+  for (const raw of text.replace(/\r\n?/g, '\n').split('\n')) {
+    const line = raw.trim();
+    if (!line || /^\s*\?mcq\s*$/i.test(line)) continue;
+    const match = MCQ_OPTION_LINE_RE.exec(line);
+    if (!match) continue;
+    const optionText = match[2].trim();
+    if (!optionText) continue;
+    options.push({ text: optionText, correct: match[1].toLowerCase() === 'x' });
+  }
+  if (options.length < 2 || !options.some((option) => option.correct)) return [];
+  return options;
 }
 
 /**

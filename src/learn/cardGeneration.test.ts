@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { appendCardLines, formatMcqCardBlock } from './appendCardLines';
 import {
   buildBasicFillPrompt,
+  buildClozeFillPrompt,
+  buildMcqFillPrompt,
   cardBlocksFromModel,
+  parseClozeFillReply,
   parseFillReply,
+  parseMcqOptionsReply,
 } from './cardGeneration';
 import { parseNoteCards } from './parseNoteCards';
 
@@ -27,6 +31,40 @@ describe('parseFillReply', () => {
       'Peripheral Component Interconnect Express',
     );
     expect(parseFillReply('"What does PCIe stand for?"')).toBe('What does PCIe stand for?');
+  });
+});
+
+describe('cloze fill', () => {
+  it('asks for one cloze sentence from a draft', () => {
+    const prompt = buildClozeFillPrompt('mitochondria make ATP');
+    expect(prompt).toContain('Draft: mitochondria make ATP');
+    expect(prompt).toContain('{{mitochondria}}');
+  });
+
+  it('keeps a line that contains braces', () => {
+    expect(parseClozeFillReply('Here is a card:\nThe {{mitochondria}} produces ATP.\n')).toBe(
+      'The {{mitochondria}} produces ATP.',
+    );
+    expect(parseClozeFillReply('No blanks here')).toBe('');
+  });
+});
+
+describe('mcq fill', () => {
+  it('asks for checkbox options for a question', () => {
+    const prompt = buildMcqFillPrompt('Which layer handles retransmission?');
+    expect(prompt).toContain('Question: Which layer handles retransmission?');
+    expect(prompt).toContain('- [x] Correct option');
+  });
+
+  it('parses checkbox options and requires a correct mark', () => {
+    expect(
+      parseMcqOptionsReply(['- [ ] Network', '- [x] Transport', '- [ ] Application', 'commentary'].join('\n')),
+    ).toEqual([
+      { text: 'Network', correct: false },
+      { text: 'Transport', correct: true },
+      { text: 'Application', correct: false },
+    ]);
+    expect(parseMcqOptionsReply('- [ ] A\n- [ ] B')).toEqual([]);
   });
 });
 

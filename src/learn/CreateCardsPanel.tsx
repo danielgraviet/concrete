@@ -10,8 +10,12 @@ import {
 } from './appendCardLines';
 import {
   buildBasicFillPrompt,
+  buildClozeFillPrompt,
+  buildMcqFillPrompt,
   completeCardGeneration,
+  parseClozeFillReply,
   parseFillReply,
+  parseMcqOptionsReply,
 } from './cardGeneration';
 import type { ParsedMcqOption } from './parseNoteCards';
 
@@ -37,7 +41,7 @@ function wait(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-/** Half-panel composer: type Front or Back, Generate fills the other side with Qwen Flash. */
+/** Half-panel composer: Generate fills the missing side / options / cloze with Qwen Flash. */
 export function CreateCardsPanel({ client, path, content, onInsert, onClose }: Props) {
   const [mode, setMode] = useState<Mode>('basic');
   const [front, setFront] = useState('');
@@ -138,47 +142,85 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
     setManualError('');
     setAiError('');
     setStatusOk('');
-
-    if (mode !== 'basic') {
-      setAiError('Generate currently fills Front ↔ Back. Switch to Front / Back.');
-      setAiStatus('error');
-      return;
-    }
-
-    const frontText = front.trim();
-    const backText = back.trim();
-    if (!frontText && !backText) {
-      setAiError('Type something in Front or Back first.');
-      setAiStatus('error');
-      return;
-    }
-    if (frontText && backText) {
-      setAiError('Clear Front or Back so Generate knows which side to fill.');
-      setAiStatus('error');
-      return;
-    }
-
-    const kind = frontText ? 'answer' : 'question';
-    const source = frontText || backText;
     setAiStatus('running');
+
     try {
-      const reply = await completeCardGeneration(client, {
-        prompt: buildBasicFillPrompt(kind, source),
-        context: content,
-      });
-      const filled = parseFillReply(reply);
-      if (!filled) {
-        setAiStatus('error');
-        setAiError('Qwen Flash returned an empty answer. Try again.');
+      if (mode === 'basic') {
+        const frontText = front.trim();
+        const backText = back.trim();
+        if (!frontText && !backText) {
+          setAiStatus('error');
+          setAiError('Type something in Front or Back first.');
+          return;
+        }
+        if (frontText && backText) {
+          setAiStatus('error');
+          setAiError('Clear Front or Back so Generate knows which side to fill.');
+          return;
+        }
+        const kind = frontText ? 'answer' : 'question';
+        const reply = await completeCardGeneration(client, {
+          prompt: buildBasicFillPrompt(kind, frontText || backText),
+          context: content,
+        });
+        const filled = parseFillReply(reply);
+        if (!filled) {
+          setAiStatus('error');
+          setAiError('Qwen Flash returned an empty answer. Try again.');
+          return;
+        }
+        if (kind === 'answer') {
+          setBack(filled);
+          showOk('Filled Back');
+        } else {
+          setFront(filled);
+          showOk('Filled Front');
+        }
+        setAiStatus('done');
         return;
       }
-      if (kind === 'answer') {
-        setBack(filled);
-        showOk('Filled Back');
-      } else {
-        setFront(filled);
-        showOk('Filled Front');
+
+      if (mode === 'cloze') {
+        const draft = cloze.trim();
+        if (!draft) {
+          setAiStatus('error');
+          setAiError('Type a rough idea or sentence first.');
+          return;
+        }
+        const reply = await completeCardGeneration(client, {
+          prompt: buildClozeFillPrompt(draft),
+          context: content,
+        });
+        const filled = parseClozeFillReply(reply);
+        if (!filled) {
+          setAiStatus('error');
+          setAiError('Qwen Flash did not return a cloze with {{blanks}}. Try again.');
+          return;
+        }
+        setCloze(filled);
+        showOk('Filled cloze');
+        setAiStatus('done');
+        return;
       }
+
+      const question = mcqPrompt.trim();
+      if (!question) {
+        setAiStatus('error');
+        setAiError('Type the MCQ question first.');
+        return;
+      }
+      const reply = await completeCardGeneration(client, {
+        prompt: buildMcqFillPrompt(question),
+        context: content,
+      });
+      const options = parseMcqOptionsReply(reply);
+      if (options.length === 0) {
+        setAiStatus('error');
+        setAiError('Qwen Flash did not return valid MCQ options. Try again.');
+        return;
+      }
+      setMcqOptions(options);
+      showOk(`Filled ${options.length} options`);
       setAiStatus('done');
     } catch (err) {
       setAiStatus('error');
@@ -187,8 +229,11 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
   };
 
   const canGenerate =
-    mode === 'basic' &&
-    ((Boolean(front.trim()) && !back.trim()) || (!front.trim() && Boolean(back.trim())));
+    mode === 'basic'
+      ? (Boolean(front.trim()) && !back.trim()) || (!front.trim() && Boolean(back.trim()))
+      : mode === 'cloze'
+        ? Boolean(cloze.trim())
+        : Boolean(mcqPrompt.trim());
 
   return (
     <div className="srs-create-panel">
@@ -234,7 +279,7 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
                 rows={4}
                 value={cloze}
                 onChange={(e) => setCloze(e.target.value)}
-                placeholder="The {{mitochondria}} produces ATP."
+                placeholder="Rough idea, or The {{mitochondria}} produces ATP."
               />
             </label>
           ) : null}
@@ -248,7 +293,7 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
                   rows={2}
                   value={mcqPrompt}
                   onChange={(e) => setMcqPrompt(e.target.value)}
-                  placeholder="What layer handles retransmission?"
+                  placeholder="Type the question — Generate fills the options"
                 />
               </label>
               <div className="srs-create-options">

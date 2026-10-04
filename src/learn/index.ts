@@ -22,6 +22,10 @@ export type { CardEdit } from './editCard';
 export {
   cardBlocksFromModel,
   buildBasicFillPrompt,
+  buildClozeFillPrompt,
+  buildMcqFillPrompt,
   parseFillReply,
+  parseClozeFillReply,
+  parseMcqOptionsReply,
   completeCardGeneration,
 } from './cardGeneration';
