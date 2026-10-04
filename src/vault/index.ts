@@ -37,3 +37,11 @@ export { useVault } from './hooks';
 export { FileTreeView, type TreeItemKind } from './FileTreeView';
 export { askText } from './askText';
 export { NoteBodyCache } from './NoteBodyCache';
+export {
+  MAX_OPEN_TABS,
+  closeNoteTab,
+  openNoteInTabs,
+  renamePathsInTabs,
+  tabAfterClose,
+} from './openTabs';
+export { OpenTabsBar } from './OpenTabsBar';

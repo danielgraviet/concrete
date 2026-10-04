@@ -31,24 +31,21 @@ import {
   joinFolderPath,
   joinNotePath,
   joinPdfPath,
+  closeNoteTab,
   NoteBodyCache,
   noteTitle,
+  openNoteInTabs,
+  OpenTabsBar,
   parentDir,
+  renamePathsInTabs,
+  tabAfterClose,
   useVault,
   VaultService,
   type TreeItemKind,
 } from './vault';
 import { useBacklinks } from './graph';
 
-const MAX_TAB_TITLE_CHARS = 32;
 const NOTE_BODY_CACHE_MAX = 24;
-
-function tabTitleFor(path: string): string {
-  const title = (path.split('/').pop() ?? path).replace(/\.md$/i, '') || 'Untitled';
-  return title.length > MAX_TAB_TITLE_CHARS
-    ? `${title.slice(0, MAX_TAB_TITLE_CHARS - 1)}…`
-    : title;
-}
 import { useSearch } from './search';
 import { applyTextHighlights, clearTextHighlights, findTextRanges, revealTextRange } from './search/inFileFind';
 import { MetaService } from './meta';
@@ -185,8 +182,11 @@ function resolveAiProvider(settings: AppSettings) {
 export default function App() {
   const vault = useVault(demoNotes, demoFolders);
   const [selected, setSelected] = useState('Welcome.md');
+  const [openTabs, setOpenTabs] = useState<string[]>(['Welcome.md']);
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
+  const openTabsRef = useRef(openTabs);
+  openTabsRef.current = openTabs;
   // Editor text is asynchronous; track its note before using it for caching.
   const editorPathRef = useRef(selected);
   // Only remember the open note once the restored/initial selection is settled,
@@ -217,15 +217,18 @@ export default function App() {
       const cache = noteCacheRef.current;
       cache.clear();
       cache.clearPins();
-      const pin = selectedRef.current;
-      if (pin) cache.pin(pin);
-      // Insert non-pinned first, then pin last so the open note is MRU and
-      // never lost when next has more keys than maxEntries.
+      const pins = new Set(openTabsRef.current.filter(Boolean));
+      if (selectedRef.current) pins.add(selectedRef.current);
+      for (const pin of pins) cache.pin(pin);
+      // Insert non-pinned first, then pins last so open tabs stay MRU and
+      // never get lost when next has more keys than maxEntries.
       for (const [key, value] of Object.entries(next)) {
-        if (key === pin) continue;
+        if (pins.has(key)) continue;
         cache.set(key, value);
       }
-      if (pin && next[pin] !== undefined) cache.set(pin, next[pin]);
+      for (const pin of pins) {
+        if (next[pin] !== undefined) cache.set(pin, next[pin]);
+      }
       return cache.toRecord();
     });
   };
@@ -424,6 +427,7 @@ export default function App() {
           (lastNote && visibleFiles.includes(lastNote) ? lastNote : '') ||
           (visibleFiles.find((file) => file === 'Welcome.md') ?? visibleFiles[0] ?? '');
         setSelected(preferred);
+        setOpenTabs(preferred ? [preferred] : []);
         persistSelectionRef.current = true;
         void window.perf?.mark('renderer-interactive');
       });
@@ -461,6 +465,16 @@ export default function App() {
 
   contentRef.current = controller.content;
   markSavedRef.current = controller.markSaved;
+
+  // Keep open tabs pinned even when selection changes without a contents rewrite.
+  useEffect(() => {
+    const cache = noteCacheRef.current;
+    cache.clearPins();
+    for (const path of openTabs) {
+      if (path) cache.pin(path);
+    }
+    if (selected) cache.pin(selected);
+  }, [openTabs, selected]);
 
   useEffect(() => {
     let cancelled = false;
@@ -624,6 +638,7 @@ export default function App() {
     setActiveFolder('');
     const first = result.files.find((file) => !isHiddenVaultFile(file)) ?? '';
     setSelected(first);
+    setOpenTabs(first ? [first] : []);
     setOnboardingStep(1);
   };
 
@@ -635,14 +650,16 @@ export default function App() {
       if (!result) return;
       setContents({});
       setActiveFolder('');
-      setSelected(result.files.find((file) => !isHiddenVaultFile(file)) ?? '');
+      const first = result.files.find((file) => !isHiddenVaultFile(file)) ?? '';
+      setSelected(first);
+      setOpenTabs(first ? [first] : []);
       setOnboardingStep(1);
     } catch (error) {
       window.alert(error instanceof Error ? error.message : 'Could not import the Obsidian vault.');
     }
   };
 
-  const select = (name: string) => {
+  const select = (name: string, options?: { recordTab?: boolean }) => {
     persistSelectionRef.current = true;
     if (isPdfFileName(name)) {
       // PDFs aren't editable notes — open them in the OS default viewer instead.
@@ -653,6 +670,9 @@ export default function App() {
     if (controller.isDirty) void controller.persistence.flush();
     // Opening a note sets a running review aside; its tab resumes it.
     setReviewRun((current) => (current && !current.paused ? { ...current, paused: true } : current));
+    if (options?.recordTab !== false) {
+      setOpenTabs((tabs) => openNoteInTabs(tabs, name));
+    }
     setSelected(name);
     setTreeFocus({ kind: 'file', path: name });
     if (isQuizPath(name)) setCreateCardsOpen(false);
@@ -665,6 +685,17 @@ export default function App() {
     }
   };
 
+  const closeOpenTab = (path: string) => {
+    const tabs = openTabsRef.current;
+    if (tabs.length <= 1 || !path) return;
+    const nextTabs = closeNoteTab(tabs, path);
+    setOpenTabs(nextTabs);
+    if (path !== selected) return;
+    const next = tabAfterClose(tabs, path);
+    if (next) select(next, { recordTab: false });
+    else setSelected('');
+  };
+
   /** Folder target for new notes: explicit selection, else sibling of current note. */
   const noteTargetFolder = activeFolder || parentDir(selected);
 
@@ -672,6 +703,7 @@ export default function App() {
     const title = relative.split('/').pop()?.replace(/\.md$/i, '') ?? 'Untitled';
     const content = body ?? `# ${title}\n\n`;
     setContents((prev) => ({ ...prev, [relative]: content }));
+    setOpenTabs((tabs) => openNoteInTabs(tabs, relative));
     setSelected(relative);
     setTreeFocus({ kind: 'file', path: relative });
     controller.loadContent(content);
@@ -858,6 +890,7 @@ export default function App() {
     if (controller.isDirty) await controller.persistence.flush();
     const body = await loadNoteBody(path);
     setContents((prev) => ({ ...prev, [path]: body }));
+    setOpenTabs((tabs) => openNoteInTabs(tabs, path));
     setSelected(path);
     setTreeFocus({ kind: 'file', path });
     controller.loadContent(body);
@@ -996,6 +1029,7 @@ export default function App() {
             const nextSelected = `${renamed}${selected.slice(path.length)}`;
             setSelected(nextSelected);
           }
+          setOpenTabs((tabs) => renamePathsInTabs(tabs, path, renamed));
           if (activeFolder === path || activeFolder.startsWith(`${path}/`)) {
             setActiveFolder(`${renamed}${activeFolder.slice(path.length)}`);
           }
@@ -1035,6 +1069,7 @@ export default function App() {
       if (selected.startsWith(`${path}/`)) {
         setSelected(`${target}${selected.slice(path.length)}`);
       }
+      setOpenTabs((tabs) => renamePathsInTabs(tabs, path, target));
       if (activeFolder === path || activeFolder.startsWith(`${path}/`)) {
         setActiveFolder(`${target}${activeFolder.slice(path.length)}`);
       }
@@ -1082,6 +1117,7 @@ export default function App() {
           return copy;
         });
         if (selected === path) setSelected(renamed);
+        setOpenTabs((tabs) => renamePathsInTabs(tabs, path, renamed));
         setTreeFocus({ kind: 'file', path: renamed });
       } catch (error) {
         console.error('Failed to rename note', error);
@@ -1101,6 +1137,7 @@ export default function App() {
       return copy;
     });
     if (selected === path) setSelected(target);
+    setOpenTabs((tabs) => renamePathsInTabs(tabs, path, target));
     setTreeFocus({ kind: 'file', path: target });
   };
 
@@ -1151,15 +1188,27 @@ export default function App() {
       if (activeFolder === path || activeFolder.startsWith(`${path}/`)) {
         setActiveFolder('');
       }
+      setOpenTabs((tabs) => tabs.filter((tab) => tab !== path && !tab.startsWith(`${path}/`)));
       if (selected === path || selected.startsWith(`${path}/`)) {
         const remaining = files.filter(
           (f) => f !== path && !f.startsWith(`${path}/`),
         );
-        setSelected(remaining[0] ?? '');
+        const next = remaining[0] ?? '';
+        setSelected(next);
+        if (next) setOpenTabs((tabs) => (tabs.length ? tabs : [next]));
       }
-    } else if (selected === path) {
-      const remaining = files.filter((f) => f !== path);
-      setSelected(remaining[0] ?? '');
+    } else {
+      const tabs = openTabsRef.current;
+      const nextTabs = closeNoteTab(tabs, path);
+      if (selected === path) {
+        const nextFromTabs = tabAfterClose(tabs, path);
+        const remaining = files.filter((f) => f !== path);
+        const next = nextFromTabs ?? remaining[0] ?? '';
+        setSelected(next);
+        setOpenTabs(next && !nextTabs.includes(next) ? openNoteInTabs(nextTabs, next) : nextTabs);
+      } else {
+        setOpenTabs(nextTabs);
+      }
     }
 
     setTreeFocus(null);
@@ -1492,46 +1541,19 @@ export default function App() {
               )}
             </IconButton>
           )}
-          {reviewRun ? (
-            <button
-              type="button"
-              className={`tab tab-review ${reviewing ? 'active' : ''}`}
-              title={reviewing ? 'Reviewing' : 'Resume review'}
-              onClick={() => setReviewRun((current) => (current ? { ...current, paused: false } : current))}
-            >
-              <LayersIcon width={14} height={14} />
-              <span className="tab-title">Review · {reviewRun.deck.label}</span>
-              <span
-                role="button"
-                tabIndex={-1}
-                className="tab-close"
-                aria-label="End review"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setReviewRun(null);
-                }}
-              >
-                <Cross1Icon width={10} height={10} />
-              </span>
-            </button>
-          ) : null}
-          <div
-            className={`tab ${reviewing ? '' : 'active'}`}
-            title={selected}
-            onClick={() => {
-              if (reviewing) setReviewRun((current) => (current ? { ...current, paused: true } : current));
-            }}
-          >
-            {isQuizPath(selected) ? (
-              <ClipboardIcon width={14} height={14} />
-            ) : (
-              <FileTextIcon width={14} height={14} />
-            )}
-            <span className="tab-title" title={selected}>
-              {tabTitleFor(selected)}
-            </span>
-            {!saved && <span className="dirty">•</span>}
-          </div>
+          <OpenTabsBar
+            tabs={openTabs}
+            selected={selected}
+            dirtyPath={!saved ? selected : null}
+            reviewLabel={reviewRun?.deck.label ?? null}
+            reviewing={reviewing}
+            onSelect={select}
+            onClose={closeOpenTab}
+            onResumeReview={() =>
+              setReviewRun((current) => (current ? { ...current, paused: false } : current))
+            }
+            onEndReview={() => setReviewRun(null)}
+          />
           <div className="tab-spacer" />
           {!reviewing && !isQuizPath(selected) && noteTags.length > 0 && (
             <div className="note-tags">
