@@ -140,27 +140,31 @@ export function SkillBars({ skills }: { skills: SkillStat[] }) {
 const CELL = 11;
 const GAP = 3;
 
-/** Sessions per day for the last 12 weeks. */
+/** Sessions per day for the most recent calendar week. */
 export function ActivityHeatmap({ weeks }: { weeks: ActivityCell[][] }) {
-  const width = weeks.length * (CELL + GAP) - GAP;
-  const height = 7 * (CELL + GAP) - GAP;
+  const days = [...(weeks[weeks.length - 1] ?? [])];
+  while (days.length < 7 && days.length > 0) {
+    const date = new Date(days[days.length - 1].date);
+    date.setDate(date.getDate() + 1);
+    days.push({ date, count: 0 });
+  }
+  const width = 7 * (CELL + GAP) - GAP;
+  const height = CELL;
   return (
-    <svg className="pg-heat" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Quiz activity over the last 12 weeks">
-      {weeks.map((week, w) =>
-        week.map((cell, d) => (
-          <rect
-            key={`${w}-${d}`}
-            className={`pg-cell level-${Math.min(cell.count, 3)}`}
-            x={w * (CELL + GAP)}
-            y={d * (CELL + GAP)}
-            width={CELL}
-            height={CELL}
-            rx={3}
-          >
-            <title>{`${shortDate(cell.date)} · ${cell.count} attempt${cell.count === 1 ? '' : 's'}`}</title>
-          </rect>
-        )),
-      )}
+    <svg className="pg-heat" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Quiz activity for the most recent week">
+      {days.map((cell, day) => (
+        <rect
+          key={day}
+          className={`pg-cell level-${Math.min(cell.count, 3)}`}
+          x={day * (CELL + GAP)}
+          y={0}
+          width={CELL}
+          height={CELL}
+          rx={3}
+        >
+          <title>{`${shortDate(cell.date)} · ${cell.count} attempt${cell.count === 1 ? '' : 's'}`}</title>
+        </rect>
+      ))}
     </svg>
   );
 }
