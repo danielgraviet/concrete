@@ -80,6 +80,7 @@
       "dist/**",
       "electron.cjs",
       "agentTrajectory.cjs",
+      "telemetrySpans.cjs",
       "preload.cjs",
       "sandbox/**",
       "codexAgent.mjs",

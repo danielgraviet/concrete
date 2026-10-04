@@ -2,7 +2,8 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
-const SECRET_KEY = /(api[_-]?key|authorization|token|password|secret|cookie|set-cookie)/i;
+// `token$` matches access_token / idToken but not usage counts like input_tokens.
+const SECRET_KEY = /(api[_-]?key|authorization|token$|password|secret|cookie|set-cookie)/i;
 const MAX_STRING = 200_000;
 
 function redact(value, key = '') {
