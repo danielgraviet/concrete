@@ -20,10 +20,13 @@ export const OPENROUTER_MODEL_DEFAULT = OPENROUTER_MODEL_DEEPSEEK_V4_FLASH;
 export const CARD_GENERATION_MODEL = OPENROUTER_MODEL_QWEN_38_27B;
 
 /** Pin Create Cards completions to Cerebras; fall back if that host is down. */
-export const CARD_GENERATION_PROVIDER = {
+export const CARD_GENERATION_PROVIDER: {
+  order: string[];
+  allow_fallbacks: boolean;
+} = {
   order: ['Cerebras'],
   allow_fallbacks: true,
-} as const;
+};
 
 export const OPENROUTER_MODEL_OPTIONS: OpenRouterModelOption[] = [
   {
