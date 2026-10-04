@@ -13,20 +13,28 @@
  *                                      or math block right after still counts)
  *   (`??` makes the reverse too)
  *
+ *   ?mcq                               multiple-choice card in the note:
+ *   Prompt text                        prompt, then checkbox options until a
+ *   - [ ] Wrong                        blank line (at least one `- [x]` required)
+ *   - [x] Right
+ *
  * Code fences, math blocks, inline code and inline math are never scanned.
  * `::` needs whitespace on both sides so `std::vector` and Dataview `key:: v` are left alone.
  */
 
+export type ParsedMcqOption = { text: string; correct: boolean };
+
 export type ParsedNoteCard =
   | { kind: 'basic'; front: string; back: string; line: number }
-  | { kind: 'cloze'; text: string; group: string; line: number };
+  | { kind: 'cloze'; text: string; group: string; line: number }
+  | { kind: 'mcq'; prompt: string; options: ParsedMcqOption[]; line: number };
 
 /** Where a parsed card sits in the note and how it was written, for editing it in place. */
 export type NoteCardSpan = ParsedNoteCard & {
   /** Line after the card's last line. */
   end: number;
-  /** `inline` = `Q :: A`; `block` = the multi-line `?` form; `cloze` = a `{{…}}` paragraph. */
-  layout: 'inline' | 'block' | 'cloze';
+  /** `inline` = `Q :: A`; `block` = the multi-line `?` form; `cloze` = a `{{…}}` paragraph; `mcq` = `?mcq` block. */
+  layout: 'inline' | 'block' | 'cloze' | 'mcq';
   /** Written with `:::` / `??`, so the note holds this card and its reverse. */
   paired: boolean;
   /** This is the generated reverse of a paired card. */
@@ -48,6 +56,8 @@ const LIST_ITEM_RE = /^\s*(?:>\s?)*(?:[-*+]|\d+[.)])\s+/;
 const HEADING_RE = /^\s*#{1,6}\s+/;
 const CLOZE_RE = /\{\{((?:(?!\}\}).)+?)\}\}/g;
 const MULTILINE_SEP_RE = /^\s*(\?\??)\s*$/;
+const MCQ_SEP_RE = /^\s*\?mcq\s*$/i;
+const MCQ_OPTION_RE = /^\s*(?:[-*+]|\d+[.)])\s+\[([ xX])\]\s+(.*\S)\s*$/;
 
 /** Same length as `text`, with inline code and inline math blanked out (for detection only). */
 export function maskInline(text: string): string {
@@ -157,6 +167,12 @@ export function parseNoteCards(markdown: string): ParsedNoteCard[] {
   return parseNoteCardSpans(markdown).map(({ end: _end, layout: _layout, paired: _paired, reverse: _reverse, ...card }) => card);
 }
 
+/** Serialize a note-native MCQ block (no trailing blank line). */
+export function serializeNoteMcq(prompt: string, options: ParsedMcqOption[]): string {
+  const body = options.map((option) => `- [${option.correct ? 'x' : ' '}] ${option.text.trim()}`).join('\n');
+  return `?mcq\n${prompt.trim()}\n${body}`;
+}
+
 /** Like `parseNoteCards`, plus each card's line span and syntax. */
 export function parseNoteCardSpans(markdown: string): NoteCardSpan[] {
   const raw = markdown.replace(/\r\n?/g, '\n').split('\n');
@@ -164,9 +180,51 @@ export function parseNoteCardSpans(markdown: string): NoteCardSpan[] {
   const cards: NoteCardSpan[] = [];
   const consumed = new Set<number>();
 
+  // Note-native `?mcq` blocks before other forms so options aren't misread as cloze/basic.
+  for (let i = 0; i < lines.length; i += 1) {
+    if (lines[i].code || consumed.has(i) || !MCQ_SEP_RE.test(lines[i].text)) continue;
+    let end = i + 1;
+    while (end < lines.length && !lines[end].code && !lines[end].text.trim()) end += 1;
+    const promptStart = end;
+    while (
+      end < lines.length &&
+      !lines[end].code &&
+      lines[end].text.trim() &&
+      !MCQ_OPTION_RE.test(lines[end].text) &&
+      !MCQ_SEP_RE.test(lines[end].text) &&
+      !MULTILINE_SEP_RE.test(lines[end].text) &&
+      !HEADING_RE.test(lines[end].text)
+    ) {
+      end += 1;
+    }
+    const optionsStart = end;
+    const options: ParsedMcqOption[] = [];
+    while (end < lines.length && !lines[end].code) {
+      const match = MCQ_OPTION_RE.exec(lines[end].text);
+      if (!match) break;
+      options.push({ text: match[2].trim(), correct: match[1].toLowerCase() === 'x' });
+      end += 1;
+    }
+    const prompt = raw.slice(promptStart, optionsStart).join('\n').trim();
+    for (let k = i; k < end; k += 1) consumed.add(k);
+    if (prompt && options.length >= 2 && options.some((option) => option.correct)) {
+      cards.push({
+        kind: 'mcq',
+        prompt,
+        options,
+        line: i,
+        end,
+        layout: 'mcq',
+        paired: false,
+        reverse: false,
+      });
+    }
+    i = Math.max(i, end - 1);
+  }
+
   // Multi-line `?` cards first so their lines aren't re-read as other cards.
   for (let i = 0; i < lines.length; i += 1) {
-    if (lines[i].code) continue;
+    if (lines[i].code || consumed.has(i)) continue;
     const sep = MULTILINE_SEP_RE.exec(lines[i].text);
     if (!sep) continue;
     let top = i;
@@ -258,7 +316,12 @@ export function parseNoteCardSpans(markdown: string): NoteCardSpan[] {
 
 /** Cheap pre-check so notes without any card syntax skip the full parse. */
 export function mightContainCards(markdown: string): boolean {
-  return markdown.includes('::') || markdown.includes('{{') || /^\s*\?\??\s*$/m.test(markdown);
+  return (
+    markdown.includes('::') ||
+    markdown.includes('{{') ||
+    /^\s*\?\??\s*$/m.test(markdown) ||
+    /^\s*\?mcq\s*$/im.test(markdown)
+  );
 }
 
 /** Split cloze text into segments for display, hiding the blanks in `group`. */

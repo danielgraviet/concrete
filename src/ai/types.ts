@@ -8,9 +8,30 @@ import type {
   QuizDocument,
 } from '../quiz/types';
 
+export type OpenRouterProviderPrefs = {
+  order?: string[];
+  allow_fallbacks?: boolean;
+  sort?: 'price' | 'throughput' | 'latency';
+};
+
+export type OpenRouterReasoningPrefs = {
+  enabled?: boolean;
+  effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  exclude?: boolean;
+};
+
 export type CompleteRequest = {
   prompt: string;
   context?: string;
+  /** Override the provider default completion budget. */
+  maxTokens?: number;
+  temperature?: number;
+  /** Activity-log operation label. */
+  operation?: string;
+  /** OpenRouter provider routing (e.g. pin Cerebras). */
+  provider?: OpenRouterProviderPrefs;
+  /** OpenRouter reasoning controls — disable for short fill completions. */
+  reasoning?: OpenRouterReasoningPrefs;
 };
 
 export type { GenerateQuizRequest, GenerateQuizFollowUpRequest, GradeQuizRequest, GradeReport, QuizDocument };

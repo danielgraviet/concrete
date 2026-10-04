@@ -8,17 +8,41 @@ export type OpenRouterModelOption = {
 
 export const OPENROUTER_MODEL_DEEPSEEK_V4_FLASH =
   'deepseek/deepseek-v4-flash-0731';
+export const OPENROUTER_MODEL_QWEN_FLASH = 'qwen/qwen3.7-flash';
+export const OPENROUTER_MODEL_QWEN_38_27B = 'qwen/qwen3.8-27b';
 export const OPENROUTER_MODEL_LUNA = 'openai/gpt-5.6-luna';
 export const OPENROUTER_MODEL_GPT4O_MINI = 'openai/gpt-4o-mini';
 
 /** Default live model for quiz generation and grading. */
 export const OPENROUTER_MODEL_DEFAULT = OPENROUTER_MODEL_DEEPSEEK_V4_FLASH;
 
+/** Extremely fast Create Cards model — routed to Cerebras on OpenRouter. */
+export const CARD_GENERATION_MODEL = OPENROUTER_MODEL_QWEN_38_27B;
+
+/** Pin Create Cards completions to Cerebras; fall back if that host is down. */
+export const CARD_GENERATION_PROVIDER: {
+  order: string[];
+  allow_fallbacks: boolean;
+} = {
+  order: ['Cerebras'],
+  allow_fallbacks: true,
+};
+
 export const OPENROUTER_MODEL_OPTIONS: OpenRouterModelOption[] = [
   {
     id: OPENROUTER_MODEL_DEEPSEEK_V4_FLASH,
     label: 'DeepSeek V4 Flash',
     description: 'Fast & cheap · quiz default',
+  },
+  {
+    id: OPENROUTER_MODEL_QWEN_38_27B,
+    label: 'Qwen 3.8 27B (Cerebras)',
+    description: 'Extremely fast · Create Cards',
+  },
+  {
+    id: OPENROUTER_MODEL_QWEN_FLASH,
+    label: 'Qwen 3.7 Flash',
+    description: 'Cheap OpenRouter flash',
   },
   {
     id: OPENROUTER_MODEL_LUNA,

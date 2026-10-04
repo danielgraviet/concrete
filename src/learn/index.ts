@@ -14,7 +14,18 @@ export type { ReviewSystem } from './useReviewSystem';
 export { ReviewView } from './ReviewView';
 export { ReviewSidebar } from './ReviewSidebar';
 export { NoteCardsPanel } from './NoteCardsPanel';
+export { CreateCardsPanel } from './CreateCardsPanel';
 export { QuizReviewToggle } from './QuizReviewToggle';
 export { appendCardLines } from './appendCardLines';
 export { applyCardEdit, canEditCard, quizQuestionForCard } from './editCard';
 export type { CardEdit } from './editCard';
+export {
+  cardBlocksFromModel,
+  buildBasicFillPrompt,
+  buildClozeFillPrompt,
+  buildMcqFillPrompt,
+  parseFillReply,
+  parseClozeFillReply,
+  parseMcqOptionsReply,
+  completeCardGeneration,
+} from './cardGeneration';

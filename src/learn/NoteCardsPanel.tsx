@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Button } from '@radix-ui/themes';
-import { LightningBoltIcon } from '@radix-ui/react-icons';
+import { PlusIcon } from '@radix-ui/react-icons';
 import { queueCounts } from './ReviewSession';
 import { State } from './scheduler';
 import type { ReviewSystem } from './useReviewSystem';
@@ -10,7 +10,7 @@ type Props = {
   system: ReviewSystem;
   path: string;
   onReview: () => void;
-  onGenerate?: () => void;
+  onCreate?: () => void;
 };
 
 function cardLabel(card: ReviewCard): string {
@@ -19,8 +19,8 @@ function cardLabel(card: ReviewCard): string {
   return card.text.replace(/\{\{(?:c?\d+::)?((?:(?!\}\}).)+?)(?:::(?:(?!\}\}).)+?)?\}\}/g, '[$1]');
 }
 
-/** Right-panel summary of the open note's cards. */
-export function NoteCardsPanel({ system, path, onReview, onGenerate }: Props) {
+/** Right-panel summary of the open note's cards + entry to the create half-panel. */
+export function NoteCardsPanel({ system, path, onReview, onCreate }: Props) {
   const { cards, store, settings, revision } = system;
   const summary = useMemo(() => {
     const mine = cards.filter((card) => card.source.path === path);
@@ -37,8 +37,8 @@ export function NoteCardsPanel({ system, path, onReview, onGenerate }: Props) {
       <div className="panel-title">CARDS</div>
       {summary.mine.length === 0 ? (
         <p className="srs-muted">
-          No cards in this note. Add <code>Q :: A</code> or <code>{'{{blank}}'}</code>, or press <kbd>⌘⇧C</kbd> on a
-          selection.
+          No cards in this note yet. Open Create cards to add Front/Back, Cloze, or MCQ — or write{' '}
+          <code>Q :: A</code> / <code>{'{{blank}}'}</code> / <code>?mcq</code> in the note.
         </p>
       ) : (
         <>
@@ -57,15 +57,15 @@ export function NoteCardsPanel({ system, path, onReview, onGenerate }: Props) {
         </>
       )}
       <div className="srs-note-actions">
-        <Button size="1" highContrast disabled={waiting === 0} onClick={onReview}>
-          Review this note
-        </Button>
-        {onGenerate ? (
-          <Button size="1" variant="soft" color="gray" onClick={onGenerate}>
-            <LightningBoltIcon />
-            Generate cards
+        {onCreate ? (
+          <Button size="1" highContrast onClick={onCreate}>
+            <PlusIcon />
+            Create cards
           </Button>
         ) : null}
+        <Button size="1" variant="soft" color="gray" disabled={waiting === 0} onClick={onReview}>
+          Review this note
+        </Button>
       </div>
     </div>
   );

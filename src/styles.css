@@ -1312,7 +1312,8 @@ body{
 .app-shell > .editor,
 .app-shell > .sidebar,
 .app-shell > .rail,
-.app-shell > .right-panel{min-height:0}
+.app-shell > .right-panel{min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.app-shell.create-cards-open > .right-panel{overflow:hidden}
 .wysiwyg .mdxeditor-root-contenteditable{
   user-select:text;
   -webkit-user-select:text;
@@ -1326,6 +1327,8 @@ body{
 .app-shell.sidebar-collapsed{grid-template-columns:46px 0px minmax(360px,1fr) 250px}
 .app-shell.right-collapsed{grid-template-columns:46px 248px minmax(360px,1fr) 0px}
 .app-shell.sidebar-collapsed.right-collapsed{grid-template-columns:46px 0px minmax(360px,1fr) 0px}
+.app-shell.create-cards-open{grid-template-columns:46px 248px minmax(280px,1fr) 400px}
+.app-shell.sidebar-collapsed.create-cards-open{grid-template-columns:46px 0px minmax(280px,1fr) 400px}
 .app-shell.focus-mode{grid-template-columns:0 0 minmax(0,1fr) 0;grid-template-rows:minmax(0,1fr)}
 
 .app-shell .sidebar,

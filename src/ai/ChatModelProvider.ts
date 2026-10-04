@@ -24,6 +24,10 @@ import { claudeModelLabel } from './claudeModels';
 export {
   OPENROUTER_MODEL_DEFAULT,
   OPENROUTER_MODEL_DEEPSEEK_V4_FLASH,
+  OPENROUTER_MODEL_QWEN_FLASH,
+  OPENROUTER_MODEL_QWEN_38_27B,
+  CARD_GENERATION_MODEL,
+  CARD_GENERATION_PROVIDER,
   OPENROUTER_MODEL_LUNA,
   OPENROUTER_MODEL_GPT4O_MINI,
   OPENROUTER_MODEL_OPTIONS,
@@ -113,10 +117,12 @@ export class ChatModelProvider implements AiProvider {
     const result = await ai.chatCompletions({
       model: this.model,
       messages,
-      temperature: 0.4,
-      max_tokens: 2048,
-      operation: 'complete',
+      temperature: typeof request.temperature === 'number' ? request.temperature : 0.4,
+      max_tokens: typeof request.maxTokens === 'number' ? request.maxTokens : 2048,
+      operation: request.operation ?? 'complete',
       capture: 'full',
+      ...(request.provider ? { provider: request.provider } : {}),
+      ...(request.reasoning ? { reasoning: request.reasoning } : {}),
     });
     return result.content;
   }

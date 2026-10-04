@@ -57,6 +57,40 @@ describe('parseNoteCards', () => {
     expect(parseNoteCards('Front\n??\nBack')).toHaveLength(2);
   });
 
+  it('reads note-native ?mcq blocks into multiple-choice cards', () => {
+    const md = [
+      '## Flashcards',
+      '',
+      '?mcq',
+      'What layer handles retransmission?',
+      '- [ ] Network',
+      '- [x] Transport',
+      '- [ ] Application',
+      '',
+      'Q :: A',
+    ].join('\n');
+    const cards = parseNoteCards(md);
+    expect(cards[0]).toEqual({
+      kind: 'mcq',
+      prompt: 'What layer handles retransmission?',
+      options: [
+        { text: 'Network', correct: false },
+        { text: 'Transport', correct: true },
+        { text: 'Application', correct: false },
+      ],
+      line: 2,
+    });
+    expect(cards[1]).toMatchObject({ kind: 'basic', front: 'Q', back: 'A' });
+    const built = cardsFromNote('nets.md', md);
+    expect(built[0]).toMatchObject({ kind: 'mcq', source: { path: 'nets.md', origin: 'note', line: 2 } });
+    expect(built[0].kind === 'mcq' && built[0].question.options.some((o) => o.correct)).toBe(true);
+  });
+
+  it('ignores ?mcq blocks without a correct option', () => {
+    const md = '?mcq\nPrompt?\n- [ ] A\n- [ ] B';
+    expect(parseNoteCards(md)).toEqual([]);
+  });
+
   it('renders cloze segments hiding only the active group', () => {
     const segments = clozeDisplaySegments('{{a}} and {{b}}', '#2');
     expect(segments).toEqual([

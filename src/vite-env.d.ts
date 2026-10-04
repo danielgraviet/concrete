@@ -37,6 +37,18 @@ interface AiChatCompletionsRequest {
   operation?: string;
   metadata?: Record<string, unknown>;
   capture?: 'preview' | 'full';
+  /** OpenRouter provider routing prefs (order / fallbacks / sort). */
+  provider?: {
+    order?: string[];
+    allow_fallbacks?: boolean;
+    sort?: 'price' | 'throughput' | 'latency';
+  };
+  /** OpenRouter reasoning controls (disable thinking for short fills). */
+  reasoning?: {
+    enabled?: boolean;
+    effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+    exclude?: boolean;
+  };
 }
 
 interface AiChatCompletionsResult {
