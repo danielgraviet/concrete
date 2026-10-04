@@ -11,6 +11,11 @@ import type {
 export type CompleteRequest = {
   prompt: string;
   context?: string;
+  /** Override the provider default completion budget. */
+  maxTokens?: number;
+  temperature?: number;
+  /** Activity-log operation label. */
+  operation?: string;
 };
 
 export type { GenerateQuizRequest, GenerateQuizFollowUpRequest, GradeQuizRequest, GradeReport, QuizDocument };

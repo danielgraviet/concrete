@@ -1,8 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Button, IconButton, SegmentedControl, Text, TextArea, TextField } from '@radix-ui/themes';
 import { Cross1Icon, LightningBoltIcon, PlusIcon, TrashIcon } from '@radix-ui/react-icons';
 import type { AiClient } from '../ai/AiClient';
-import { QuizMarkdown } from '../quiz/QuizMarkdown';
 import { noteTitle } from '../vault/fileTree';
 import {
   formatBasicCardLine,
@@ -10,11 +9,9 @@ import {
   formatMcqCardBlock,
 } from './appendCardLines';
 import {
-  buildCardGenerationPrompt,
-  cardBlocksFromModel,
+  buildBasicFillPrompt,
   completeCardGeneration,
-  existingCardSummaries,
-  type CardStyle,
+  parseFillReply,
 } from './cardGeneration';
 import type { ParsedMcqOption } from './parseNoteCards';
 
@@ -36,34 +33,7 @@ function blankOptions(): ParsedMcqOption[] {
   ];
 }
 
-/** Draft text from the composer fields — what Generate sends to the model. */
-export function draftFromComposer(
-  mode: Mode,
-  fields: {
-    front: string;
-    back: string;
-    cloze: string;
-    mcqPrompt: string;
-    mcqOptions: ParsedMcqOption[];
-  },
-): string {
-  if (mode === 'basic') {
-    const front = fields.front.trim();
-    const back = fields.back.trim();
-    if (front && back) return `Front: ${front}\nBack: ${back}`;
-    return front || back;
-  }
-  if (mode === 'cloze') return fields.cloze.trim();
-  const prompt = fields.mcqPrompt.trim();
-  const options = fields.mcqOptions
-    .map((option) => ({ text: option.text.trim(), correct: option.correct }))
-    .filter((option) => option.text);
-  if (!prompt && options.length === 0) return '';
-  const optionLines = options.map((option) => `- [${option.correct ? 'x' : ' '}] ${option.text}`).join('\n');
-  return [prompt && `Question: ${prompt}`, optionLines].filter(Boolean).join('\n');
-}
-
-/** Half-panel composer: type Front/Back (or Cloze/MCQ), add as-is or Generate with Qwen Flash. */
+/** Half-panel composer: type Front or Back, Generate fills the other side with Qwen Flash. */
 export function CreateCardsPanel({ client, path, content, onInsert, onClose }: Props) {
   const [mode, setMode] = useState<Mode>('basic');
   const [front, setFront] = useState('');
@@ -72,31 +42,26 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
   const [mcqPrompt, setMcqPrompt] = useState('');
   const [mcqOptions, setMcqOptions] = useState<ParsedMcqOption[]>(blankOptions);
   const [manualError, setManualError] = useState('');
-
   const [aiStatus, setAiStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [aiError, setAiError] = useState('');
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [picked, setPicked] = useState<Set<number>>(new Set());
-
-  const existing = useMemo(() => existingCardSummaries(content), [content]);
-  const draft = draftFromComposer(mode, { front, back, cloze, mcqPrompt, mcqOptions });
+  const [aiOk, setAiOk] = useState('');
 
   const resetManual = (next: Mode) => {
     setMode(next);
     setManualError('');
     setAiError('');
+    setAiOk('');
     setFront('');
     setBack('');
     setCloze('');
     setMcqPrompt('');
     setMcqOptions(blankOptions());
-    setSuggestions([]);
-    setPicked(new Set());
     setAiStatus('idle');
   };
 
   const addManual = async () => {
     setManualError('');
+    setAiOk('');
     let block = '';
     if (mode === 'basic') {
       if (!front.trim() || !back.trim()) {
@@ -132,49 +97,64 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
     }
     await onInsert([block]);
     resetManual(mode);
+    setAiOk('Added to note');
   };
 
   const generate = async () => {
-    if (!draft) {
-      setAiError(mode === 'basic' ? 'Type something in Front or Back first.' : 'Fill in the fields above first.');
+    setManualError('');
+    setAiError('');
+    setAiOk('');
+
+    if (mode !== 'basic') {
+      setAiError('Generate currently fills Front ↔ Back. Switch to Front / Back.');
       setAiStatus('error');
       return;
     }
+
+    const frontText = front.trim();
+    const backText = back.trim();
+    if (!frontText && !backText) {
+      setAiError('Type something in Front or Back first.');
+      setAiStatus('error');
+      return;
+    }
+    if (frontText && backText) {
+      setAiError('Clear Front or Back so Generate knows which side to fill.');
+      setAiStatus('error');
+      return;
+    }
+
+    const kind = frontText ? 'answer' : 'question';
+    const source = frontText || backText;
     setAiStatus('running');
-    setAiError('');
-    setManualError('');
     try {
       const reply = await completeCardGeneration(client, {
-        prompt: buildCardGenerationPrompt(mode as CardStyle, draft, existing),
+        prompt: buildBasicFillPrompt(kind, source),
         context: content,
       });
-      const found = cardBlocksFromModel(reply);
-      setSuggestions(found);
-      setPicked(new Set(found.map((_, i) => i)));
-      setAiStatus('done');
-      if (found.length === 0) {
-        setAiError('Qwen Flash did not return any cards. Check OpenRouter in Settings and try again.');
+      const filled = parseFillReply(reply);
+      if (!filled) {
+        setAiStatus('error');
+        setAiError('Qwen Flash returned an empty answer. Try again.');
+        return;
       }
+      if (kind === 'answer') {
+        setBack(filled);
+        setAiOk('Filled Back');
+      } else {
+        setFront(filled);
+        setAiOk('Filled Front');
+      }
+      setAiStatus('done');
     } catch (err) {
       setAiStatus('error');
       setAiError(err instanceof Error ? err.message : 'Card generation failed. Check OpenRouter in Settings.');
     }
   };
 
-  const togglePick = (index: number) =>
-    setPicked((current) => {
-      const next = new Set(current);
-      if (next.has(index)) next.delete(index);
-      else next.add(index);
-      return next;
-    });
-
-  const addSelected = async () => {
-    const blocks = suggestions.filter((_, i) => picked.has(i));
-    if (blocks.length === 0) return;
-    await onInsert(blocks);
-    resetManual(mode);
-  };
+  const canGenerate =
+    mode === 'basic' &&
+    ((Boolean(front.trim()) && !back.trim()) || (!front.trim() && Boolean(back.trim())));
 
   return (
     <div className="srs-create-panel">
@@ -292,6 +272,11 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
               {manualError || aiError}
             </Text>
           ) : null}
+          {aiOk && !manualError && !aiError ? (
+            <Text size="1" color="green">
+              {aiOk}
+            </Text>
+          ) : null}
 
           <div className="srs-create-actions">
             <Button
@@ -299,7 +284,7 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
               variant="soft"
               color="gray"
               loading={aiStatus === 'running'}
-              disabled={!draft || aiStatus === 'running'}
+              disabled={!canGenerate || aiStatus === 'running'}
               onClick={() => void generate()}
             >
               <LightningBoltIcon />
@@ -310,31 +295,6 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
             </Button>
           </div>
         </div>
-
-        {suggestions.length > 0 ? (
-          <div className="srs-create-ai-body">
-            <ul className="srs-create-suggestions">
-              {suggestions.map((block, index) => (
-                <li key={index}>
-                  <label className={`srs-generate-row ${picked.has(index) ? 'selected' : ''}`}>
-                    <input type="checkbox" checked={picked.has(index)} onChange={() => togglePick(index)} />
-                    <span className="quiz-md">
-                      <QuizMarkdown>{block}</QuizMarkdown>
-                    </span>
-                  </label>
-                </li>
-              ))}
-            </ul>
-            <div className="srs-create-ai-actions">
-              <Button size="1" variant="soft" color="gray" disabled={aiStatus === 'running'} onClick={() => void generate()}>
-                Regenerate
-              </Button>
-              <Button size="1" highContrast disabled={picked.size === 0} onClick={() => void addSelected()}>
-                Add {picked.size} selected
-              </Button>
-            </div>
-          </div>
-        ) : null}
       </div>
     </div>
   );

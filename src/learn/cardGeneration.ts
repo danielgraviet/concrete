@@ -4,58 +4,59 @@ import { parseNoteCards, serializeNoteMcq } from './parseNoteCards';
 
 export type CardStyle = 'mixed' | 'basic' | 'cloze' | 'mcq';
 
-const STYLE_RULES: Record<CardStyle, string> = {
-  mixed: 'Mix question/answer cards, cloze cards, and multiple-choice cards, whichever suits each fact.',
-  basic: 'Only question/answer cards.',
-  cloze: 'Only cloze cards.',
-  mcq: 'Only multiple-choice cards.',
-};
+export type BasicFillKind = 'answer' | 'question';
 
-/** Build the AI prompt from the user's typed concept/draft (primary) plus light note context. */
-export function buildCardGenerationPrompt(style: CardStyle, concept: string, existing: string[]): string {
-  const draft = concept.trim();
+/** Prompt that asks for a single missing Front or Back side. */
+export function buildBasicFillPrompt(kind: BasicFillKind, text: string): string {
+  const value = text.trim();
+  if (kind === 'answer') {
+    return [
+      'Complete this flashcard. Reply with ONLY the short answer — a word, phrase, or one short sentence.',
+      'No quotes, labels, prefixes, or explanation.',
+      '',
+      `Question: ${value}`,
+    ].join('\n');
+  }
   return [
-    'Turn the user draft below into spaced-repetition flashcards.',
-    'The draft is the source of truth — expand and clean it into cards. Do not invent unrelated topics.',
-    'Use the note context only as background when a fact in the draft needs clarification.',
+    'Write a clear flashcard question for which the text below is the correct answer.',
+    'Reply with ONLY the question. No quotes, labels, prefixes, or explanation.',
     '',
-    'USER DRAFT:',
-    '"""',
-    draft,
-    '"""',
-    '',
-    'Format — nothing else (no numbering, no headings, no commentary):',
-    '- Question/answer card: one line `Question :: Answer`',
-    '- Cloze card: a sentence with the hidden part in double braces, e.g. `The {{mitochondria}} produces ATP.`',
-    '- Multiple-choice card: a `?mcq` block, then the prompt, then options with `- [ ]` / `- [x]` (mark exactly one correct unless several are truly correct), then a blank line:',
-    '  ?mcq',
-    '  Prompt text',
-    '  - [ ] Wrong',
-    '  - [x] Right',
-    '',
-    'Rules:',
-    '- Each card tests exactly one fact or idea (minimum information principle).',
-    '- Questions must make sense on their own, without the note.',
-    '- Answers are short: a word, phrase or one sentence.',
-    '- Prefer 3–10 cards grounded in the draft.',
-    '- Inline code in backticks and math in $…$ are fine. Never put `::` inside code.',
-    `- ${STYLE_RULES[style]}`,
-    ...(existing.length
-      ? ['', 'The note already has these cards — do not repeat them:', ...existing.map((line) => `- ${line}`)]
-      : []),
+    `Answer: ${value}`,
   ].join('\n');
+}
+
+/** Strip model fluff so the reply can drop straight into Front or Back. */
+export function parseFillReply(text: string): string {
+  const line = text
+    .replace(/\r\n?/g, '\n')
+    .trim()
+    .split('\n')
+    .map((row) => row.trim())
+    .find(Boolean);
+  if (!line) return '';
+  return line
+    .replace(/^["'`“”]+|["'`“”]+$/g, '')
+    .replace(/^(?:answer|question|front|back)\s*[:：\-–—]\s*/i, '')
+    .trim();
 }
 
 /**
  * Run Create Cards AI on OpenRouter Qwen Flash (cheap/fast).
+ * Uses a larger token budget so reasoning models do not hit finish_reason=length with empty content.
  * Falls back to the app's current provider when the live AI bridge is unavailable (tests / demo).
  */
 export async function completeCardGeneration(
   client: AiClient,
   request: { prompt: string; context?: string },
 ): Promise<string> {
-  const context = request.context ? truncateNoteContext(request.context, 2500) : undefined;
-  const payload = { prompt: request.prompt, context };
+  const context = request.context ? truncateNoteContext(request.context, 1500) : undefined;
+  const payload = {
+    prompt: request.prompt,
+    context,
+    maxTokens: 8192,
+    temperature: 0.2,
+    operation: 'create_card_fill',
+  };
   if (typeof window !== 'undefined' && window.ai?.chatCompletions) {
     const flash = new ChatModelProvider('openrouter', CARD_GENERATION_MODEL);
     return flash.complete(payload);

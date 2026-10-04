@@ -115,9 +115,9 @@ export class ChatModelProvider implements AiProvider {
     const result = await ai.chatCompletions({
       model: this.model,
       messages,
-      temperature: 0.4,
-      max_tokens: 2048,
-      operation: 'complete',
+      temperature: typeof request.temperature === 'number' ? request.temperature : 0.4,
+      max_tokens: typeof request.maxTokens === 'number' ? request.maxTokens : 2048,
+      operation: request.operation ?? 'complete',
       capture: 'full',
     });
     return result.content;

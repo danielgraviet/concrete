@@ -1,8 +1,34 @@
 import { describe, expect, it } from 'vitest';
 import { appendCardLines, formatMcqCardBlock } from './appendCardLines';
-import { buildCardGenerationPrompt, cardBlocksFromModel } from './cardGeneration';
-import { draftFromComposer } from './CreateCardsPanel';
+import {
+  buildBasicFillPrompt,
+  cardBlocksFromModel,
+  parseFillReply,
+} from './cardGeneration';
 import { parseNoteCards } from './parseNoteCards';
+
+describe('buildBasicFillPrompt', () => {
+  it('asks for only the answer when Front is given', () => {
+    const prompt = buildBasicFillPrompt('answer', 'What does PCIe stand for?');
+    expect(prompt).toContain('Question: What does PCIe stand for?');
+    expect(prompt).toContain('ONLY the short answer');
+  });
+
+  it('asks for only the question when Back is given', () => {
+    const prompt = buildBasicFillPrompt('question', 'Peripheral Component Interconnect Express');
+    expect(prompt).toContain('Answer: Peripheral Component Interconnect Express');
+    expect(prompt).toContain('ONLY the question');
+  });
+});
+
+describe('parseFillReply', () => {
+  it('strips labels quotes and extra lines', () => {
+    expect(parseFillReply('Answer: Peripheral Component Interconnect Express\n\nMore')).toBe(
+      'Peripheral Component Interconnect Express',
+    );
+    expect(parseFillReply('"What does PCIe stand for?"')).toBe('What does PCIe stand for?');
+  });
+});
 
 describe('cardBlocksFromModel', () => {
   it('keeps basic, cloze, and ?mcq blocks from model output', () => {
@@ -36,29 +62,5 @@ describe('appendCardLines', () => {
     const next = appendCardLines('# Note\n\nBody', [block]);
     expect(next).toContain('## Flashcards');
     expect(parseNoteCards(next)).toHaveLength(1);
-  });
-});
-
-describe('buildCardGenerationPrompt', () => {
-  it('puts the typed draft front and center with mcq format rules', () => {
-    const prompt = buildCardGenerationPrompt('mcq', 'congestion control — AIMD', []);
-    expect(prompt).toContain('USER DRAFT:');
-    expect(prompt).toContain('congestion control — AIMD');
-    expect(prompt).toContain('?mcq');
-    expect(prompt).toContain('Only multiple-choice cards.');
-  });
-});
-
-describe('draftFromComposer', () => {
-  it('builds a draft from Front and Back fields', () => {
-    expect(
-      draftFromComposer('basic', {
-        front: 'What is TCP?',
-        back: 'Transport protocol',
-        cloze: '',
-        mcqPrompt: '',
-        mcqOptions: [],
-      }),
-    ).toBe('Front: What is TCP?\nBack: Transport protocol');
   });
 });

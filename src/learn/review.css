@@ -286,18 +286,6 @@
   gap: 8px;
   justify-content: flex-end;
 }
-.srs-create-ai-body { display: flex; flex-direction: column; gap: 10px; }
-.srs-create-ai-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
-.srs-create-suggestions {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 240px;
-  overflow: auto;
-}
 .srs-generate-row {
   display: flex;
   gap: 10px;
