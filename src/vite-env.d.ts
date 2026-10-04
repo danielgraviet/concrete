@@ -43,6 +43,12 @@ interface AiChatCompletionsRequest {
     allow_fallbacks?: boolean;
     sort?: 'price' | 'throughput' | 'latency';
   };
+  /** OpenRouter reasoning controls (disable thinking for short fills). */
+  reasoning?: {
+    enabled?: boolean;
+    effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+    exclude?: boolean;
+  };
 }
 
 interface AiChatCompletionsResult {

@@ -14,6 +14,12 @@ export type OpenRouterProviderPrefs = {
   sort?: 'price' | 'throughput' | 'latency';
 };
 
+export type OpenRouterReasoningPrefs = {
+  enabled?: boolean;
+  effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  exclude?: boolean;
+};
+
 export type CompleteRequest = {
   prompt: string;
   context?: string;
@@ -24,6 +30,8 @@ export type CompleteRequest = {
   operation?: string;
   /** OpenRouter provider routing (e.g. pin Cerebras). */
   provider?: OpenRouterProviderPrefs;
+  /** OpenRouter reasoning controls — disable for short fill completions. */
+  reasoning?: OpenRouterReasoningPrefs;
 };
 
 export type { GenerateQuizRequest, GenerateQuizFollowUpRequest, GradeQuizRequest, GradeReport, QuizDocument };

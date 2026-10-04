@@ -122,10 +122,13 @@ export async function completeCardGeneration(
   const payload = {
     prompt: request.prompt,
     context,
-    maxTokens: 2048,
+    // Short fills only — keep budget modest once reasoning is off.
+    maxTokens: 1024,
     temperature: 0.2,
     operation: 'create_card_fill',
     provider: { ...CARD_GENERATION_PROVIDER },
+    // Qwen otherwise burns max_tokens on thinking and returns finish_reason=length with empty content.
+    reasoning: { enabled: false, effort: 'none' as const },
   };
   if (typeof window !== 'undefined' && window.ai?.chatCompletions) {
     const cerebras = new ChatModelProvider('openrouter', CARD_GENERATION_MODEL);

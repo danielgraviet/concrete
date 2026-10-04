@@ -1083,7 +1083,7 @@ async function openRouterChat(body) {
 }
 
 /** One chat completion on the chosen backend: OpenRouter, Claude Code, or Codex. */
-async function completeChat(backend, { model, messages, temperature, max_tokens, provider }) {
+async function completeChat(backend, { model, messages, temperature, max_tokens, provider, reasoning }) {
   const id = resolveChatBackend(backend);
   if (id === 'openrouter') {
     return openRouterChat({
@@ -1092,6 +1092,7 @@ async function completeChat(backend, { model, messages, temperature, max_tokens,
       temperature: typeof temperature === 'number' ? temperature : 0.5,
       max_tokens: typeof max_tokens === 'number' ? max_tokens : 4096,
       ...(provider && typeof provider === 'object' ? { provider } : {}),
+      ...(reasoning && typeof reasoning === 'object' ? { reasoning } : {}),
     });
   }
   const agent = await loadAgentModule(id);
@@ -1135,6 +1136,7 @@ ipcMain.handle('ai:chatCompletions', async (_, payload = {}) => {
       temperature: payload.temperature,
       max_tokens: payload.max_tokens,
       provider: payload.provider,
+      reasoning: payload.reasoning,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

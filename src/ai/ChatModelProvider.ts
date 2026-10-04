@@ -122,6 +122,7 @@ export class ChatModelProvider implements AiProvider {
       operation: request.operation ?? 'complete',
       capture: 'full',
       ...(request.provider ? { provider: request.provider } : {}),
+      ...(request.reasoning ? { reasoning: request.reasoning } : {}),
     });
     return result.content;
   }
