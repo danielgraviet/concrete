@@ -41,7 +41,7 @@ function wait(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-/** Half-panel composer: Generate fills the missing side / options / cloze with Qwen Flash. */
+/** Half-panel composer: Generate fills the missing side / options / cloze via Cerebras. */
 export function CreateCardsPanel({ client, path, content, onInsert, onClose }: Props) {
   const [mode, setMode] = useState<Mode>('basic');
   const [front, setFront] = useState('');
@@ -166,7 +166,7 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
         const filled = parseFillReply(reply);
         if (!filled) {
           setAiStatus('error');
-          setAiError('Qwen Flash returned an empty answer. Try again.');
+          setAiError('Model returned an empty answer. Try again.');
           return;
         }
         if (kind === 'answer') {
@@ -194,7 +194,7 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
         const filled = parseClozeFillReply(reply);
         if (!filled) {
           setAiStatus('error');
-          setAiError('Qwen Flash did not return a cloze with {{blanks}}. Try again.');
+          setAiError('Model did not return a cloze with {{blanks}}. Try again.');
           return;
         }
         setCloze(filled);
@@ -216,7 +216,7 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
       const options = parseMcqOptionsReply(reply);
       if (options.length === 0) {
         setAiStatus('error');
-        setAiError('Qwen Flash did not return valid MCQ options. Try again.');
+        setAiError('Model did not return valid MCQ options. Try again.');
         return;
       }
       setMcqOptions(options);

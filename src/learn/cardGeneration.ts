@@ -1,4 +1,9 @@
-import { CARD_GENERATION_MODEL, ChatModelProvider, type AiClient } from '../ai';
+import {
+  CARD_GENERATION_MODEL,
+  CARD_GENERATION_PROVIDER,
+  ChatModelProvider,
+  type AiClient,
+} from '../ai';
 import { truncateNoteContext } from '../ai';
 import { parseNoteCards, serializeNoteMcq, type ParsedMcqOption } from './parseNoteCards';
 
@@ -106,8 +111,7 @@ export function parseMcqOptionsReply(text: string): ParsedMcqOption[] {
 }
 
 /**
- * Run Create Cards AI on OpenRouter Qwen Flash (cheap/fast).
- * Uses a larger token budget so reasoning models do not hit finish_reason=length with empty content.
+ * Run Create Cards AI on OpenRouter Qwen 3.8 27B pinned to Cerebras (extremely fast).
  * Falls back to the app's current provider when the live AI bridge is unavailable (tests / demo).
  */
 export async function completeCardGeneration(
@@ -118,13 +122,14 @@ export async function completeCardGeneration(
   const payload = {
     prompt: request.prompt,
     context,
-    maxTokens: 8192,
+    maxTokens: 2048,
     temperature: 0.2,
     operation: 'create_card_fill',
+    provider: { ...CARD_GENERATION_PROVIDER },
   };
   if (typeof window !== 'undefined' && window.ai?.chatCompletions) {
-    const flash = new ChatModelProvider('openrouter', CARD_GENERATION_MODEL);
-    return flash.complete(payload);
+    const cerebras = new ChatModelProvider('openrouter', CARD_GENERATION_MODEL);
+    return cerebras.complete(payload);
   }
   return client.getProvider().complete(payload);
 }

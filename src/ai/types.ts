@@ -8,6 +8,12 @@ import type {
   QuizDocument,
 } from '../quiz/types';
 
+export type OpenRouterProviderPrefs = {
+  order?: string[];
+  allow_fallbacks?: boolean;
+  sort?: 'price' | 'throughput' | 'latency';
+};
+
 export type CompleteRequest = {
   prompt: string;
   context?: string;
@@ -16,6 +22,8 @@ export type CompleteRequest = {
   temperature?: number;
   /** Activity-log operation label. */
   operation?: string;
+  /** OpenRouter provider routing (e.g. pin Cerebras). */
+  provider?: OpenRouterProviderPrefs;
 };
 
 export type { GenerateQuizRequest, GenerateQuizFollowUpRequest, GradeQuizRequest, GradeReport, QuizDocument };
