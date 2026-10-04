@@ -2480,6 +2480,7 @@ div[class*="selectContainer"] [class*="selectItem"][data-state="checked"]{
 .radix-themes.theme-pack-daytona{--mv-chart:#00e49a}
 
 .mv-progress-panel{margin-top:18px}
+.app-shell:not(.create-cards-open) > .right-panel{overflow-x:hidden;overflow-y:auto;padding-bottom:24px}
 .pg-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
 .pg-head .mv-panel-label{white-space:nowrap}
 .pg-select{

@@ -35,12 +35,7 @@ export function NoteCardsPanel({ system, path, onReview, onCreate }: Props) {
   return (
     <div className="srs-note-panel">
       <div className="panel-title">CARDS</div>
-      {summary.mine.length === 0 ? (
-        <p className="srs-muted">
-          No cards in this note yet. Open Create cards to add Front/Back, Cloze, or MCQ — or write{' '}
-          <code>Q :: A</code> / <code>{'{{blank}}'}</code> / <code>?mcq</code> in the note.
-        </p>
-      ) : (
+      {summary.mine.length > 0 ? (
         <>
           <p className="srs-note-summary">
             <strong>{summary.mine.length}</strong> card{summary.mine.length === 1 ? '' : 's'} · {summary.learned} learned
@@ -55,7 +50,7 @@ export function NoteCardsPanel({ system, path, onReview, onCreate }: Props) {
             {summary.mine.length > 6 ? <li className="srs-muted">+ {summary.mine.length - 6} more</li> : null}
           </ul>
         </>
-      )}
+      ) : null}
       <div className="srs-note-actions">
         {onCreate ? (
           <Button size="1" highContrast onClick={onCreate}>
