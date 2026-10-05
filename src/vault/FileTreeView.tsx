@@ -34,7 +34,7 @@ type FileTreeViewProps = {
   newPaths?: string[];
   /** Quizzes grading in the background, or graded and not yet opened. */
   quizStatus?: Record<string, 'grading' | 'graded'>;
-  onSelectFile: (path: string) => void;
+  onSelectFile: (path: string, options?: { preview?: boolean }) => void;
   onSelectFolder: (path: string) => void;
   onRename: (path: string, kind: TreeItemKind, nextName: string) => void | Promise<void>;
   onDelete: (path: string, kind: TreeItemKind) => void | Promise<void>;
@@ -113,7 +113,7 @@ function FolderBranch({
   expanded: Set<string>;
   renaming: { path: string; kind: TreeItemKind } | null;
   onToggle: (path: string) => void;
-  onSelectFile: (path: string) => void;
+  onSelectFile: (path: string, options?: { preview?: boolean }) => void;
   onSelectFolder: (path: string) => void;
   onStartRename: (path: string, kind: TreeItemKind) => void;
   onCommitRename: (path: string, kind: TreeItemKind, nextName: string) => void;
@@ -259,7 +259,7 @@ function TreeNode({
   expanded: Set<string>;
   renaming: { path: string; kind: TreeItemKind } | null;
   onToggle: (path: string) => void;
-  onSelectFile: (path: string) => void;
+  onSelectFile: (path: string, options?: { preview?: boolean }) => void;
   onSelectFolder: (path: string) => void;
   onStartRename: (path: string, kind: TreeItemKind) => void;
   onCommitRename: (path: string, kind: TreeItemKind, nextName: string) => void;
@@ -305,7 +305,8 @@ function TreeNode({
             event.dataTransfer.effectAllowed = 'move';
           }}
           style={{ paddingLeft: 28 + depth * 14 }}
-          onClick={() => onSelectFile(node.path)}
+          onClick={() => onSelectFile(node.path, { preview: true })}
+          onDoubleClick={() => onSelectFile(node.path)}
           onKeyDown={(event) => {
             if (isRenaming) return;
             if (event.key === 'Enter' || event.key === 'F2') {

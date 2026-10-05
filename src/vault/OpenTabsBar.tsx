@@ -15,10 +15,12 @@ function tabTitleFor(path: string): string {
 type Props = {
   tabs: string[];
   selected: string;
+  previewTab?: string | null;
   dirtyPath: string | null;
   reviewLabel: string | null;
   reviewing: boolean;
   onSelect: (path: string) => void;
+  onPin: (path: string) => void;
   onClose: (path: string) => void;
   onResumeReview: () => void;
   onEndReview: () => void;
@@ -28,10 +30,12 @@ type Props = {
 export function OpenTabsBar({
   tabs,
   selected,
+  previewTab = null,
   dirtyPath,
   reviewLabel,
   reviewing,
   onSelect,
+  onPin,
   onClose,
   onResumeReview,
   onEndReview,
@@ -69,10 +73,11 @@ export function OpenTabsBar({
           <button
             key={path}
             type="button"
-            className={`tab ${active ? 'active' : ''}`}
+            className={`tab ${active ? 'active' : ''} ${previewTab === path ? 'preview' : ''}`}
             title={path}
             aria-current={active ? 'page' : undefined}
             onClick={() => onSelect(path)}
+            onDoubleClick={() => onPin(path)}
           >
             {isQuizPath(path) ? (
               <ClipboardIcon width={14} height={14} />

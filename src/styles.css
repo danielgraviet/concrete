@@ -1673,7 +1673,25 @@ button.tab{
 .mv-prompt-panel .mv-btn:hover{background:var(--gray-4, #333)}
 .mv-prompt-panel .mv-btn-ghost{background:transparent}
 .mv-prompt-panel .mv-actions{justify-content:flex-end}
-.pdf-view{display:block;width:100%;height:100%;border:0;background:var(--mv-bg, transparent)}
+.pdf-editor-wrap{padding:0!important;overflow:hidden!important}
+.pdf-reader{height:100%;min-height:0;display:flex;flex-direction:column;background:var(--mv-bg);color:var(--mv-text)}
+.pdf-toolbar{height:42px;flex:0 0 42px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 18px;border-bottom:1px solid var(--mv-border);background:var(--mv-chrome)}
+.pdf-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--mv-muted);font-size:12px}
+.pdf-controls{display:flex;align-items:center;gap:7px;color:var(--mv-muted);font-size:11px}
+.pdf-controls button{width:25px;height:25px;border:1px solid var(--mv-border);border-radius:5px;background:var(--mv-surface-2);color:var(--mv-text);font:16px/1 sans-serif;cursor:pointer}
+.pdf-controls button:hover:not(:disabled){background:var(--accent-4)}
+.pdf-controls button:disabled{opacity:.4;cursor:default}
+.pdf-zoom{min-width:38px;text-align:center;font-variant-numeric:tabular-nums}
+.pdf-page-count{min-width:50px;margin-left:8px;text-align:right;color:#777}
+.pdf-scroll{flex:1;min-height:0;overflow:auto;padding:30px 24px 48px;overscroll-behavior:contain}
+.pdf-page{position:relative;width:max-content;margin:0 auto 26px;background:#fff;box-shadow:0 5px 22px color-mix(in srgb,var(--mv-text) 22%,transparent);line-height:0}
+.pdf-page:last-child{margin-bottom:0}
+.pdf-page canvas{display:block;height:auto}
+.pdf-text-layer{position:absolute;inset:0;overflow:hidden;line-height:1;letter-spacing:normal;word-spacing:normal;transform-origin:0 0;z-index:1;user-select:text;-webkit-user-select:text}
+.pdf-text-layer span,.pdf-text-layer br{position:absolute;color:transparent;white-space:pre;cursor:text;transform-origin:0 0;user-select:text;-webkit-user-select:text}
+.pdf-text-layer ::selection{background:rgba(45,125,245,.3)}
+.pdf-message{max-width:560px;margin:48px auto;padding:18px 22px;border:1px solid var(--mv-border);border-radius:8px;background:var(--mv-surface);color:var(--mv-muted);text-align:center;font-size:13px;line-height:1.6}
+.tab.preview .tab-title{font-style:italic}
 .mv-prompt-panel .mv-prompt-extra{margin-right:auto;color:var(--mv-muted);font-size:12px}
 
 
@@ -2092,7 +2110,8 @@ div[class*="selectContainer"] [class*="selectItem"][data-state="checked"]{
 .file-row.quiz-file .quiz-file-icon{color:var(--mv-accent,#a3a3a3)}
 
 /* PDFs: red tint so they read differently from notes in the tree and tabs */
-.pdf-file-icon,.tab svg.pdf-file-icon,.file-row svg.pdf-file-icon{flex-shrink:0;color:var(--red-9,#e5484d)}
+.pdf-file-icon{position:relative;display:inline-flex;flex:0 0 auto;align-items:center;justify-content:center;color:inherit}
+.pdf-file-indicator{position:absolute;right:-3px;bottom:-2px;display:grid;place-items:center;min-width:8px;height:8px;padding:0 1px;border:1px solid var(--mv-bg);border-radius:2px;background:var(--mv-accent);color:var(--mv-bg);font:700 5px/1 ui-sans-serif,system-ui,sans-serif}
 .quiz-take,.quiz-edit,.quiz-grade{
   max-width:760px;margin:0 auto;color:#d6d6d6;padding-bottom:48px;
 }

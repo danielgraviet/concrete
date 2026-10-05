@@ -677,6 +677,14 @@ ipcMain.handle('vault:read', async (_, root, name) => {
   }
 });
 
+ipcMain.handle('vault:readPdf', async (_, root, name) => {
+  if (typeof name !== 'string' || path.extname(name).toLowerCase() !== '.pdf') {
+    throw new Error('Not a PDF file');
+  }
+  const { resolved } = resolveWithinRoot(root, name);
+  return new Uint8Array(await fs.readFile(resolved));
+});
+
 ipcMain.handle('vault:write', async (_, root, name, content) => {
   assertMarkdown(name);
   const { resolved } = resolveWithinRoot(root, name);
