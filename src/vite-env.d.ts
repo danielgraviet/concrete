@@ -103,6 +103,10 @@ interface Window {
     openPath: (root: string, name: string) => Promise<boolean>;
     /** Reveals a vault-relative file in Finder / Explorer. */
     revealInFolder: (root: string, name: string) => Promise<boolean>;
+    /** Picks a PDF from disk and copies it into `folder`. Null when cancelled. */
+    importPdf: (root: string, folder: string) => Promise<string | null>;
+    /** Raw text per page (capped at 500 pages); `totalPages` is the real count. */
+    extractPdfText: (root: string, name: string) => Promise<{ pages: string[]; totalPages: number }>;
   };
   /** Code execution bridge — the runner (Docker, hosted, …) lives in Electron main. */
   sandbox?: {

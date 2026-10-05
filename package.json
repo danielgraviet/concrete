@@ -55,6 +55,7 @@
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
     "ts-fsrs": "^5.4.2",
+    "unpdf": "^1.8.1",
     "zod": "^4.6.5"
   },
   "devDependencies": {
@@ -80,6 +81,7 @@
       "dist/**",
       "electron.cjs",
       "agentTrajectory.cjs",
+      "pdfText.cjs",
       "preload.cjs",
       "sandbox/**",
       "codexAgent.mjs",

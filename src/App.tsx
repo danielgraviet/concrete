@@ -36,6 +36,7 @@ import {
   noteTitle,
   openNoteInTabs,
   OpenTabsBar,
+  PdfView,
   parentDir,
   renamePathsInTabs,
   tabAfterClose,
@@ -82,6 +83,7 @@ import {
   quizGradingJobs,
 } from './quiz';
 import { QuizHistoryStore } from './quiz';
+import { buildPdfContext, cleanPdfPages, parsePageRange } from './quiz/pdfContext';
 import { settingsStore } from './settings';
 import { getSandboxStatus } from './sandbox';
 import { verifyCodeQuestions } from './quiz/verifyCode';
@@ -91,6 +93,9 @@ import { ProductTour } from './onboarding';
 const SettingsPanel = lazy(() =>
   import('./settings/SettingsPanel').then((m) => ({ default: m.SettingsPanel })),
 );
+/** Total source text sent for quiz generation (the provider truncates at this too). */
+const QUIZ_CONTEXT_CHARS = 12000;
+
 const GenerateQuizDialog = lazy(() =>
   import('./quiz/GenerateQuizDialog').then((m) => ({ default: m.GenerateQuizDialog })),
 );
@@ -455,6 +460,7 @@ export default function App() {
       const path = selectedRef.current;
       const vaultRoot = rootRef.current;
       const markdown = contentRef.current;
+      if (isPdfFileName(path)) return;
       if (vaultRoot && path) {
         await VaultService.write(vaultRoot, path, markdown);
       }
@@ -479,7 +485,9 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!selected) {
+      // PDFs render in PdfView; keep editorPathRef on the last note so
+      // note-only effects (card indexing, external reloads) skip them.
+      if (!selected || isPdfFileName(selected)) {
         controller.loadContent('');
         return;
       }
@@ -661,12 +669,6 @@ export default function App() {
 
   const select = (name: string, options?: { recordTab?: boolean }) => {
     persistSelectionRef.current = true;
-    if (isPdfFileName(name)) {
-      // PDFs aren't editable notes — open them in the OS default viewer instead.
-      if (root) void VaultService.openPath(root, name);
-      setTreeFocus({ kind: 'file', path: name });
-      return;
-    }
     if (controller.isDirty) void controller.persistence.flush();
     // Opening a note sets a running review aside; its tab resumes it.
     setReviewRun((current) => (current && !current.paused ? { ...current, paused: true } : current));
@@ -726,6 +728,10 @@ export default function App() {
     if (controller.isDirty) await controller.persistence.flush();
     const name = await askText(
       noteTargetFolder ? `New note in ${noteTargetFolder}` : 'New note name',
+      '',
+      canUseDiskVault(root)
+        ? { extraAction: { label: 'Import PDF…', onClick: () => void importPdfFromSidebar() } }
+        : {},
     );
     if (!name) return;
     const relative = joinNotePath(noteTargetFolder, name);
@@ -750,6 +756,16 @@ export default function App() {
     createDemoNote(relative);
   };
 
+  const importPdfFromSidebar = async () => {
+    try {
+      const imported = await importPdf();
+      if (imported) setTreeFocus({ kind: 'file', path: imported });
+    } catch (error) {
+      console.error('Failed to import PDF', error);
+      window.alert(error instanceof Error ? error.message : 'Could not import that PDF.');
+    }
+  };
+
   const createQuiz = () => {
     setGenerateQuizOpen(true);
   };
@@ -765,6 +781,25 @@ export default function App() {
       }
     }
     return '';
+  };
+
+  /** Source text for quiz generation, fitted to `budget` characters. */
+  const loadSourceText = async (path: string, pageRange: string, budget: number): Promise<string> => {
+    if (!isPdfFileName(path)) return truncateNoteContext(await loadNoteBody(path), budget);
+    if (!root) throw new Error('Open a vault folder to make quizzes from PDFs.');
+    const { pages, totalPages } = await VaultService.extractPdfText(root, path);
+    const wanted = parsePageRange(pageRange, totalPages).filter((n) => n <= pages.length);
+    return buildPdfContext(cleanPdfPages(pages), wanted, budget);
+  };
+
+  /** Import a PDF into the folder the user is working in and show it in the tree. */
+  const importPdf = async (): Promise<string | null> => {
+    if (!root) throw new Error('Open a vault folder to import PDFs.');
+    const imported = await VaultService.importPdf(root, noteTargetFolder);
+    if (imported) {
+      vault.setPdfFiles((current) => (current.includes(imported) ? current : [...current, imported].sort()));
+    }
+    return imported;
   };
 
   const confirmGenerateQuiz = async (result: GenerateQuizDialogResult) => {
@@ -797,9 +832,12 @@ export default function App() {
     ];
 
     try {
+      // Split the budget per source so a long first source can't crowd out the
+      // rest; reserve room for each "### File:" header and separator.
+      const perSource = Math.floor(QUIZ_CONTEXT_CHARS / sourcePaths.length) - 200;
       const chunks: string[] = [];
       for (const path of sourcePaths) {
-        const body = await loadNoteBody(path);
+        const body = await loadSourceText(path, result.pageRanges[path] ?? '', perSource);
         chunks.push(`### File: ${path}\n\n${body.trim()}`);
       }
       const noteContext = chunks.join('\n\n-----\n\n');
@@ -812,7 +850,7 @@ export default function App() {
 
       const generated = await aiClient.generateQuiz({
         topic: titled.replace(/^Quiz\s+/, ''),
-        noteContext: truncateNoteContext(noteContext, 12000),
+        noteContext: truncateNoteContext(noteContext, QUIZ_CONTEXT_CHARS),
         source: primary,
         sources: sourcePaths,
         types,
@@ -1086,6 +1124,8 @@ export default function App() {
       if (canUseDiskVault(root)) {
         try {
           const renamed = await vault.rename(path, target);
+          if (selected === path) setSelected(renamed);
+          setOpenTabs((tabs) => renamePathsInTabs(tabs, path, renamed));
           setTreeFocus({ kind: 'file', path: renamed });
         } catch (error) {
           console.error('Failed to rename PDF', error);
@@ -1672,6 +1712,8 @@ export default function App() {
                 return markdown ? (quizQuestionForCard(markdown, card)?.question ?? null) : null;
               }}
             />
+          ) : isPdfFileName(selected) ? (
+            <PdfView path={selected} />
           ) : isQuizPath(selected) ? (
             <QuizShell
               documentPath={selected}
@@ -1770,7 +1812,7 @@ export default function App() {
                 ))}
               </div>
             )}
-            {selected && !isQuizPath(selected) ? (
+            {selected && !isQuizPath(selected) && !isPdfFileName(selected) ? (
               <div className="panel-section">
                 <NoteCardsPanel
                   system={review}
@@ -1791,6 +1833,8 @@ export default function App() {
         <Suspense fallback={null}>
           <GenerateQuizDialog
             files={files}
+            pdfFiles={pdfFiles}
+            onImportPdf={importPdf}
             defaultSourcePath={selected}
             folderHint={
               selected && !isQuizPath(selected)

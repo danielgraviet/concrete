@@ -8,7 +8,7 @@ export function toPosixPath(value: string): string {
 /** Display title for a note path (`folder/Note.md` → `Note`). */
 export function noteTitle(relativePath: string): string {
   const base = toPosixPath(relativePath).split('/').pop() ?? relativePath;
-  return base.replace(/\.md$/i, '');
+  return base.replace(/\.(?:md|pdf)$/i, '');
 }
 
 /** True when basename (sans .md) starts with `Quiz `. */
