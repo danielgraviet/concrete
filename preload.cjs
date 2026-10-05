@@ -53,6 +53,8 @@ contextBridge.exposeInMainWorld('ai', {
   trajectories: () => ipcRenderer.invoke('ai:trajectories'),
   recordActivity: (event) => ipcRenderer.invoke('ai:recordActivity', event),
   activityClear: () => ipcRenderer.invoke('ai:activityClear'),
+  telemetry: () => ipcRenderer.invoke('ai:telemetry'),
+  telemetryClear: () => ipcRenderer.invoke('ai:telemetryClear'),
   agentStatus: (payload) => ipcRenderer.invoke('ai:agentStatus', payload),
   agentRun: (payload) => ipcRenderer.invoke('ai:agentRun', payload),
   agentCancel: () => ipcRenderer.invoke('ai:agentCancel'),

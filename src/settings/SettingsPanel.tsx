@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Button, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes';
+import { ArrowLeftIcon } from '@radix-ui/react-icons';
 import type { SettingsStore } from './SettingsStore';
 import type {
   AgentProviderId,
@@ -12,6 +13,11 @@ import { OPENROUTER_MODEL_OPTIONS } from '../ai/openRouterModels';
 import { CLAUDE_MODEL_OPTIONS } from '../ai/claudeModels';
 import { isChatBackendId, type ChatBackendId } from '../ai/ChatModelProvider';
 import { getSandboxStatus, onSandboxProgress, prepareSandboxImage, type SandboxStatus } from '../sandbox';
+
+// Charts load only when the AI Activity tab is opened.
+const TelemetryView = lazy(() =>
+  import('../telemetry/TelemetryPage').then((m) => ({ default: m.TelemetryView })),
+);
 
 type Props = {
   store: SettingsStore;
@@ -33,8 +39,19 @@ type SettingsSection =
   | 'vault'
   | 'activity';
 
+const SECTIONS: ReadonlyArray<readonly [SettingsSection, string]> = [
+  ['appearance', 'Appearance'],
+  ['editor', 'Editor'],
+  ['quiz', 'Quiz'],
+  ['review', 'Review'],
+  ['ai', 'Tutor AI'],
+  ['agent', 'Agent'],
+  ['vault', 'Vault'],
+  ['activity', 'AI Activity'],
+];
+
 /**
- * Settings panel — theme packs + AI controls.
+ * Full-window settings: section tabs down the left, the active section on the right.
  */
 export function SettingsPanel({
   store,
@@ -61,29 +78,6 @@ export function SettingsPanel({
   const [settingUp, setSettingUp] = useState<string | null>(null);
   const [setupMessage, setSetupMessage] = useState<string | null>(null);
   const [section, setSection] = useState<SettingsSection>('appearance');
-  const [activity, setActivity] = useState<Array<Record<string, unknown>>>([]);
-  const [trajectories, setTrajectories] = useState<Array<{ file: string; records: Array<Record<string, unknown>>; location: string }>>([]);
-  const [trajectoryScanStatus, setTrajectoryScanStatus] = useState<string | null>(null);
-
-  const scanTrajectories = async () => {
-    console.log('[trajectory] scan button clicked');
-    const scan = window.ai?.trajectories;
-    if (typeof scan !== 'function') {
-      console.error('[trajectory] preload bridge is unavailable');
-      setTrajectoryScanStatus('Trajectory scanner unavailable — restart npm run dev');
-      return;
-    }
-    setTrajectoryScanStatus('Scanning…');
-    try {
-      const items = await scan();
-      console.log('[trajectory] renderer received', items.length, 'file(s)');
-      setTrajectories(items);
-      setTrajectoryScanStatus(`${items.length} trajectory file${items.length === 1 ? '' : 's'} found`);
-    } catch (error) {
-      console.error('[trajectory] renderer scan failed', error);
-      setTrajectoryScanStatus(`Scan failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  };
 
   useEffect(() => store.subscribe(setSettings), [store]);
 
@@ -119,12 +113,6 @@ export function SettingsPanel({
   }, [section, settings.sandboxProviderId]);
 
   useEffect(() => {
-    if (section !== 'activity' || !window.ai?.activity) return;
-    void window.ai.activity().then(setActivity).catch(() => setActivity([]));
-    void scanTrajectories();
-  }, [section]);
-
-  useEffect(() => {
     if (settings.agentProviderId === 'off') {
       setAgentStatus(null);
       return;
@@ -145,45 +133,41 @@ export function SettingsPanel({
   }, [settings.agentProviderId]);
 
   return (
-    <Flex direction="column" gap="4" className="mv-settings-panel">
-      <Flex align="center" justify="between">
-        <Heading size="3">Settings</Heading>
-        {onClose ? (
-          <Button
-            type="button"
-            variant="soft"
-            color="gray"
-            highContrast
-            onClick={() => onClose()}
-          >
-            Close
-          </Button>
-        ) : null}
-      </Flex>
+    <div className="mv-settings-panel mv-settings-page" role="dialog" aria-modal="true" aria-label="Settings">
+      <aside className="mv-settings-sidebar">
+        <div className="mv-settings-sidebar-head">
+          {onClose ? (
+            <button type="button" className="mv-settings-close" onClick={onClose} aria-label="Close settings" title="Close settings (Esc)">
+              <ArrowLeftIcon />
+            </button>
+          ) : null}
+          <Heading size="3">Settings</Heading>
+        </div>
+        <nav className="mv-settings-nav" role="tablist" aria-label="Settings sections" aria-orientation="vertical">
+          {SECTIONS.map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={section === id}
+              className={section === id ? 'selected' : ''}
+              onClick={() => setSection(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+        <Button variant="soft" color="gray" size="1" className="mv-settings-reset" onClick={() => store.reset()}>
+          Reset all settings
+        </Button>
+      </aside>
 
-      <div className="mv-settings-nav" role="tablist" aria-label="Settings sections">
-        {([
-          ['appearance', 'Appearance'],
-          ['editor', 'Editor'],
-          ['quiz', 'Quiz'],
-          ['review', 'Review'],
-          ['ai', 'Tutor AI'],
-          ['agent', 'Agent'],
-          ['vault', 'Vault'],
-          ['activity', 'AI Activity'],
-        ] as const).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={section === id}
-            className={section === id ? 'selected' : ''}
-            onClick={() => setSection(id)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <main className={`mv-settings-content${section === 'activity' ? ' wide' : ''}`}>
+      {section === 'activity' ? (
+        <Suspense fallback={<Text size="2" color="gray">Loading activity…</Text>}>
+          <TelemetryView />
+        </Suspense>
+      ) : null}
 
       <Flex direction="column" gap="2" className={`mv-settings-group ${section === 'appearance' ? 'active' : ''}`}>
         <Text size="2" weight="medium">
@@ -634,62 +618,7 @@ export function SettingsPanel({
         </Text>
       </Flex>
 
-      <Flex direction="column" gap="2" className={`mv-settings-group ${section === 'activity' ? 'active' : ''}`}>
-        <Text size="2" weight="medium">AI Activity</Text>
-        <Text size="1" color="gray">Recent API calls plus agent trajectories stored in Documents/Concrete (outside the Markdown vault).</Text>
-        <Flex gap="2">
-          <Button type="button" variant="soft" onClick={() => window.ai?.activity?.().then(setActivity)}>
-            Refresh
-          </Button>
-          <Button type="button" variant="soft" onClick={() => void scanTrajectories()}>
-            Scan trajectories
-          </Button>
-          <Button type="button" variant="soft" color="gray" onClick={() => window.ai?.activityClear?.().then(() => setActivity([]))}>
-            Clear log
-          </Button>
-        </Flex>
-        {trajectoryScanStatus ? <Text size="1" color="gray">{trajectoryScanStatus}</Text> : null}
-        <div className="mv-ai-activity-list">
-          {activity.length === 0 ? <Text size="1" color="gray">No API calls recorded yet.</Text> : activity.map((event, index) => (
-            <details key={`${String(event.requestId ?? index)}`}>
-              <summary>
-                {String(event.operation ?? 'request')} · {String(event.status ?? '')} · {event.durationMs ? `${String(event.durationMs)}ms` : '—'}
-                {typeof event.error === 'string' ? ` · ${event.error.slice(0, 80)}` : ''}
-              </summary>
-              {typeof event.responseText === 'string' ? (
-                <>
-                  <Text size="1" weight="medium">Raw model response</Text>
-                  <pre>{event.responseText}</pre>
-                </>
-              ) : null}
-              <pre>{JSON.stringify({ ...event, responseText: undefined, messages: undefined }, null, 2)}</pre>
-              {Array.isArray(event.messages) ? (
-                <details>
-                  <summary>Prompt sent</summary>
-                  <pre>
-                    {(event.messages as Array<{ role?: string; content?: string }>)
-                      .map((m) => `[${m.role}]\n${m.content}`)
-                      .join('\n\n')}
-                  </pre>
-                </details>
-              ) : null}
-            </details>
-          ))}
-        </div>
-        <Text size="2" weight="medium">Agent trajectories ({trajectories.length})</Text>
-        <div className="mv-ai-activity-list">
-          {trajectories.length === 0 ? <Text size="1" color="gray">No agent trajectories recorded yet.</Text> : trajectories.map((trajectory) => (
-            <details key={trajectory.file}>
-              <summary>{trajectory.file} · {trajectory.records.length} events · {trajectory.location}</summary>
-              <pre>{JSON.stringify(trajectory.records, null, 2)}</pre>
-            </details>
-          ))}
-        </div>
-      </Flex>
-
-      <Button variant="soft" color="gray" onClick={() => store.reset()}>
-        Reset all settings
-      </Button>
-    </Flex>
+      </main>
+    </div>
   );
 }

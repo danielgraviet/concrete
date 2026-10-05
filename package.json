@@ -82,6 +82,7 @@
       "electron.cjs",
       "agentTrajectory.cjs",
       "pdfText.cjs",
+      "telemetrySpans.cjs",
       "preload.cjs",
       "sandbox/**",
       "codexAgent.mjs",

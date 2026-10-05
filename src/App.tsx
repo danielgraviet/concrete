@@ -2032,37 +2032,23 @@ export default function App() {
       )}
 
       {overlay === 'settings' && (
-        <div
-          className="mv-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Settings"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setOverlay(null);
-          }}
-        >
-          <div
-            className="mv-settings-panel-shell"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <Suspense fallback={<div className="mv-settings-panel"><p>Loading settings…</p></div>}>
-              <SettingsPanel
-                store={settingsStore}
-                vaultRoot={root}
-                onOpenVault={() => { void openVault().then(() => setOverlay(null)); }}
-                onImportObsidian={() => { void importObsidianVault().then(() => setOverlay(null)); }}
-                onReplayOnboarding={() => {
-                  setOverlay(null);
-                  setOnboardingMode('tour');
-                  setOnboardingStep(0);
-                  setOnboarding(true);
-                }}
-                onClose={() => setOverlay(null)}
-              />
-            </Suspense>
-          </div>
-        </div>
+        <Suspense fallback={<div className="mv-settings-panel mv-settings-page" />}>
+          <SettingsPanel
+            store={settingsStore}
+            vaultRoot={root}
+            onOpenVault={() => { void openVault().then(() => setOverlay(null)); }}
+            onImportObsidian={() => { void importObsidianVault().then(() => setOverlay(null)); }}
+            onReplayOnboarding={() => {
+              setOverlay(null);
+              setOnboardingMode('tour');
+              setOnboardingStep(0);
+              setOnboarding(true);
+            }}
+            onClose={() => setOverlay(null)}
+          />
+        </Suspense>
       )}
+
     </div>
   );
 }

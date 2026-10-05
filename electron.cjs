@@ -7,6 +7,7 @@ const chokidar = require('chokidar');
 const sandbox = require('./sandbox/index.cjs');
 const { createTrajectory } = require('./agentTrajectory.cjs');
 const { extractPdfPages } = require('./pdfText.cjs');
+const telemetrySpans = require('./telemetrySpans.cjs');
 
 /** Cap Chromium disk cache (~50MB) before app ready. */
 app.commandLine.appendSwitch('disk-cache-size', String(50 * 1024 * 1024));
@@ -32,6 +33,7 @@ const AI_SETTINGS_PATH = path.join(app.getPath('userData'), 'ai-settings.json');
 const APP_STATE_PATH = path.join(app.getPath('userData'), 'app-state.json');
 const AI_ACTIVITY_PATH = path.join(app.getPath('userData'), 'ai-activity.jsonl');
 const TRAJECTORY_DIR = path.join(app.getPath('documents'), 'Concrete', 'agent-trajectories');
+const TELEMETRY_PATH = path.join(app.getPath('userData'), 'telemetry.jsonl');
 
 async function recordAiActivity(event) {
   try {
@@ -49,6 +51,57 @@ async function readAiActivity() {
       try { return [JSON.parse(line)]; } catch { return []; }
     }).reverse();
   } catch { return []; }
+}
+
+async function recordSpans(spans) {
+  if (!spans.length) return;
+  try {
+    await fs.mkdir(path.dirname(TELEMETRY_PATH), { recursive: true });
+    await fs.appendFile(TELEMETRY_PATH, spans.map((span) => `${JSON.stringify(span)}\n`).join(''), { mode: 0o600 });
+  } catch (error) {
+    console.warn('Unable to record AI telemetry:', error?.message ?? error);
+  }
+}
+
+async function readJsonl(file) {
+  return (await fs.readFile(file, 'utf8')).trim().split('\n').filter(Boolean).flatMap((line) => {
+    try { return [JSON.parse(line)]; } catch { return []; }
+  });
+}
+
+/**
+ * First read after upgrading: seed telemetry.jsonl from the legacy activity
+ * log and recorded agent trajectories so the activity page has history.
+ */
+async function backfillTelemetry() {
+  if (fsSync.existsSync(TELEMETRY_PATH)) return;
+  const spans = [];
+  try { spans.push(...telemetrySpans.spansFromLegacyActivity(await readJsonl(AI_ACTIVITY_PATH))); } catch {}
+  try {
+    const files = (await fs.readdir(TRAJECTORY_DIR)).filter((name) => name.endsWith('.jsonl'));
+    for (const name of files) {
+      try { spans.push(...telemetrySpans.spansFromTrajectory(await readJsonl(path.join(TRAJECTORY_DIR, name)))); } catch {}
+    }
+  } catch {}
+  spans.sort((a, b) => a.startedAt - b.startedAt);
+  await fs.mkdir(path.dirname(TELEMETRY_PATH), { recursive: true });
+  await fs.writeFile(TELEMETRY_PATH, spans.map((span) => `${JSON.stringify(span)}\n`).join(''), { mode: 0o600 });
+}
+
+const TELEMETRY_MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000;
+
+async function readSpans() {
+  try {
+    await backfillTelemetry();
+    const cutoff = Date.now() - TELEMETRY_MAX_AGE_MS;
+    return (await readJsonl(TELEMETRY_PATH)).filter((span) => span.startedAt >= cutoff);
+  } catch { return []; }
+}
+
+/** Claude and Codex run on a CLI login unless an API key is configured. */
+function costSourceFor(backend) {
+  if (backend === 'openrouter') return 'provider';
+  return configuredApiKey(backend) ? 'provider' : 'subscription';
 }
 
 function savedVaultPath() {
@@ -956,6 +1009,12 @@ ipcMain.handle('ai:agentRun', async (event, payload) => {
     prompt: typeof payload?.prompt === 'string' ? payload.prompt : '',
   });
   await trajectory.record('run.started', { agentProviderId: providerId });
+  const spans = telemetrySpans.createSpanCollector({
+    traceId: trajectory.trajectoryId,
+    backend: providerId,
+    model: providerId,
+    costSource: costSourceFor(providerId),
+  });
   try {
     const result = await agent.runAgentTurn(
     {
@@ -969,12 +1028,18 @@ ipcMain.handle('ai:agentRun', async (event, payload) => {
         event.sender.send('ai:agentProgress', progress);
       }
     },
-    (rawEvent) => { void trajectory.record('provider.event', { event: rawEvent }); },
+    (rawEvent) => {
+      spans.ingest(rawEvent);
+      void trajectory.record('provider.event', { event: rawEvent });
+    },
     );
     await trajectory.finish({ status: 'success', result });
+    await recordSpans(spans.finish({ status: 'ok' }));
     return result;
   } catch (error) {
-    await trajectory.finish({ status: 'error', error: error instanceof Error ? error.message : String(error) });
+    const message = error instanceof Error ? error.message : String(error);
+    await trajectory.finish({ status: 'error', error: message });
+    await recordSpans(spans.finish({ status: /cancel/i.test(message) ? 'cancelled' : 'error', error: message }));
     throw error;
   }
 });
@@ -1189,6 +1254,10 @@ ipcMain.handle('ai:chatCompletions', async (_, payload = {}) => {
       error: message,
       metadata: payload.metadata ?? null,
     });
+    await recordSpans([telemetrySpans.chatSpan({
+      requestId, operation, backend, model: requestedModel, startedAt,
+      durationMs: Date.now() - startedAt, status: 'error', error: message, usage: null,
+    })]);
     throw error;
   }
 
@@ -1208,6 +1277,13 @@ ipcMain.handle('ai:chatCompletions', async (_, payload = {}) => {
     ...(payload.capture === 'full' ? { responseText: content.slice(0, 50000) } : {}),
   };
   await recordAiActivity(activity);
+  await recordSpans([telemetrySpans.chatSpan({
+    requestId, operation, backend, model: result.model, startedAt,
+    durationMs: activity.durationMs, status: 'ok',
+    usage: result.costUsd != null && result.usage ? { ...result.usage, cost: result.costUsd } : result.usage,
+    costSource: costSourceFor(backend),
+    finishReason: result.finishReason ?? null,
+  })]);
   return {
     content,
     model: result.model,
@@ -1217,6 +1293,12 @@ ipcMain.handle('ai:chatCompletions', async (_, payload = {}) => {
 });
 
 ipcMain.handle('ai:activity', () => readAiActivity());
+ipcMain.handle('ai:telemetry', () => readSpans());
+ipcMain.handle('ai:telemetryClear', async () => {
+  // Leave an empty file behind so the legacy backfill does not run again.
+  try { await fs.writeFile(TELEMETRY_PATH, '', { mode: 0o600 }); } catch {}
+  return true;
+});
 ipcMain.handle('ai:trajectories', async () => {
   console.log('[trajectory] scan requested', TRAJECTORY_DIR);
   try {
