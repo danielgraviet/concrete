@@ -83,6 +83,7 @@ interface Window {
     open: () => Promise<VaultOpenResult | null>;
     list: (root: string) => Promise<VaultListResult>;
     read: (root: string, name: string) => Promise<string>;
+    readPdf?: (root: string, name: string) => Promise<Uint8Array>;
     write: (root: string, name: string, content: string) => Promise<boolean>;
     create: (root: string, name: string) => Promise<string>;
     /** App data under `.vault/` (JSON/JSONL only). Missing on older Electron builds. */

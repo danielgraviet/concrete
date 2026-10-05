@@ -35,6 +35,7 @@ import {
   NoteBodyCache,
   noteTitle,
   openNoteInTabs,
+  previewNoteInTabs,
   OpenTabsBar,
   PdfView,
   parentDir,
@@ -188,6 +189,7 @@ export default function App() {
   const vault = useVault(demoNotes, demoFolders);
   const [selected, setSelected] = useState('Welcome.md');
   const [openTabs, setOpenTabs] = useState<string[]>(['Welcome.md']);
+  const [previewTab, setPreviewTab] = useState<string | null>(null);
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
   const openTabsRef = useRef(openTabs);
@@ -433,6 +435,7 @@ export default function App() {
           (visibleFiles.find((file) => file === 'Welcome.md') ?? visibleFiles[0] ?? '');
         setSelected(preferred);
         setOpenTabs(preferred ? [preferred] : []);
+        setPreviewTab(null);
         persistSelectionRef.current = true;
         void window.perf?.mark('renderer-interactive');
       });
@@ -647,6 +650,7 @@ export default function App() {
     const first = result.files.find((file) => !isHiddenVaultFile(file)) ?? '';
     setSelected(first);
     setOpenTabs(first ? [first] : []);
+    setPreviewTab(null);
     setOnboardingStep(1);
   };
 
@@ -661,19 +665,25 @@ export default function App() {
       const first = result.files.find((file) => !isHiddenVaultFile(file)) ?? '';
       setSelected(first);
       setOpenTabs(first ? [first] : []);
+      setPreviewTab(null);
       setOnboardingStep(1);
     } catch (error) {
       window.alert(error instanceof Error ? error.message : 'Could not import the Obsidian vault.');
     }
   };
 
-  const select = (name: string, options?: { recordTab?: boolean }) => {
+  const select = (name: string, options?: { recordTab?: boolean; preview?: boolean }) => {
     persistSelectionRef.current = true;
     if (controller.isDirty) void controller.persistence.flush();
     // Opening a note sets a running review aside; its tab resumes it.
     setReviewRun((current) => (current && !current.paused ? { ...current, paused: true } : current));
-    if (options?.recordTab !== false) {
-      setOpenTabs((tabs) => openNoteInTabs(tabs, name));
+    if (options?.preview) {
+      const alreadyPinned = openTabsRef.current.includes(name) && previewTab !== name;
+      if (!alreadyPinned) setPreviewTab(name);
+      setOpenTabs((tabs) => previewNoteInTabs(tabs, previewTab, name));
+    } else {
+      if (previewTab === name) setPreviewTab(null);
+      if (options?.recordTab !== false) setOpenTabs((tabs) => openNoteInTabs(tabs, name));
     }
     setSelected(name);
     setTreeFocus({ kind: 'file', path: name });
@@ -692,6 +702,7 @@ export default function App() {
     if (tabs.length <= 1 || !path) return;
     const nextTabs = closeNoteTab(tabs, path);
     setOpenTabs(nextTabs);
+    if (previewTab === path) setPreviewTab(null);
     if (path !== selected) return;
     const next = tabAfterClose(tabs, path);
     if (next) select(next, { recordTab: false });
@@ -1584,10 +1595,12 @@ export default function App() {
           <OpenTabsBar
             tabs={openTabs}
             selected={selected}
+            previewTab={previewTab}
             dirtyPath={!saved ? selected : null}
             reviewLabel={reviewRun?.deck.label ?? null}
             reviewing={reviewing}
-            onSelect={select}
+            onSelect={(path) => select(path, { preview: previewTab === path })}
+            onPin={(path) => select(path)}
             onClose={closeOpenTab}
             onResumeReview={() =>
               setReviewRun((current) => (current ? { ...current, paused: false } : current))
@@ -1646,7 +1659,7 @@ export default function App() {
             ) : null}
           </Flex>
         </div>
-        <div className="editor-wrap">
+        <div className={`editor-wrap${isPdfFileName(selected) ? ' pdf-editor-wrap' : ''}`}>
           {findOpen ? (
             <div className="find-bar" role="search">
               <input
@@ -1713,7 +1726,7 @@ export default function App() {
               }}
             />
           ) : isPdfFileName(selected) ? (
-            <PdfView path={selected} />
+            <PdfView path={selected} vaultRoot={root} />
           ) : isQuizPath(selected) ? (
             <QuizShell
               documentPath={selected}

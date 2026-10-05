@@ -47,6 +47,7 @@
     "chokidar": "^5.0.0",
     "katex": "^0.18.7",
     "marked": "^18.0.13",
+    "pdfjs-dist": "^6.4.299",
     "react": "latest",
     "react-dom": "latest",
     "react-markdown": "^10.1.0",

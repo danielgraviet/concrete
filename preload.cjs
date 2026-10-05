@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('vault', {
   open: () => ipcRenderer.invoke('vault:open'),
   list: (root) => ipcRenderer.invoke('vault:list', root),
   read: (root, name) => ipcRenderer.invoke('vault:read', root, name),
+  readPdf: (root, name) => ipcRenderer.invoke('vault:readPdf', root, name),
   write: (root, name, content) => ipcRenderer.invoke('vault:write', root, name, content),
   create: (root, name) => ipcRenderer.invoke('vault:create', root, name),
   readData: (root, name) => ipcRenderer.invoke('vault:readData', root, name),

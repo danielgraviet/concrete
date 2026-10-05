@@ -32,6 +32,12 @@ export const VaultService = {
     return requireVault().read(root, name);
   },
 
+  readPdf(root: string, name: string): Promise<Uint8Array> {
+    const api = requireVault();
+    if (typeof api.readPdf !== 'function') throw new Error('PDF reading requires an Electron restart after updating');
+    return api.readPdf(root, name);
+  },
+
   write(root: string, name: string, content: string): Promise<boolean> {
     return requireVault().write(root, name, content);
   },

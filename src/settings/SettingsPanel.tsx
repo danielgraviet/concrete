@@ -304,7 +304,7 @@ export function SettingsPanel({
             <TextField.Root
               type="number"
               min={0}
-              max={20}
+              max={50}
               value={String(settings.quiz.mcqCount)}
               onChange={(e) =>
                 store.setQuizSettings({ mcqCount: Number(e.target.value) || 0 })
@@ -318,7 +318,7 @@ export function SettingsPanel({
             <TextField.Root
               type="number"
               min={0}
-              max={20}
+              max={50}
               value={String(settings.quiz.clozeCount)}
               onChange={(e) =>
                 store.setQuizSettings({ clozeCount: Number(e.target.value) || 0 })
@@ -332,7 +332,7 @@ export function SettingsPanel({
             <TextField.Root
               type="number"
               min={0}
-              max={20}
+              max={50}
               value={String(settings.quiz.openCount)}
               onChange={(e) =>
                 store.setQuizSettings({ openCount: Number(e.target.value) || 0 })
@@ -346,7 +346,7 @@ export function SettingsPanel({
             <TextField.Root
               type="number"
               min={0}
-              max={20}
+              max={50}
               value={String(settings.quiz.codeCount)}
               onChange={(e) =>
                 store.setQuizSettings({ codeCount: Number(e.target.value) || 0 })

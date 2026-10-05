@@ -95,7 +95,7 @@ export function isQuizDifficulty(value: unknown): value is QuizDifficulty {
 function clampQuizCount(value: unknown, fallback: number): number {
   const n = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(n)) return fallback;
-  return Math.max(0, Math.min(20, Math.round(n)));
+  return Math.max(0, Math.min(50, Math.round(n)));
 }
 
 export function resolveQuizSettings(value: unknown): QuizGenerationSettings {

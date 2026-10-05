@@ -41,6 +41,7 @@ export {
   MAX_OPEN_TABS,
   closeNoteTab,
   openNoteInTabs,
+  previewNoteInTabs,
   renamePathsInTabs,
   tabAfterClose,
 } from './openTabs';

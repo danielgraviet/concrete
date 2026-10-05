@@ -97,11 +97,14 @@ export function GenerateQuizDialog({
     quizFileTitle(defaultTitleFromSources(initialSources)).replace(/^Quiz\s+/, ''),
   );
 
-  const [counts, setCounts] = useState({
-    mcqCount: defaultSettings.mcqCount,
-    clozeCount: defaultSettings.clozeCount,
-    openCount: defaultSettings.openCount,
-    codeCount: defaultSettings.codeCount,
+  const [counts, setCounts] = useState(() => {
+    const result = { mcqCount: 0, clozeCount: 0, openCount: 0, codeCount: 0 };
+    let remaining = 50;
+    for (const key of ['mcqCount', 'clozeCount', 'openCount', 'codeCount'] as const) {
+      result[key] = Math.min(remaining, defaultSettings[key]);
+      remaining -= result[key];
+    }
+    return result;
   });
   const [difficulty, setDifficulty] = useState<QuizDifficulty>(defaultSettings.difficulty);
   const [pageRanges, setPageRanges] = useState<Record<string, string>>({});
@@ -112,7 +115,11 @@ export function GenerateQuizDialog({
   const canSubmit = !busy && selected.length > 0 && totalQuestions > 0 && !rangeInvalid;
 
   const setCount = (key: keyof typeof counts, raw: number) => {
-    const n = Number.isFinite(raw) ? Math.max(0, Math.min(20, Math.round(raw))) : 0;
+    const otherCount = Object.entries(counts).reduce(
+      (sum, [otherKey, count]) => otherKey === key ? sum : sum + count,
+      0,
+    );
+    const n = Number.isFinite(raw) ? Math.max(0, Math.min(50 - otherCount, Math.round(raw))) : 0;
     setCounts((current) => ({ ...current, [key]: n }));
   };
 
@@ -308,7 +315,7 @@ export function GenerateQuizDialog({
                   <TextField.Root
                     type="number"
                     min={0}
-                    max={20}
+                    max={50}
                     value={String(counts[key])}
                     disabled={busy}
                     onChange={(e) => setCount(key, Number(e.target.value))}
