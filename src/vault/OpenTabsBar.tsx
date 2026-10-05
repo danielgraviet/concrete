@@ -1,10 +1,12 @@
 import { Cross1Icon, ClipboardIcon, FileTextIcon, LayersIcon } from '@radix-ui/react-icons';
+import { isPdfFileName } from './fileTree';
+import { PdfFileIcon } from './PdfFileIcon';
 import { isQuizPath } from '../quiz';
 
 const MAX_TAB_TITLE_CHARS = 32;
 
 function tabTitleFor(path: string): string {
-  const title = (path.split('/').pop() ?? path).replace(/\.md$/i, '') || 'Untitled';
+  const title = (path.split('/').pop() ?? path).replace(/\.(?:md|pdf)$/i, '') || 'Untitled';
   return title.length > MAX_TAB_TITLE_CHARS
     ? `${title.slice(0, MAX_TAB_TITLE_CHARS - 1)}…`
     : title;
@@ -72,7 +74,13 @@ export function OpenTabsBar({
             aria-current={active ? 'page' : undefined}
             onClick={() => onSelect(path)}
           >
-            {isQuizPath(path) ? <ClipboardIcon width={14} height={14} /> : <FileTextIcon width={14} height={14} />}
+            {isQuizPath(path) ? (
+              <ClipboardIcon width={14} height={14} />
+            ) : isPdfFileName(path) ? (
+              <PdfFileIcon />
+            ) : (
+              <FileTextIcon width={14} height={14} />
+            )}
             <span className="tab-title">{tabTitleFor(path)}</span>
             {dirty ? <span className="dirty">•</span> : null}
             {tabs.length > 1 ? (

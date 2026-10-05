@@ -2,9 +2,15 @@
  * In-DOM text prompt. Electron disables `window.prompt()` (throws),
  * so create/rename flows must use this instead.
  */
+export type AskTextOptions = {
+  /** Small left-aligned action (e.g. "Import PDF…"). Closes the prompt (resolving null), then runs. */
+  extraAction?: { label: string; onClick: () => void };
+};
+
 export function askText(
   message: string,
   defaultValue = '',
+  options: AskTextOptions = {},
 ): Promise<string | null> {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
@@ -67,6 +73,18 @@ export function askText(
     });
     overlay.addEventListener('keydown', onKey);
 
+    if (options.extraAction) {
+      const { label: extraLabel, onClick } = options.extraAction;
+      const extraBtn = document.createElement('button');
+      extraBtn.type = 'button';
+      extraBtn.className = 'mv-btn mv-btn-ghost mv-prompt-extra';
+      extraBtn.textContent = extraLabel;
+      extraBtn.addEventListener('click', () => {
+        finish(null);
+        onClick();
+      });
+      actions.append(extraBtn);
+    }
     actions.append(cancelBtn, okBtn);
     panel.append(label, input, actions);
     overlay.append(panel);

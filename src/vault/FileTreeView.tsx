@@ -4,11 +4,11 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   ClipboardIcon,
-  FileIcon,
   FileTextIcon,
   ArchiveIcon,
 } from '@radix-ui/react-icons';
 import { buildFileTree, isPdfFileName, isQuizFileName, noteTitle } from './fileTree';
+import { PdfFileIcon } from './PdfFileIcon';
 import type { VaultFolderNode, VaultTreeNode } from './types';
 
 export type TreeItemKind = 'file' | 'folder';
@@ -318,7 +318,7 @@ function TreeNode({
           {isQuiz ? (
             <ClipboardIcon width={14} height={14} className="quiz-file-icon" />
           ) : isPdf ? (
-            <FileIcon width={14} height={14} className="pdf-file-icon" />
+            <PdfFileIcon />
           ) : (
             <FileTextIcon width={14} height={14} />
           )}

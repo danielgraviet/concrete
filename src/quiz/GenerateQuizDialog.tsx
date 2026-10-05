@@ -11,20 +11,27 @@ import {
   Text,
   TextField,
 } from '@radix-ui/themes';
-import { ClipboardIcon } from '@radix-ui/react-icons';
+import { ClipboardIcon, UploadIcon } from '@radix-ui/react-icons';
 import { isQuizPath, quizFileTitle } from './paths';
-import { noteTitle } from '../vault/fileTree';
+import { parsePageRange } from './pdfContext';
+import { isPdfFileName, noteTitle } from '../vault/fileTree';
 import type { QuizDifficulty, QuizGenerationSettings } from '../settings';
 
 export type GenerateQuizDialogResult = {
   title: string;
   sourcePaths: string[];
+  /** Page range text per selected PDF ("3-10, 15"); missing or blank = all pages. */
+  pageRanges: Record<string, string>;
   /** Per-run generation settings (seeded from Settings, not saved back). */
   settings: QuizGenerationSettings;
 };
 
 type Props = {
   files: string[];
+  /** PDFs in the vault; selectable as sources alongside notes. */
+  pdfFiles: string[];
+  /** Picks a PDF from disk, copies it into the vault, and returns its path (null if cancelled). */
+  onImportPdf: () => Promise<string | null>;
   /** Currently open note — preselected when it is not a quiz. */
   defaultSourcePath: string;
   folderHint?: string;
@@ -41,12 +48,23 @@ function defaultTitleFromSources(paths: string[]): string {
   return `${noteTitle(paths[0])} +${paths.length - 1}`;
 }
 
+function pageRangeError(input: string): string | null {
+  try {
+    parsePageRange(input);
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
 /**
  * Pick source note(s) and a quiz title before calling the AI generator.
  * Defaults to the open note; allows multi-select.
  */
 export function GenerateQuizDialog({
   files,
+  pdfFiles,
+  onImportPdf,
   defaultSourcePath,
   folderHint,
   defaultSettings,
@@ -61,11 +79,10 @@ export function GenerateQuizDialog({
       // Clicked note first, then notes in its folder, then everything else; A–Z within each group.
       const rank = (path: string) =>
         path === defaultSourcePath ? 0 : currentDir !== null && dirOf(path) === currentDir ? 1 : 2;
-      return files
-        .filter((path) => !isQuizPath(path))
+      return [...files.filter((path) => !isQuizPath(path)), ...pdfFiles]
         .sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
     },
-    [files, defaultSourcePath],
+    [files, pdfFiles, defaultSourcePath],
   );
 
   const initialSources = useMemo(() => {
@@ -87,7 +104,12 @@ export function GenerateQuizDialog({
     codeCount: defaultSettings.codeCount,
   });
   const [difficulty, setDifficulty] = useState<QuizDifficulty>(defaultSettings.difficulty);
+  const [pageRanges, setPageRanges] = useState<Record<string, string>>({});
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
   const totalQuestions = counts.mcqCount + counts.clozeCount + counts.openCount + counts.codeCount;
+  const rangeInvalid = selected.some((path) => isPdfFileName(path) && pageRangeError(pageRanges[path] ?? ''));
+  const canSubmit = !busy && selected.length > 0 && totalQuestions > 0 && !rangeInvalid;
 
   const setCount = (key: keyof typeof counts, raw: number) => {
     const n = Number.isFinite(raw) ? Math.max(0, Math.min(20, Math.round(raw))) : 0;
@@ -112,12 +134,28 @@ export function GenerateQuizDialog({
     });
   };
 
+  const importPdf = async () => {
+    setImporting(true);
+    setImportError(null);
+    try {
+      const path = await onImportPdf();
+      if (path && !selected.includes(path)) toggle(path);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'Could not import that PDF.');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const submit = () => {
-    if (busy || selected.length === 0 || totalQuestions === 0) return;
+    if (!canSubmit) return;
     const descriptive = title.trim() || defaultTitleFromSources(selected);
     onConfirm({
       title: quizFileTitle(descriptive),
       sourcePaths: selected,
+      pageRanges: Object.fromEntries(
+        selected.filter(isPdfFileName).map((path) => [path, pageRanges[path] ?? '']),
+      ),
       settings: { ...defaultSettings, ...counts, difficulty },
     });
   };
@@ -131,7 +169,7 @@ export function GenerateQuizDialog({
             <Box>
               <Heading size="4">Generate quiz</Heading>
               <Text size="2" color="gray">
-                Ground questions in selected notes
+                Ground questions in selected notes or PDFs
                 {folderHint ? ` · saves under ${folderHint}` : ''}.
               </Text>
             </Box>
@@ -159,15 +197,32 @@ export function GenerateQuizDialog({
           <Flex direction="column" gap="2">
             <Flex justify="between" align="center">
               <Text size="2" weight="medium">
-                Source notes
+                Sources
               </Text>
-              <Text size="1" color="gray">
-                {selected.length} selected
-              </Text>
+              <Flex align="center" gap="3">
+                <Text size="1" color="gray">
+                  {selected.length} selected
+                </Text>
+                <Button
+                  size="1"
+                  variant="soft"
+                  disabled={busy}
+                  loading={importing}
+                  onClick={() => void importPdf()}
+                >
+                  <UploadIcon />
+                  Import PDF…
+                </Button>
+              </Flex>
             </Flex>
+            {importError && (
+              <Text size="1" color="red">
+                {importError}
+              </Text>
+            )}
             {noteFiles.length === 0 ? (
               <Text size="2" color="gray">
-                No notes available. Create a note first.
+                No notes available. Create a note or import a PDF first.
               </Text>
             ) : (
               <ScrollArea type="auto" scrollbars="vertical" style={{ maxHeight: 280 }}>
@@ -175,6 +230,8 @@ export function GenerateQuizDialog({
                   {noteFiles.map((path) => {
                     const checked = selected.includes(path);
                     const isDefault = path === defaultSourcePath;
+                    const isPdf = isPdfFileName(path);
+                    const rangeError = isPdf && checked ? pageRangeError(pageRanges[path] ?? '') : null;
                     return (
                       <Flex
                         key={path}
@@ -190,12 +247,32 @@ export function GenerateQuizDialog({
                             disabled={busy}
                             onCheckedChange={() => toggle(path)}
                           />
-                          <Flex direction="column" gap="1">
+                          <Flex direction="column" gap="1" flexGrow="1">
                             <Text size="2">{noteTitle(path)}</Text>
                             <Text size="1" color="gray">
+                              {isPdf ? 'PDF · ' : ''}
                               {path}
                               {isDefault ? ' · current' : ''}
                             </Text>
+                            {isPdf && checked && (
+                              <>
+                                <TextField.Root
+                                  size="1"
+                                  value={pageRanges[path] ?? ''}
+                                  disabled={busy}
+                                  placeholder="Pages, e.g. 1-20, 25 (blank = all)"
+                                  aria-label={`Pages to use from ${noteTitle(path)}`}
+                                  onChange={(e) =>
+                                    setPageRanges((current) => ({ ...current, [path]: e.target.value }))
+                                  }
+                                />
+                                {rangeError && (
+                                  <Text size="1" color="red">
+                                    {rangeError}
+                                  </Text>
+                                )}
+                              </>
+                            )}
                           </Flex>
                         </label>
                       </Flex>
@@ -258,7 +335,7 @@ export function GenerateQuizDialog({
             </Button>
             <Button
               highContrast
-              disabled={busy || selected.length === 0 || totalQuestions === 0}
+              disabled={!canSubmit}
               loading={busy}
               onClick={submit}
             >

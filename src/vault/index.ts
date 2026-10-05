@@ -45,3 +45,4 @@ export {
   tabAfterClose,
 } from './openTabs';
 export { OpenTabsBar } from './OpenTabsBar';
+export { PdfView } from './PdfView';

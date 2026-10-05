@@ -85,6 +85,16 @@ export const VaultService = {
     return requireVault().revealInFolder(root, name);
   },
 
+  /** Picks a PDF from disk and copies it into `folder`. Null when cancelled. */
+  importPdf(root: string, folder: string): Promise<string | null> {
+    return requireVault().importPdf(root, folder);
+  },
+
+  /** Raw text per page of a vault PDF. */
+  extractPdfText(root: string, name: string): Promise<{ pages: string[]; totalPages: number }> {
+    return requireVault().extractPdfText(root, name);
+  },
+
   watchStart(root: string): Promise<boolean> {
     return requireVault().watchStart(root);
   },

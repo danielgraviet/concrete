@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu, clipboard, shell, session } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, clipboard, shell, session, protocol } = require('electron');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
@@ -6,6 +6,7 @@ const { pathToFileURL } = require('node:url');
 const chokidar = require('chokidar');
 const sandbox = require('./sandbox/index.cjs');
 const { createTrajectory } = require('./agentTrajectory.cjs');
+const { extractPdfPages } = require('./pdfText.cjs');
 const telemetrySpans = require('./telemetrySpans.cjs');
 
 /** Cap Chromium disk cache (~50MB) before app ready. */
@@ -815,6 +816,43 @@ ipcMain.handle('vault:revealInFolder', async (_, root, name) => {
   return true;
 });
 
+const MAX_PDF_BYTES = 50 * 1024 * 1024;
+const MAX_PDF_PAGES = 500;
+
+/** Copy a PDF picked from disk into a vault folder; returns its vault-relative path. */
+ipcMain.handle('vault:importPdf', async (_, root, folder = '') => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openFile'],
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  });
+  if (result.canceled || !result.filePaths[0]) return null;
+  const source = result.filePaths[0];
+  if ((await fs.stat(source)).size > MAX_PDF_BYTES) {
+    throw new Error('PDF is larger than 50 MB.');
+  }
+  const stem = path.basename(source, path.extname(source));
+  // Never overwrite: "Notes.pdf" → "Notes 2.pdf" → "Notes 3.pdf" …
+  for (let n = 1; ; n += 1) {
+    const name = n === 1 ? `${stem}.pdf` : `${stem} ${n}.pdf`;
+    const { resolved, relative } = resolveWithinRoot(root, folder ? `${folder}/${name}` : name);
+    try {
+      await fs.mkdir(path.dirname(resolved), { recursive: true });
+      await fs.copyFile(source, resolved, fsSync.constants.COPYFILE_EXCL);
+      return relative;
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+    }
+  }
+});
+
+/** Raw text per page from a vault PDF. Cleaning and budgeting happen in the renderer. */
+ipcMain.handle('vault:extractPdfText', async (_, root, name) => {
+  const { resolved } = resolveWithinRoot(root, name);
+  if (path.extname(resolved).toLowerCase() !== '.pdf') throw new Error('Only .pdf files are allowed');
+  if ((await fs.stat(resolved)).size > MAX_PDF_BYTES) throw new Error('PDF is larger than 50 MB.');
+  return extractPdfPages(await fs.readFile(resolved), MAX_PDF_PAGES);
+});
+
 /** OpenRouter needs a key; Claude and Codex also accept their CLI login. */
 async function aiStatusFor(backend) {
   const key = configuredApiKey(backend);
@@ -1374,8 +1412,31 @@ ipcMain.handle('vault:importObsidian', async (_, root) => {
   return { root: destination, files, pdfFiles, folders };
 });
 
+// `vault-file://local/<vault-relative path>` lets the renderer show vault PDFs
+// in Chromium's viewer. Must be registered before the app is ready.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'vault-file', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+]);
+
+/** Serve PDFs from the open vault only — never other file types or paths outside it. */
+function registerVaultFileProtocol() {
+  protocol.handle('vault-file', async (request) => {
+    const root = savedVaultPath();
+    if (!root) return new Response('No vault open', { status: 404 });
+    try {
+      const rel = decodeURIComponent(new URL(request.url).pathname).replace(/^\/+/, '');
+      const { resolved } = resolveWithinRoot(root, rel);
+      if (path.extname(resolved).toLowerCase() !== '.pdf') return new Response('Forbidden', { status: 403 });
+      return new Response(await fs.readFile(resolved), { headers: { 'content-type': 'application/pdf' } });
+    } catch (error) {
+      return new Response('Not found', { status: error?.code === 'ENOENT' ? 404 : 403 });
+    }
+  });
+}
+
 app.whenReady().then(async () => {
   perfMark('app-ready');
+  registerVaultFileProtocol();
   setupAppMenu();
   // Window first — vault mkdir and bridge wait until needed.
   createWindow();
