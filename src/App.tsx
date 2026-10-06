@@ -10,7 +10,6 @@ import {
 } from 'react';
 import { Button, Flex, IconButton, Text } from '@radix-ui/themes';
 import {
-  ChatBubbleIcon,
   ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -1592,20 +1591,6 @@ export default function App() {
             <span className="rail-badge">{reviewDueCount > 99 ? '99+' : reviewDueCount}</span>
           ) : null}
         </IconButton>
-        <IconButton
-          type="button"
-          className={aiChatOpen ? 'rail-button active' : 'rail-button'}
-          size="2"
-          variant="ghost"
-          color="gray"
-          highContrast
-          aria-label="Study chat (⌘J)"
-          title="Study chat (⌘J)"
-          aria-pressed={aiChatOpen}
-          onClick={() => selectRail('ai')}
-        >
-          <ChatBubbleIcon width={18} height={18} />
-        </IconButton>
         <div className="rail-spacer" />
         <IconButton
           type="button"
@@ -1853,6 +1838,7 @@ export default function App() {
           </Flex>
         </div>
         <div className="editor-split" ref={editorSplitRef}>
+        <div className="editor-stage">
         <div className={`editor-wrap${isPdfFileName(selected) ? ' pdf-editor-wrap' : ''}`}>
           {findOpen ? (
             <div className="find-bar" role="search">
@@ -1947,6 +1933,17 @@ export default function App() {
               onBlur={() => void controller.persistence.flush()}
             />
           )}
+        </div>
+        <button
+          type="button"
+          className={aiChatOpen ? 'study-chat-launcher active' : 'study-chat-launcher'}
+          aria-label="Study chat (⌘J)"
+          title="Study chat (⌘J)"
+          aria-pressed={aiChatOpen}
+          onClick={() => selectRail('ai')}
+        >
+          <BrandLogo logo="triple-c" />
+        </button>
         </div>
         {aiChatOpen ? (
           <>

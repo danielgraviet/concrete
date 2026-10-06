@@ -42,7 +42,7 @@ export const PRODUCT_TOUR_STEPS: ProductTourStep[] = [
       'Open Study Chat to ask questions about the note you just wrote.',
       'The chat can use your open note as context while you work.',
     ],
-    target: '.rail button[aria-label^="Study chat"]',
+    target: '.study-chat-launcher',
   },
   {
     title: 'Create a quiz from your notes',

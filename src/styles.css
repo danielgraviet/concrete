@@ -1318,7 +1318,7 @@ body{
 .mv-tour-nav-button{width:48px!important;height:48px!important}
 .mv-tour-nav-button svg{width:24px;height:24px}
 .mv-tour-target-active{position:relative!important;z-index:61!important;outline:3px solid var(--mv-tour-highlight,var(--mv-accent))!important;outline-offset:4px;border-radius:6px;box-shadow:0 0 0 8px color-mix(in srgb,var(--mv-tour-highlight,var(--mv-accent)) 24%,transparent),0 0 24px 8px color-mix(in srgb,var(--mv-tour-highlight,var(--mv-accent)) 42%,transparent)!important}
-.mv-tour-target-active[aria-label^="Study chat"] svg{color:var(--mv-tour-highlight,var(--mv-accent))!important;filter:drop-shadow(0 0 5px color-mix(in srgb,var(--mv-tour-highlight,var(--mv-accent)) 70%,transparent))}
+.mv-tour-target-active.study-chat-launcher{outline-offset:6px}
 .mv-tour-target-active[aria-label^="Review"] svg{color:var(--mv-tour-highlight,var(--mv-accent))!important;filter:drop-shadow(0 0 5px color-mix(in srgb,var(--mv-tour-highlight,var(--mv-accent)) 70%,transparent))}
 @media (max-width:760px){.mv-product-tour.mv-onboarding-card{width:min(390px,calc(100vw - 32px))}}
 .mv-product-tour-dots{
@@ -2372,7 +2372,8 @@ div[class*="selectContainer"] [class*="selectItem"][data-state="checked"]{
 .quiz-followup-result{margin-top:12px;padding:12px 14px;border:1px solid var(--mv-border,#444);border-radius:10px}
 .quiz-followup-result p{margin:4px 0}
 .quiz-missing{margin-top:8px;font-size:.95em}
-.quiz-missing ul{margin:4px 0 0;padding-left:1.3em}
+.quiz-missing ul{display:flex;flex-direction:column;gap:10px;margin:8px 0 0;padding-left:1.3em}
+.quiz-missing li{margin:0;line-height:1.45}
 
 /* ── Learning progress: tiles, trend, skills, activity ────────────────── */
 .radix-themes{--mv-chart:#2a78d6}
@@ -2509,7 +2510,27 @@ div[class*="selectContainer"] [class*="selectItem"][data-state="checked"]{
 
 /* Study Chat — split pane beside the note. Theme tokens only, so light packs work. */
 .editor-split{flex:1 1 auto;min-height:0;min-width:0;display:flex}
-.editor-split > .editor-wrap{flex:1 1 auto;min-width:0}
+.editor-stage{position:relative;flex:1 1 auto;min-width:0;min-height:0;display:flex}
+.editor-stage > .editor-wrap{flex:1 1 auto;min-width:0}
+.study-chat-launcher{
+  position:absolute;
+  right:22px;
+  bottom:22px;
+  z-index:8;
+  width:58px;
+  height:58px;
+  padding:7px;
+  border:1px solid var(--mv-border,#e2e2e2);
+  border-radius:16px;
+  background:var(--mv-surface,#fff);
+  box-shadow:0 8px 22px color-mix(in srgb,#000 16%,transparent);
+  cursor:pointer;
+  display:grid;
+  place-items:center;
+}
+.study-chat-launcher:hover{border-color:var(--mv-accent,#6e6e6e)}
+.study-chat-launcher.active{box-shadow:0 0 0 2px var(--mv-accent,#6e6e6e),0 8px 22px color-mix(in srgb,#000 16%,transparent)}
+.study-chat-launcher .brand-logo{width:100%;height:100%;pointer-events:none}
 .study-chat-resizer{
   flex:0 0 6px;
   margin-left:-3px;
