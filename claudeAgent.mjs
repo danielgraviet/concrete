@@ -377,11 +377,13 @@ export function cancelAgentTurn() {
  * }} request
  * @returns {Promise<{ content: string; model: string; usage: unknown; costUsd: number | null }>}
  */
-export async function completeChat({ messages, model, apiKey }) {
+export async function completeChat({ messages, model, apiKey, onDelta, signal }) {
   const status = await getAgentStatus({ apiKey });
   if (!status.available || !status.authenticated) throw new Error(status.message);
 
   const system = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n');
+  const abortController = new AbortController();
+  signal?.addEventListener('abort', () => abortController.abort(), { once: true });
   const stream = query({
     prompt: transcriptPrompt(messages),
     options: {
@@ -394,12 +396,21 @@ export async function completeChat({ messages, model, apiKey }) {
       settingSources: [],
       persistSession: false,
       maxTurns: 1,
+      abortController,
+      ...(onDelta ? { includePartialMessages: true } : {}),
     },
   });
 
   let resolvedModel = model || 'claude';
   for await (const message of stream) {
     if (message.type === 'system' && message.subtype === 'init') resolvedModel = message.model;
+    if (message.type === 'stream_event') {
+      const event = message.event;
+      if (onDelta && event?.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+        onDelta(event.delta.text);
+      }
+      continue;
+    }
     if (message.type !== 'result') continue;
     if (message.subtype !== 'success' || message.is_error) {
       const detail = message.subtype === 'success' ? message.result : message.errors?.[0] || message.subtype;

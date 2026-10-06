@@ -37,14 +37,67 @@ Most note-taking tools stop at storage, and most AI tools are disconnected from 
   - the Codex CLI, logged in (ChatGPT plan) or with an OpenAI API key,
   - an OpenRouter API key (quizzes and tutoring only).
 
-### Run locally
+### Install
+
+Open Terminal (⌘ Space, type “Terminal”) and run each step. Already have Homebrew or Node 20+? Skip ahead.
+
+**1. Install Homebrew** (the macOS package manager). It will ask for your password; nothing shows as you type.
 
 ```bash
-git clone https://github.com/danielgraviet/concrete.git
-cd concrete
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+On Apple Silicon Macs, add Homebrew to your PATH:
+
+```bash
+echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile && eval "$(/opt/homebrew/bin/brew shellenv)"
+```
+
+**2. Install Node.js** (includes npm)
+
+```bash
+brew install node
+```
+
+**3. Download Concrete.** If macOS asks to install the Command Line Developer Tools for `git`, click Install, then run this again.
+
+```bash
+git clone https://github.com/danielgraviet/concrete.git && cd concrete
+```
+
+**4. Install dependencies.** `npm warn` lines are fine.
+
+```bash
 npm install
+```
+
+**5. Launch Concrete**
+
+```bash
 npm run dev
 ```
+
+The Concrete window opens and creates your vault in `~/Documents/Concrete` on first launch. Quit with ⌘Q (or Ctrl C in Terminal).
+
+### Open it again later
+
+From now on, this is all you need:
+
+```bash
+cd concrete && npm run dev
+```
+
+<details>
+<summary>Troubleshooting</summary>
+
+- **`brew: command not found`**: run the PATH command from step 1, or open a new Terminal window.
+- **Node is older than 20**: run `brew upgrade node`.
+- **Window never appears**: make sure nothing else is using port 5173, then rerun `npm run dev`.
+- **`npm install` permission errors**: don’t use `sudo`. Delete `node_modules` and run `npm install` again.
+
+</details>
+
+### AI features
 
 Open or create a Markdown vault, then use the quiz controls from a note to generate practice material. Pick the model backend under Settings → Tutor AI. Claude Code and Codex use your CLI login unless you save an API key; keys stay in the Electron main process.
 

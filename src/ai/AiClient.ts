@@ -1,5 +1,6 @@
 import type {
   AiProvider,
+  ChatRequest,
   CompleteRequest,
   GenerateQuizRequest,
   GenerateQuizFollowUpRequest,
@@ -36,6 +37,20 @@ export class AiClient {
       prompt: buildTeacherCompletePrompt(request.prompt, context),
       context,
     });
+  }
+
+  /** Multi-turn chat. Providers without chat() get a flattened transcript via complete(). */
+  async chat(request: ChatRequest): Promise<string> {
+    if (this.provider.chat) return this.provider.chat(request);
+    const transcript = request.messages
+      .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+      .join('\n\n');
+    const text = await this.provider.complete({
+      prompt: `${request.system}\n\n${transcript}`,
+      operation: request.operation,
+    });
+    request.onDelta?.(text);
+    return text;
   }
 
   embed(text: string): Promise<number[] | null> {

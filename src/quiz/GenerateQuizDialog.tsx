@@ -11,7 +11,7 @@ import {
   Text,
   TextField,
 } from '@radix-ui/themes';
-import { ClipboardIcon, UploadIcon } from '@radix-ui/react-icons';
+import { ClipboardIcon } from '@radix-ui/react-icons';
 import { isQuizPath, quizFileTitle } from './paths';
 import { parsePageRange } from './pdfContext';
 import { isPdfFileName, noteTitle } from '../vault/fileTree';
@@ -30,8 +30,6 @@ type Props = {
   files: string[];
   /** PDFs in the vault; selectable as sources alongside notes. */
   pdfFiles: string[];
-  /** Picks a PDF from disk, copies it into the vault, and returns its path (null if cancelled). */
-  onImportPdf: () => Promise<string | null>;
   /** Currently open note — preselected when it is not a quiz. */
   defaultSourcePath: string;
   folderHint?: string;
@@ -64,7 +62,6 @@ function pageRangeError(input: string): string | null {
 export function GenerateQuizDialog({
   files,
   pdfFiles,
-  onImportPdf,
   defaultSourcePath,
   folderHint,
   defaultSettings,
@@ -108,8 +105,6 @@ export function GenerateQuizDialog({
   });
   const [difficulty, setDifficulty] = useState<QuizDifficulty>(defaultSettings.difficulty);
   const [pageRanges, setPageRanges] = useState<Record<string, string>>({});
-  const [importing, setImporting] = useState(false);
-  const [importError, setImportError] = useState<string | null>(null);
   const totalQuestions = counts.mcqCount + counts.clozeCount + counts.openCount + counts.codeCount;
   const rangeInvalid = selected.some((path) => isPdfFileName(path) && pageRangeError(pageRanges[path] ?? ''));
   const canSubmit = !busy && selected.length > 0 && totalQuestions > 0 && !rangeInvalid;
@@ -141,19 +136,6 @@ export function GenerateQuizDialog({
     });
   };
 
-  const importPdf = async () => {
-    setImporting(true);
-    setImportError(null);
-    try {
-      const path = await onImportPdf();
-      if (path && !selected.includes(path)) toggle(path);
-    } catch (error) {
-      setImportError(error instanceof Error ? error.message : 'Could not import that PDF.');
-    } finally {
-      setImporting(false);
-    }
-  };
-
   const submit = () => {
     if (!canSubmit) return;
     const descriptive = title.trim() || defaultTitleFromSources(selected);
@@ -170,8 +152,8 @@ export function GenerateQuizDialog({
   return (
     <div className="mv-overlay mv-prompt-overlay" role="dialog" aria-modal="true">
       <Card size="3" className="generate-quiz-panel">
-        <Flex direction="column" gap="4">
-          <Flex gap="3" align="start">
+        <Flex direction="column" gap="3" className="generate-quiz-layout">
+          <Flex gap="3" align="start" className="generate-quiz-heading">
             <ClipboardIcon width={20} height={20} />
             <Box>
               <Heading size="4">Generate quiz</Heading>
@@ -182,7 +164,7 @@ export function GenerateQuizDialog({
             </Box>
           </Flex>
 
-          <Flex direction="column" gap="2">
+          <Flex direction="column" gap="2" className="generate-quiz-title-field">
             <Text size="2" weight="medium">
               Quiz title
             </Text>
@@ -201,38 +183,26 @@ export function GenerateQuizDialog({
             />
           </Flex>
 
-          <Flex direction="column" gap="2">
+          <Flex direction="column" gap="2" className="generate-quiz-source-section">
             <Flex justify="between" align="center">
               <Text size="2" weight="medium">
                 Sources
               </Text>
-              <Flex align="center" gap="3">
-                <Text size="1" color="gray">
-                  {selected.length} selected
-                </Text>
-                <Button
-                  size="1"
-                  variant="soft"
-                  disabled={busy}
-                  loading={importing}
-                  onClick={() => void importPdf()}
-                >
-                  <UploadIcon />
-                  Import PDF…
-                </Button>
-              </Flex>
-            </Flex>
-            {importError && (
-              <Text size="1" color="red">
-                {importError}
+              <Text size="1" color="gray">
+                {selected.length} selected
               </Text>
-            )}
+            </Flex>
             {noteFiles.length === 0 ? (
               <Text size="2" color="gray">
-                No notes available. Create a note or import a PDF first.
+                No notes available. Create a note or add a PDF to your vault first.
               </Text>
             ) : (
-              <ScrollArea type="auto" scrollbars="vertical" style={{ maxHeight: 280 }}>
+              <ScrollArea
+                type="auto"
+                scrollbars="vertical"
+                className="generate-quiz-source-scroll"
+                style={{ maxHeight: 170 }}
+              >
                 <Flex direction="column" gap="2" pr="2">
                   {noteFiles.map((path) => {
                     const checked = selected.includes(path);
@@ -245,7 +215,7 @@ export function GenerateQuizDialog({
                         asChild
                         align="start"
                         gap="3"
-                        p="2"
+                        p="1"
                         className={`generate-quiz-file ${checked ? 'selected' : ''}`}
                       >
                         <label>
@@ -290,7 +260,7 @@ export function GenerateQuizDialog({
             )}
           </Flex>
 
-          <Flex direction="column" gap="2">
+          <Flex direction="column" gap="2" className="generate-quiz-settings">
             <Flex justify="between" align="center">
               <Text size="2" weight="medium">
                 Questions
@@ -336,7 +306,7 @@ export function GenerateQuizDialog({
             </Text>
           </Flex>
 
-          <Flex gap="3" justify="end">
+          <Flex gap="3" justify="end" className="generate-quiz-actions">
             <Button variant="soft" color="gray" disabled={busy} onClick={onCancel}>
               Cancel
             </Button>

@@ -50,6 +50,16 @@ contextBridge.exposeInMainWorld('ai', {
   setApiKey: (apiKey, backend) => ipcRenderer.invoke('ai:setApiKey', apiKey, backend),
   ping: () => ipcRenderer.invoke('ai:ping'),
   chatCompletions: (payload) => ipcRenderer.invoke('ai:chatCompletions', payload),
+  chatStream: (payload) => ipcRenderer.invoke('ai:chatStream', payload),
+  chatCancel: (streamId) => ipcRenderer.invoke('ai:chatCancel', streamId),
+  onChatDelta: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('ai:chatDelta', listener);
+    return () => {
+      ipcRenderer.removeListener('ai:chatDelta', listener);
+    };
+  },
   activity: () => ipcRenderer.invoke('ai:activity'),
   trajectories: () => ipcRenderer.invoke('ai:trajectories'),
   recordActivity: (event) => ipcRenderer.invoke('ai:recordActivity', event),

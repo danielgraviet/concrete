@@ -14,7 +14,9 @@ export function askText(
 ): Promise<string | null> {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
-    overlay.className = 'mv-overlay mv-prompt-overlay';
+    overlay.className = document.querySelector('.mv-onboarding-overlay')
+      ? 'mv-overlay mv-prompt-overlay mv-onboarding-prompt-overlay'
+      : 'mv-overlay mv-prompt-overlay';
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-modal', 'true');
 

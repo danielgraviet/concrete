@@ -51,6 +51,16 @@ interface AiChatCompletionsRequest {
   };
 }
 
+interface AiChatStreamRequest extends AiChatCompletionsRequest {
+  /** Caller-chosen id; tags `onChatDelta` events and targets `chatCancel`. */
+  streamId: string;
+}
+
+interface AiChatDeltaEvent {
+  streamId: string;
+  text: string;
+}
+
 interface AiChatCompletionsResult {
   content: string;
   model: string;
@@ -145,6 +155,10 @@ interface Window {
     chatCompletions: (
       request: AiChatCompletionsRequest,
     ) => Promise<AiChatCompletionsResult>;
+    /** Streamed completion; text arrives through onChatDelta. Missing on older Electron builds. */
+    chatStream?: (request: AiChatStreamRequest) => Promise<AiChatCompletionsResult>;
+    chatCancel?: (streamId: string) => Promise<boolean>;
+    onChatDelta?: (callback: (event: AiChatDeltaEvent) => void) => () => void;
     activity: () => Promise<Array<Record<string, unknown>>>;
     trajectories: () => Promise<Array<{ file: string; records: Array<Record<string, unknown>>; location: string }>>;
     activityClear: () => Promise<boolean>;

@@ -22,7 +22,6 @@ const TelemetryView = lazy(() =>
 type Props = {
   store: SettingsStore;
   vaultRoot?: string | null;
-  onOpenVault?: () => void;
   onImportObsidian?: () => void;
   onReplayOnboarding?: () => void;
   providerOptions?: { id: string; label: string }[];
@@ -56,7 +55,6 @@ const SECTIONS: ReadonlyArray<readonly [SettingsSection, string]> = [
 export function SettingsPanel({
   store,
   vaultRoot,
-  onOpenVault,
   onImportObsidian,
   onReplayOnboarding,
   providerOptions = [
@@ -593,9 +591,8 @@ export function SettingsPanel({
 
       <Flex direction="column" gap="2" className={`mv-settings-group ${section === 'vault' ? 'active' : ''}`}>
         <Text size="2" weight="medium">Vault</Text>
-        <Text size="1" color="gray">Your notes stay in this local folder.</Text>
-        <Text size="1" color="gray">{vaultRoot ?? 'No vault selected'}</Text>
-        <Button type="button" variant="soft" onClick={onOpenVault} disabled={!onOpenVault}>Choose vault folder</Button>
+        <Text size="1" color="gray">Your Markdown files live in Documents/Concrete.</Text>
+        <Text size="1" color="gray">{vaultRoot ?? 'Documents/Concrete'}</Text>
         <Button
           type="button"
           variant="soft"
@@ -611,10 +608,10 @@ export function SettingsPanel({
           onClick={onReplayOnboarding}
           disabled={!onReplayOnboarding}
         >
-          Replay demo
+          Replay walkthrough
         </Button>
         <Text size="1" color="gray">
-          Walk through how Concrete compares to Notion and Obsidian.
+          Replay the required getting started walkthrough.
         </Text>
       </Flex>
 

@@ -12,7 +12,7 @@ type Props = {
 };
 
 /**
- * Full-screen overlay assistant (legacy). Prefer AiOrb for the editor UX.
+ * Full-screen overlay assistant (legacy). Prefer StudyChatPane for the editor UX.
  */
 export function AiPanel({ client, defaultContext = '', onClose }: Props) {
   const [prompt, setPrompt] = useState('');

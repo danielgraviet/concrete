@@ -70,6 +70,13 @@ export type WysiwygEditorHandle = {
   focus: () => void;
   getMarkdown: () => string;
   setMarkdown: (markdown: string) => void;
+  /**
+   * Insert markdown at the last caret position (restored on focus), or at the
+   * end of the note when the editor was never focused. Leaves the caret after it.
+   */
+  insertMarkdown: (markdown: string) => void;
+  /** Markdown of the current selection, or '' when nothing is selected. */
+  getSelectionMarkdown: () => string;
 };
 
 /** Default plugins matching the current App.tsx WYSIWYG setup. */
@@ -193,6 +200,15 @@ export const WysiwygEditor = forwardRef<WysiwygEditorHandle, WysiwygEditorProps>
       },
       setMarkdown: (value: string) =>
         editorRef.current?.setMarkdown(normalizeMathMarkdown(value)),
+      insertMarkdown: (value: string) => {
+        const editor = editorRef.current;
+        if (!editor) return;
+        const markdown = normalizePastedMathMarkdown(value);
+        // MDXEditor drops the selection when inserting into an unfocused
+        // editor, so restore focus (and the saved selection) first.
+        editor.focus(() => editor.insertMarkdown(markdown), { defaultSelection: 'rootEnd' });
+      },
+      getSelectionMarkdown: () => editorRef.current?.getSelectionMarkdown() ?? '',
     }));
 
     useLayoutEffect(() => {
