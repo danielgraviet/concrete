@@ -982,7 +982,11 @@ ipcMain.handle('ai:agentStatus', async (_event, payload) => {
   lastAgentProviderId = providerId;
   try {
     const agent = await loadAgentModule(providerId);
-    return await agent.getAgentStatus({ apiKey: configuredApiKey(providerId) });
+    // The Codex agent authenticates through the user's Codex CLI login. The
+    // optional Codex API key belongs to Tutor AI chat and must not affect it.
+    return await agent.getAgentStatus({
+      ...(providerId === 'codex' ? {} : { apiKey: configuredApiKey(providerId) }),
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return {
@@ -1027,7 +1031,8 @@ ipcMain.handle('ai:agentRun', async (event, payload) => {
     const result = await agent.runAgentTurn(
     {
       ...(payload ?? {}),
-      apiKey: configuredApiKey(providerId),
+      // Keep Tutor AI provider credentials separate from BYO agent auth.
+      apiKey: providerId === 'codex' ? undefined : configuredApiKey(providerId),
       concreteMcp: buildConcreteMcpConfig(),
     },
     (progress) => {

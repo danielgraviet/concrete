@@ -567,7 +567,7 @@ export function SettingsPanel({
           Agent
         </Text>
         <Text size="1" color="gray">
-          Bring-your-own agent edits notes on disk, using your own Codex or Claude Code login, or the API key saved under Tutor AI.
+          Bring-your-own agent edits notes on disk using your Codex or Claude Code CLI login. Tutor AI API keys are kept separate.
         </Text>
         <Select.Root
           value={settings.agentProviderId}

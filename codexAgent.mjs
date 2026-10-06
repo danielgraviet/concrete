@@ -22,8 +22,11 @@ function homebrewPathPrefix() {
 
 function codexEnv() {
   const envPath = process.env.PATH || '';
+  // API keys configured for Tutor AI chat are passed explicitly to chat
+  // requests. The BYO agent always uses the Codex CLI's own login/config.
+  const { CODEX_API_KEY: _ignoredApiKey, ...env } = process.env;
   return {
-    ...process.env,
+    ...env,
     PATH: `${homebrewPathPrefix()}:${envPath}`,
   };
 }
