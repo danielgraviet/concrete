@@ -48,6 +48,8 @@ export class AiClient {
     const text = await this.provider.complete({
       prompt: `${request.system}\n\n${transcript}`,
       operation: request.operation,
+      maxTokens: request.maxTokens,
+      reasoning: request.reasoning,
     });
     request.onDelta?.(text);
     return text;

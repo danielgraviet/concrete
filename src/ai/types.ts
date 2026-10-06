@@ -49,6 +49,8 @@ export type ChatRequest = {
   maxTokens?: number;
   /** Activity-log operation label. */
   operation?: string;
+  /** OpenRouter reasoning controls. Off for short structured replies. */
+  reasoning?: OpenRouterReasoningPrefs;
 };
 
 export type { GenerateQuizRequest, GenerateQuizFollowUpRequest, GradeQuizRequest, GradeReport, QuizDocument };

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box,
   Button,
@@ -60,7 +60,7 @@ function pageRangeError(input: string): string | null {
 
 /**
  * Pick source note(s) and a quiz title before calling the AI generator.
- * Defaults to the open note; allows multi-select.
+ * Defaults to the open note and starts auto composition immediately.
  */
 export function GenerateQuizDialog({
   files,
@@ -108,33 +108,91 @@ export function GenerateQuizDialog({
     return result;
   });
   const [difficulty, setDifficulty] = useState<QuizDifficulty>(defaultSettings.difficulty);
-  const [mode, setMode] = useState<'manual' | 'auto'>('manual');
-  const [analyzing, setAnalyzing] = useState(false);
+  const [mode, setMode] = useState<'manual' | 'auto'>('auto');
+  const [analyzing, setAnalyzing] = useState(() => initialSources.length > 0);
+  const [analysisPending, setAnalysisPending] = useState(false);
   const [analysisError, setAnalysisError] = useState('');
   const [autoAnalyzed, setAutoAnalyzed] = useState(false);
+  const [countsTouched, setCountsTouched] = useState(false);
+  const [analysisAttempt, setAnalysisAttempt] = useState(0);
   const [pageRanges, setPageRanges] = useState<Record<string, string>>({});
   const totalQuestions = counts.mcqCount + counts.clozeCount + counts.openCount + counts.codeCount;
   const rangeInvalid = selected.some((path) => isPdfFileName(path) && pageRangeError(pageRanges[path] ?? ''));
-  const canSubmit = !busy && !analyzing && selected.length > 0 && totalQuestions > 0 && !rangeInvalid && (mode !== 'auto' || autoAnalyzed);
+  const analyzeRef = useRef(onAnalyzeAuto);
+  analyzeRef.current = onAnalyzeAuto;
+  const selectionKey = selected.join('\n');
+  const rangeKey = selected
+    .filter(isPdfFileName)
+    .map((path) => `${path}\t${pageRanges[path] ?? ''}`)
+    .join('\n');
+  const [trackedSelection, setTrackedSelection] = useState(selectionKey);
+  const [settledRangeKey, setSettledRangeKey] = useState(rangeKey);
+  if (trackedSelection !== selectionKey) {
+    setTrackedSelection(selectionKey);
+    setSettledRangeKey(rangeKey);
+  }
+  const rangesSettling = settledRangeKey !== rangeKey;
+  const canSubmit =
+    !busy &&
+    !analyzing &&
+    !analysisPending &&
+    !rangesSettling &&
+    selected.length > 0 &&
+    totalQuestions > 0 &&
+    !rangeInvalid &&
+    (mode !== 'auto' || autoAnalyzed || countsTouched);
 
-  const analyze = async () => {
-    if (selected.length === 0 || rangeInvalid || busy || analyzing) return;
-    setAnalyzing(true);
-    setAnalysisError('');
-    try {
-      const detected = await onAnalyzeAuto(
-        selected,
-        Object.fromEntries(selected.filter(isPdfFileName).map((path) => [path, pageRanges[path] ?? ''])),
-      );
-      setCounts(detected);
-      setAutoAnalyzed(true);
-    } catch (error) {
-      setAnalysisError(error instanceof Error ? error.message : String(error));
-      setAutoAnalyzed(false);
-    } finally {
+  useEffect(() => {
+    if (!rangesSettling) return undefined;
+    const timer = window.setTimeout(() => setSettledRangeKey(rangeKey), 400);
+    return () => window.clearTimeout(timer);
+  }, [rangeKey, rangesSettling]);
+
+  useEffect(() => {
+    if (mode !== 'auto') {
       setAnalyzing(false);
+      setAnalysisPending(false);
+      return;
     }
-  };
+    if (selected.length === 0 || rangeInvalid || rangesSettling) {
+      setAnalyzing(false);
+      setAnalysisPending(rangesSettling && selected.length > 0 && !rangeInvalid);
+      if (selected.length === 0 || rangeInvalid) setAutoAnalyzed(false);
+      return;
+    }
+
+    let cancelled = false;
+    setAnalysisError('');
+    setAutoAnalyzed(false);
+    setCountsTouched(false);
+    setAnalysisPending(false);
+    setAnalyzing(true);
+    const ranges = Object.fromEntries(
+      selected.filter(isPdfFileName).map((path) => [path, pageRanges[path] ?? '']),
+    );
+    const timer = window.setTimeout(() => {
+      void analyzeRef
+        .current(selected, ranges)
+        .then((detected) => {
+          if (cancelled) return;
+          setCounts(detected);
+          setAutoAnalyzed(true);
+        })
+        .catch((error: unknown) => {
+          if (cancelled) return;
+          setAnalysisError(error instanceof Error ? error.message : String(error));
+          setAutoAnalyzed(false);
+        })
+        .finally(() => {
+          if (!cancelled) setAnalyzing(false);
+        });
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [mode, selectionKey, settledRangeKey, rangeInvalid, rangesSettling, analysisAttempt, selected, pageRanges]);
 
   const setCount = (key: keyof typeof counts, raw: number) => {
     const otherCount = Object.entries(counts).reduce(
@@ -142,6 +200,7 @@ export function GenerateQuizDialog({
       0,
     );
     const n = Number.isFinite(raw) ? Math.max(0, Math.min(50 - otherCount, Math.round(raw))) : 0;
+    setCountsTouched(true);
     setCounts((current) => ({ ...current, [key]: n }));
   };
 
@@ -151,7 +210,6 @@ export function GenerateQuizDialog({
         ? current.filter((p) => p !== path)
         : [...current, path];
       if (next.length > 0) {
-        setAutoAnalyzed(false);
         setTitle((prev) => {
           const prevDefault = defaultTitleFromSources(current).replace(/^Quiz\s+/i, '');
           if (!prev.trim() || prev.trim() === prevDefault) {
@@ -269,7 +327,6 @@ export function GenerateQuizDialog({
                                   placeholder="Pages, e.g. 1-20, 25 (blank = all)"
                                   aria-label={`Pages to use from ${noteTitle(path)}`}
                                   onChange={(e) => {
-                                    setAutoAnalyzed(false);
                                     setPageRanges((current) => ({ ...current, [path]: e.target.value }));
                                   }}
                                 />
@@ -299,7 +356,7 @@ export function GenerateQuizDialog({
                 onValueChange={(value) => {
                   setMode(value as 'manual' | 'auto');
                   setAnalysisError('');
-                  setAutoAnalyzed(false);
+                  if (value === 'manual') setAutoAnalyzed(false);
                 }}
               >
                 <SegmentedControl.Item value="manual">Manual</SegmentedControl.Item>
@@ -307,26 +364,23 @@ export function GenerateQuizDialog({
               </SegmentedControl.Root>
               {mode === 'auto' && (
                 <Flex direction="column" gap="2">
-                  <Text size="1" color="gray">
-                    Detect question types and counts from the selected files, then review or adjust them.
+                  <Text size="1" color={analysisError ? 'red' : autoAnalyzed && !analyzing && !analysisPending && !rangesSettling ? 'green' : 'gray'}>
+                    {analysisError
+                      ? analysisError
+                      : analyzing || analysisPending || rangesSettling
+                        ? 'Choosing question counts from the selected sources…'
+                        : autoAnalyzed
+                          ? 'Counts are ready. Change any of them below, then generate.'
+                          : 'Select a source to choose question counts.'}
                   </Text>
-                  <Button
-                    variant="soft"
-                    disabled={selected.length === 0 || rangeInvalid || busy || analyzing}
-                    loading={analyzing}
-                    onClick={() => void analyze()}
-                  >
-                    Analyze selected sources
-                  </Button>
-                  {autoAnalyzed && (
-                    <Text size="1" color="green">
-                      Counts detected. Review them below before generating.
-                    </Text>
-                  )}
                   {analysisError && (
-                    <Text size="1" color="red">
-                      {analysisError}
-                    </Text>
+                    <Button
+                      variant="soft"
+                      disabled={selected.length === 0 || rangeInvalid || busy || analyzing}
+                      onClick={() => setAnalysisAttempt((attempt) => attempt + 1)}
+                    >
+                      Try again
+                    </Button>
                   )}
                 </Flex>
               )}
@@ -357,7 +411,7 @@ export function GenerateQuizDialog({
                     min={0}
                     max={50}
                     value={String(counts[key])}
-                    disabled={busy || analyzing}
+                    disabled={busy || analyzing || analysisPending || rangesSettling}
                     onChange={(e) => setCount(key, Number(e.target.value))}
                   />
                 </label>
@@ -373,7 +427,9 @@ export function GenerateQuizDialog({
               <SegmentedControl.Item value="hard">Hard</SegmentedControl.Item>
             </SegmentedControl.Root>
             <Text size="1" color="gray">
-              Starts from your Settings defaults; changes here apply to this quiz only.
+              {mode === 'auto'
+                ? 'Counts come from the selected sources. Changes here apply to this quiz only.'
+                : 'Starts from your Settings defaults. Changes here apply to this quiz only.'}
             </Text>
           </Flex>
 

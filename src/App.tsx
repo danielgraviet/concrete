@@ -933,7 +933,10 @@ export default function App() {
         role: 'user',
         content: `Analyze the selected source material and estimate its quiz composition. Return JSON only.\n\n${chunks.join('\n\n-----\n\n')}`,
       }],
-      maxTokens: 300,
+      // Reasoning models otherwise spend a small budget thinking and return
+      // finish_reason=length with an empty completion.
+      maxTokens: 2048,
+      reasoning: { enabled: false, effort: 'none' },
       operation: 'quiz_composition_analysis',
     });
     return parseAutoQuizCounts(response);
