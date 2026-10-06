@@ -16,6 +16,7 @@ import { isQuizPath, quizFileTitle } from './paths';
 import { parsePageRange } from './pdfContext';
 import { isPdfFileName, noteTitle } from '../vault/fileTree';
 import type { QuizDifficulty, QuizGenerationSettings } from '../settings';
+import type { AutoQuizCounts } from './autoComposition';
 
 export type GenerateQuizDialogResult = {
   title: string;
@@ -24,6 +25,7 @@ export type GenerateQuizDialogResult = {
   pageRanges: Record<string, string>;
   /** Per-run generation settings (seeded from Settings, not saved back). */
   settings: QuizGenerationSettings;
+  mode: 'manual' | 'auto';
 };
 
 type Props = {
@@ -38,6 +40,7 @@ type Props = {
   busy?: boolean;
   onCancel: () => void;
   onConfirm: (result: GenerateQuizDialogResult) => void;
+  onAnalyzeAuto: (sources: string[], pageRanges: Record<string, string>) => Promise<AutoQuizCounts>;
 };
 
 function defaultTitleFromSources(paths: string[]): string {
@@ -68,6 +71,7 @@ export function GenerateQuizDialog({
   busy = false,
   onCancel,
   onConfirm,
+  onAnalyzeAuto,
 }: Props) {
   const noteFiles = useMemo(
     () => {
@@ -104,10 +108,33 @@ export function GenerateQuizDialog({
     return result;
   });
   const [difficulty, setDifficulty] = useState<QuizDifficulty>(defaultSettings.difficulty);
+  const [mode, setMode] = useState<'manual' | 'auto'>('manual');
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState('');
+  const [autoAnalyzed, setAutoAnalyzed] = useState(false);
   const [pageRanges, setPageRanges] = useState<Record<string, string>>({});
   const totalQuestions = counts.mcqCount + counts.clozeCount + counts.openCount + counts.codeCount;
   const rangeInvalid = selected.some((path) => isPdfFileName(path) && pageRangeError(pageRanges[path] ?? ''));
-  const canSubmit = !busy && selected.length > 0 && totalQuestions > 0 && !rangeInvalid;
+  const canSubmit = !busy && !analyzing && selected.length > 0 && totalQuestions > 0 && !rangeInvalid && (mode !== 'auto' || autoAnalyzed);
+
+  const analyze = async () => {
+    if (selected.length === 0 || rangeInvalid || busy || analyzing) return;
+    setAnalyzing(true);
+    setAnalysisError('');
+    try {
+      const detected = await onAnalyzeAuto(
+        selected,
+        Object.fromEntries(selected.filter(isPdfFileName).map((path) => [path, pageRanges[path] ?? ''])),
+      );
+      setCounts(detected);
+      setAutoAnalyzed(true);
+    } catch (error) {
+      setAnalysisError(error instanceof Error ? error.message : String(error));
+      setAutoAnalyzed(false);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
 
   const setCount = (key: keyof typeof counts, raw: number) => {
     const otherCount = Object.entries(counts).reduce(
@@ -124,6 +151,7 @@ export function GenerateQuizDialog({
         ? current.filter((p) => p !== path)
         : [...current, path];
       if (next.length > 0) {
+        setAutoAnalyzed(false);
         setTitle((prev) => {
           const prevDefault = defaultTitleFromSources(current).replace(/^Quiz\s+/i, '');
           if (!prev.trim() || prev.trim() === prevDefault) {
@@ -146,6 +174,7 @@ export function GenerateQuizDialog({
         selected.filter(isPdfFileName).map((path) => [path, pageRanges[path] ?? '']),
       ),
       settings: { ...defaultSettings, ...counts, difficulty },
+      mode,
     });
   };
 
@@ -221,7 +250,7 @@ export function GenerateQuizDialog({
                         <label>
                           <Checkbox
                             checked={checked}
-                            disabled={busy}
+                            disabled={busy || analyzing}
                             onCheckedChange={() => toggle(path)}
                           />
                           <Flex direction="column" gap="1" flexGrow="1">
@@ -236,12 +265,13 @@ export function GenerateQuizDialog({
                                 <TextField.Root
                                   size="1"
                                   value={pageRanges[path] ?? ''}
-                                  disabled={busy}
+                                  disabled={busy || analyzing}
                                   placeholder="Pages, e.g. 1-20, 25 (blank = all)"
                                   aria-label={`Pages to use from ${noteTitle(path)}`}
-                                  onChange={(e) =>
-                                    setPageRanges((current) => ({ ...current, [path]: e.target.value }))
-                                  }
+                                  onChange={(e) => {
+                                    setAutoAnalyzed(false);
+                                    setPageRanges((current) => ({ ...current, [path]: e.target.value }));
+                                  }}
                                 />
                                 {rangeError && (
                                   <Text size="1" color="red">
@@ -261,6 +291,46 @@ export function GenerateQuizDialog({
           </Flex>
 
           <Flex direction="column" gap="2" className="generate-quiz-settings">
+            <Flex direction="column" gap="2">
+              <Text size="2" weight="medium">Question counts</Text>
+              <SegmentedControl.Root
+                value={mode}
+                disabled={busy || analyzing}
+                onValueChange={(value) => {
+                  setMode(value as 'manual' | 'auto');
+                  setAnalysisError('');
+                  setAutoAnalyzed(false);
+                }}
+              >
+                <SegmentedControl.Item value="manual">Manual</SegmentedControl.Item>
+                <SegmentedControl.Item value="auto">Auto from source</SegmentedControl.Item>
+              </SegmentedControl.Root>
+              {mode === 'auto' && (
+                <Flex direction="column" gap="2">
+                  <Text size="1" color="gray">
+                    Detect question types and counts from the selected files, then review or adjust them.
+                  </Text>
+                  <Button
+                    variant="soft"
+                    disabled={selected.length === 0 || rangeInvalid || busy || analyzing}
+                    loading={analyzing}
+                    onClick={() => void analyze()}
+                  >
+                    Analyze selected sources
+                  </Button>
+                  {autoAnalyzed && (
+                    <Text size="1" color="green">
+                      Counts detected. Review them below before generating.
+                    </Text>
+                  )}
+                  {analysisError && (
+                    <Text size="1" color="red">
+                      {analysisError}
+                    </Text>
+                  )}
+                </Flex>
+              )}
+            </Flex>
             <Flex justify="between" align="center">
               <Text size="2" weight="medium">
                 Questions
@@ -287,7 +357,7 @@ export function GenerateQuizDialog({
                     min={0}
                     max={50}
                     value={String(counts[key])}
-                    disabled={busy}
+                    disabled={busy || analyzing}
                     onChange={(e) => setCount(key, Number(e.target.value))}
                   />
                 </label>
@@ -295,6 +365,7 @@ export function GenerateQuizDialog({
             </Flex>
             <SegmentedControl.Root
               value={difficulty}
+              disabled={busy || analyzing}
               onValueChange={(value) => setDifficulty(value as QuizDifficulty)}
             >
               <SegmentedControl.Item value="easy">Easy</SegmentedControl.Item>

@@ -147,6 +147,8 @@ export type GenerateQuizRequest = {
   /** All source note paths included in context. */
   sources?: string[];
   types?: QuestionType[];
+  /** Auto mode asks the model to preserve and adapt questions found in the source. */
+  autoComposition?: boolean;
   mcqCount?: number;
   clozeCount?: number;
   openCount?: number;
