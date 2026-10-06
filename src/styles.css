@@ -197,6 +197,32 @@
   --baseBg: transparent !important;
   --basePageBg: transparent !important;
 }
+/* Light writing surface: empty boxes stay white, and sit slightly left of the
+   dark-theme inset so they line up with list markers. */
+.theme-pack-concrete .wysiwyg [class*="listItemChecked"],
+.theme-pack-concrete .wysiwyg [class*="listItemUnchecked"]{
+  margin-inline-start: -16px !important;
+}
+.theme-pack-concrete .wysiwyg [class*="listItemUnchecked"]:before{
+  border: 1px solid #c4c4c4 !important;
+  background: #ffffff !important;
+}
+.theme-pack-concrete .wysiwyg [class*="listItemChecked"]:before{
+  border-color: #6e6e6e !important;
+  background: #6e6e6e !important;
+}
+.theme-pack-concrete .wysiwyg [class*="listItemChecked"]:after{
+  border-color: #ffffff !important;
+}
+.theme-pack-concrete .wysiwyg li input[type="checkbox"]{
+  border-color: #c4c4c4;
+  background: #ffffff;
+}
+.theme-pack-concrete .wysiwyg li input[type="checkbox"]:checked{
+  border-color: #6e6e6e;
+  background-color: #6e6e6e;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23ffffff' stroke-width='2' d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E");
+}
 .theme-pack-concrete ::selection{
   color: #111;
   background: #d4d4d4;
