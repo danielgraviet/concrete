@@ -137,6 +137,7 @@ export function buildQuizGenerationUserPrompt(input: {
   source?: string;
   sources?: string[];
   types?: string[];
+  autoComposition?: boolean;
   mcqCount?: number;
   clozeCount?: number;
   openCount?: number;
@@ -178,6 +179,10 @@ export function buildQuizGenerationUserPrompt(input: {
     'Choose topics from the source note(s) below. Prefer retrieval and application over trivia.',
     'Each question must make sense on its own, without the note, and every answer must be factually correct.',
   ];
+
+  if (input.autoComposition) {
+    parts.push('The composition was detected from the source. When it contains an existing exam or question set, preserve its questions and correct answers as closely as possible while converting them to this quiz format. Do not add questions unsupported by the source. For study notes without explicit questions, create suitable questions from the material.');
+  }
 
   if (hasCounts) {
     parts.push(

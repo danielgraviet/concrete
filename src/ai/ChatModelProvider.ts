@@ -169,6 +169,7 @@ export class ChatModelProvider implements AiProvider {
       source: request.source ?? request.sources?.[0],
       sources: request.sources,
       types: request.types,
+      autoComposition: request.autoComposition,
       mcqCount: request.mcqCount,
       clozeCount: request.clozeCount,
       openCount: request.openCount,

@@ -97,6 +97,7 @@ import {
 } from './quiz';
 import { QuizHistoryStore } from './quiz';
 import { buildPdfContext, cleanPdfPages, parsePageRange } from './quiz/pdfContext';
+import { AUTO_QUIZ_ANALYSIS_SYSTEM, parseAutoQuizCounts, type AutoQuizCounts } from './quiz/autoComposition';
 import { settingsStore } from './settings';
 import { getSandboxStatus } from './sandbox';
 import { verifyCodeQuestions } from './quiz/verifyCode';
@@ -915,6 +916,25 @@ export default function App() {
     return buildPdfContext(cleanPdfPages(pages), wanted, budget);
   };
 
+  const analyzeQuizSources = async (sourcePaths: string[], pageRanges: Record<string, string>): Promise<AutoQuizCounts> => {
+    const perSource = Math.floor(QUIZ_CONTEXT_CHARS / sourcePaths.length) - 200;
+    const chunks: string[] = [];
+    for (const path of sourcePaths) {
+      const body = await loadSourceText(path, pageRanges[path] ?? '', perSource);
+      chunks.push(`### File: ${path}\n\n${body.trim()}`);
+    }
+    const response = await aiClient.chat({
+      system: AUTO_QUIZ_ANALYSIS_SYSTEM,
+      messages: [{
+        role: 'user',
+        content: `Analyze the selected source material and estimate its quiz composition. Return JSON only.\n\n${chunks.join('\n\n-----\n\n')}`,
+      }],
+      maxTokens: 300,
+      operation: 'quiz_composition_analysis',
+    });
+    return parseAutoQuizCounts(response);
+  };
+
   /** Import a PDF into the folder the user is working in and show it in the tree. */
   const importPdf = async (): Promise<string | null> => {
     if (!root) throw new Error('Open a vault folder to import PDFs.');
@@ -984,6 +1004,7 @@ export default function App() {
         codeCount: quizSettings.codeCount + (sandboxReady ? 1 : 0),
         difficulty: quizSettings.difficulty,
         customRubric: quizSettings.customRubric.trim() || undefined,
+        autoComposition: result.mode === 'auto',
       });
       const verification = await verifyCodeQuestions(generated, sandboxProviderId);
       const doc = verification.doc;
@@ -2017,6 +2038,7 @@ export default function App() {
             busy={false}
             onCancel={() => setGenerateQuizOpen(false)}
             onConfirm={(result) => void confirmGenerateQuiz(result)}
+            onAnalyzeAuto={analyzeQuizSources}
           />
         </Suspense>
       )}
