@@ -120,6 +120,7 @@ function FolderBranch({
   onCancelRename: () => void;
   onDelete: (path: string, kind: TreeItemKind) => void;
 }) {
+  const skipFocusRestore = useRef(false);
   const isOpen = expanded.has(node.path);
   const isActive = activeFolder === node.path;
   const isRenaming = renaming?.kind === 'folder' && renaming.path === node.path;
@@ -196,9 +197,19 @@ function FolderBranch({
             </div>
           </div>
         </ContextMenu.Trigger>
-        <ContextMenu.Content size="1" variant="soft">
+        <ContextMenu.Content
+          size="1"
+          variant="soft"
+          onCloseAutoFocus={(event) => {
+            if (skipFocusRestore.current) {
+              event.preventDefault();
+              skipFocusRestore.current = false;
+            }
+          }}
+        >
           <ContextMenu.Item
             onSelect={() => {
+              skipFocusRestore.current = true;
               onSelectFolder(node.path);
               requestAnimationFrame(() => onStartRename(node.path, 'folder'));
             }}
@@ -266,6 +277,7 @@ function TreeNode({
   onCancelRename: () => void;
   onDelete: (path: string, kind: TreeItemKind) => void;
 }) {
+  const skipFocusRestore = useRef(false);
   if (node.type === 'folder') {
     return (
       <FolderBranch
@@ -337,9 +349,19 @@ function TreeNode({
           {badge ? <span className={`new-badge ${badge}`}>{BADGE_LABELS[badge]}</span> : null}
         </button>
       </ContextMenu.Trigger>
-      <ContextMenu.Content size="1" variant="soft">
+      <ContextMenu.Content
+        size="1"
+        variant="soft"
+        onCloseAutoFocus={(event) => {
+          if (skipFocusRestore.current) {
+            event.preventDefault();
+            skipFocusRestore.current = false;
+          }
+        }}
+      >
         <ContextMenu.Item
           onSelect={() => {
+            skipFocusRestore.current = true;
             onSelectFile(node.path);
             requestAnimationFrame(() => onStartRename(node.path, 'file'));
           }}

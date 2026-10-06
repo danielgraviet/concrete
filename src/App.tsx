@@ -1738,6 +1738,7 @@ export default function App() {
             reviewing={reviewing}
             onSelect={(path) => select(path, { preview: previewTab === path })}
             onPin={(path) => select(path)}
+            onRename={(path, name) => void renameTreeItem(path, 'file', name)}
             onClose={closeOpenTab}
             onResumeReview={() =>
               setReviewRun((current) => (current ? { ...current, paused: false } : current))
