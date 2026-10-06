@@ -8,6 +8,7 @@ import type {
 import {
   DEFAULT_SETTINGS,
   resolveAgentProviderId,
+  isBrandLogoId,
   resolveQuizSettings,
   resolveReviewSettings,
   resolveThemePack,
@@ -32,6 +33,7 @@ function readStorage(): AppSettings {
       ...DEFAULT_SETTINGS,
       ...parsed,
       themePack: resolveThemePack(parsed),
+      brandLogo: isBrandLogoId(parsed.brandLogo) ? parsed.brandLogo : DEFAULT_SETTINGS.brandLogo,
       autosaveMs:
         typeof parsed.autosaveMs === 'number' ? parsed.autosaveMs : DEFAULT_SETTINGS.autosaveMs,
       providerId:
@@ -84,6 +86,15 @@ export class SettingsStore {
     this.settings = {
       ...this.settings,
       themePack: isThemePackId(themePack) ? themePack : DEFAULT_SETTINGS.themePack,
+    };
+    this.persist();
+    return this.get();
+  }
+
+  setBrandLogo(brandLogo: string): AppSettings {
+    this.settings = {
+      ...this.settings,
+      brandLogo: isBrandLogoId(brandLogo) ? brandLogo : DEFAULT_SETTINGS.brandLogo,
     };
     this.persist();
     return this.get();

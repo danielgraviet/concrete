@@ -9,6 +9,8 @@ import type {
   ThemePackId,
 } from './types';
 import { THEME_PACKS } from './themePacks';
+import { BRAND_LOGOS } from './types';
+import { BrandLogo } from '../branding/BrandLogo';
 import { OPENROUTER_MODEL_OPTIONS } from '../ai/openRouterModels';
 import { CLAUDE_MODEL_OPTIONS } from '../ai/claudeModels';
 import { isChatBackendId, type ChatBackendId } from '../ai/ChatModelProvider';
@@ -193,6 +195,37 @@ export function SettingsPanel({
                 <span className="mv-theme-pack-meta">
                   <strong>{pack.label}</strong>
                   <small>{pack.description}</small>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <Text size="2" weight="medium" className="mv-branding-title">
+          Logo
+        </Text>
+        <Text size="1" color="gray">
+          Choose a mark to preview in the app’s primary rail. Your selection is saved locally.
+        </Text>
+        <div className="mv-brand-logo-options">
+          {BRAND_LOGOS.map((logo) => {
+            const selected = settings.brandLogo === logo.id;
+            return (
+              <button
+                key={logo.id}
+                type="button"
+                className={`mv-brand-logo-option${selected ? ' selected' : ''}`}
+                aria-pressed={selected}
+                onClick={() => store.setBrandLogo(logo.id)}
+              >
+                <span className="mv-brand-logo-sample">
+                  <BrandLogo logo={logo.id} />
+                </span>
+                <span className="mv-brand-logo-meta">
+                  <strong>{logo.label}</strong>
+                  <small>{logo.description}</small>
+                </span>
+                <span className="mv-brand-rail-preview" aria-hidden="true">
+                  <BrandLogo logo={logo.id} />
                 </span>
               </button>
             );

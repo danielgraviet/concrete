@@ -15,6 +15,18 @@ export type AgentProviderId = 'off' | 'codex' | 'claude';
 
 export type QuizDifficulty = 'easy' | 'medium' | 'hard';
 
+export const BRAND_LOGOS = [
+  { id: 'triple-c', label: 'Triple C', description: 'Compact geometric mark' },
+  { id: 'square-boxy', label: 'Square boxy', description: 'Stacked symbol with wordmark' },
+  { id: 'cinderblock', label: 'Cinderblock', description: 'Interlocking block mark with wordmark' },
+  { id: 'full-text-blocks', label: 'Full text blocks', description: 'Geometric Concrete wordmark' },
+] as const;
+export type BrandLogoId = (typeof BRAND_LOGOS)[number]['id'];
+
+export function isBrandLogoId(value: unknown): value is BrandLogoId {
+  return BRAND_LOGOS.some((logo) => logo.id === value);
+}
+
 export type QuizGenerationSettings = {
   mcqCount: number;
   clozeCount: number;
@@ -36,6 +48,7 @@ export type ReviewSettings = {
 
 export type AppSettings = {
   themePack: ThemePackId;
+  brandLogo: BrandLogoId;
   autosaveMs: number;
   /** Tutor/quiz model backend: openrouter | claude | codex | mock | local-echo. */
   providerId: string;
@@ -70,6 +83,7 @@ export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   themePack: DEFAULT_THEME_PACK,
+  brandLogo: 'triple-c',
   autosaveMs: 800,
   providerId: 'mock',
   openRouterModelId: 'deepseek/deepseek-v4-flash-0731',
