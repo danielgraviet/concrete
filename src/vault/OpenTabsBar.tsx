@@ -1,7 +1,9 @@
 import { Cross1Icon, ClipboardIcon, FileTextIcon, LayersIcon } from '@radix-ui/react-icons';
+import { ContextMenu } from '@radix-ui/themes';
 import { isPdfFileName } from './fileTree';
 import { PdfFileIcon } from './PdfFileIcon';
 import { isQuizPath } from '../quiz';
+import { askText } from './askText';
 
 const MAX_TAB_TITLE_CHARS = 32;
 
@@ -21,6 +23,7 @@ type Props = {
   reviewing: boolean;
   onSelect: (path: string) => void;
   onPin: (path: string) => void;
+  onRename: (path: string, name: string) => void | Promise<void>;
   onClose: (path: string) => void;
   onResumeReview: () => void;
   onEndReview: () => void;
@@ -36,6 +39,7 @@ export function OpenTabsBar({
   reviewing,
   onSelect,
   onPin,
+  onRename,
   onClose,
   onResumeReview,
   onEndReview,
@@ -70,39 +74,53 @@ export function OpenTabsBar({
         const active = !reviewing && path === selected;
         const dirty = dirtyPath === path;
         return (
-          <button
-            key={path}
-            type="button"
-            className={`tab ${active ? 'active' : ''} ${previewTab === path ? 'preview' : ''}`}
-            title={path}
-            aria-current={active ? 'page' : undefined}
-            onClick={() => onSelect(path)}
-            onDoubleClick={() => onPin(path)}
-          >
-            {isQuizPath(path) ? (
-              <ClipboardIcon width={14} height={14} />
-            ) : isPdfFileName(path) ? (
-              <PdfFileIcon />
-            ) : (
-              <FileTextIcon width={14} height={14} />
-            )}
-            <span className="tab-title">{tabTitleFor(path)}</span>
-            {dirty ? <span className="dirty">•</span> : null}
-            {tabs.length > 1 ? (
-              <span
-                role="button"
-                tabIndex={-1}
-                className="tab-close"
-                aria-label={`Close ${tabTitleFor(path)}`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onClose(path);
+          <ContextMenu.Root key={path}>
+            <ContextMenu.Trigger>
+              <button
+                type="button"
+                className={`tab ${active ? 'active' : ''} ${previewTab === path ? 'preview' : ''}`}
+                title={path}
+                aria-current={active ? 'page' : undefined}
+                onClick={() => onSelect(path)}
+                onDoubleClick={() => onPin(path)}
+              >
+                {isQuizPath(path) ? (
+                  <ClipboardIcon width={14} height={14} />
+                ) : isPdfFileName(path) ? (
+                  <PdfFileIcon />
+                ) : (
+                  <FileTextIcon width={14} height={14} />
+                )}
+                <span className="tab-title">{tabTitleFor(path)}</span>
+                {dirty ? <span className="dirty">•</span> : null}
+                {tabs.length > 1 ? (
+                  <span
+                    role="button"
+                    tabIndex={-1}
+                    className="tab-close"
+                    aria-label={`Close ${tabTitleFor(path)}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onClose(path);
+                    }}
+                  >
+                    <Cross1Icon width={10} height={10} />
+                  </span>
+                ) : null}
+              </button>
+            </ContextMenu.Trigger>
+            <ContextMenu.Content size="1" variant="soft">
+              <ContextMenu.Item
+                onSelect={async () => {
+                  const currentName = path.split('/').pop()?.replace(/\.(?:md|pdf)$/i, '') ?? path;
+                  const name = await askText('Rename file', currentName);
+                  if (name) await onRename(path, name);
                 }}
               >
-                <Cross1Icon width={10} height={10} />
-              </span>
-            ) : null}
-          </button>
+                Rename
+              </ContextMenu.Item>
+            </ContextMenu.Content>
+          </ContextMenu.Root>
         );
       })}
     </>
