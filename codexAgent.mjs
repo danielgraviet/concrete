@@ -432,7 +432,7 @@ export function cancelAgentTurn() {
  * }} request
  * @returns {Promise<{ content: string; model: string; usage: unknown }>}
  */
-export async function completeChat({ messages, apiKey }) {
+export async function completeChat({ messages, apiKey, onDelta, signal }) {
   const status = await getAgentStatus({ apiKey });
   if (!status.available || !status.authenticated) throw new Error(status.message);
 
@@ -461,7 +461,26 @@ export async function completeChat({ messages, apiKey }) {
     conversation,
   ].join('\n\n');
 
-  const turn = await thread.run(prompt);
-  if (!turn.finalResponse?.trim()) throw new Error('Codex returned an empty completion.');
-  return { content: turn.finalResponse, model: 'codex', usage: turn.usage };
+  if (!onDelta) {
+    const turn = await thread.run(prompt, { signal });
+    if (!turn.finalResponse?.trim()) throw new Error('Codex returned an empty completion.');
+    return { content: turn.finalResponse, model: 'codex', usage: turn.usage };
+  }
+
+  // Codex reports the full agent message text on each update; forward the new tail.
+  const { events } = await thread.runStreamed(prompt, { signal });
+  let content = '';
+  let usage = null;
+  for await (const event of events) {
+    if (event.type === 'error') throw new Error(`Codex request failed: ${event.message}`);
+    if (event.type === 'turn.failed') throw new Error(`Codex request failed: ${event.error.message}`);
+    if (event.type === 'turn.completed') usage = event.usage;
+    if ((event.type === 'item.updated' || event.type === 'item.completed') && event.item.type === 'agent_message') {
+      const text = event.item.text ?? '';
+      if (text.startsWith(content) && text.length > content.length) onDelta(text.slice(content.length));
+      content = text;
+    }
+  }
+  if (!content.trim()) throw new Error('Codex returned an empty completion.');
+  return { content, model: 'codex', usage };
 }

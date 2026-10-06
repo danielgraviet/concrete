@@ -1,4 +1,13 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import { Button, Flex, IconButton, Text } from '@radix-ui/themes';
 import {
   ChatBubbleIcon,
@@ -19,7 +28,9 @@ import {
   TrashIcon,
   UpdateIcon,
 } from '@radix-ui/react-icons';
-import { WysiwygEditor, useEditorController } from './editor';
+import { WysiwygEditor, useEditorController, type WysiwygEditorHandle } from './editor';
+import { normalizePastedMathMarkdown, preferOneLineDisplayMath } from './editor/math';
+import type { ChatInsertTarget } from './ai/chat/StudyChatPane';
 import {
   askText,
   canMkdir,
@@ -63,6 +74,7 @@ import {
   ReviewSidebar,
   ReviewView,
   useReviewSystem,
+  cardsFromNote,
   type CardEdit,
   type Deck,
   type ReviewCard,
@@ -100,8 +112,8 @@ const QUIZ_CONTEXT_CHARS = 12000;
 const GenerateQuizDialog = lazy(() =>
   import('./quiz/GenerateQuizDialog').then((m) => ({ default: m.GenerateQuizDialog })),
 );
-const AiOrb = lazy(() =>
-  import('./ai/AiOrb').then((m) => ({ default: m.AiOrb })),
+const StudyChatPane = lazy(() =>
+  import('./ai/chat/StudyChatPane').then((m) => ({ default: m.StudyChatPane })),
 );
 
 const demoNotes = [
@@ -129,6 +141,23 @@ type Overlay = 'settings' | null;
 
 const LAYOUT_KEY = 'mv:layout';
 const LAST_NOTE_KEY = 'mv:last-note';
+const STUDY_CHAT_KEY = 'mv:study-chat';
+const STUDY_CHAT_MIN_WIDTH = 320;
+const STUDY_CHAT_DEFAULT_WIDTH = 440;
+/** Keep at least this much room for the note beside the chat. */
+const STUDY_CHAT_EDITOR_MIN = 320;
+
+function loadStudyChatLayout(): { open: boolean; width: number } {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STUDY_CHAT_KEY) ?? '{}');
+    return {
+      open: parsed.open === true,
+      width: typeof parsed.width === 'number' ? parsed.width : STUDY_CHAT_DEFAULT_WIDTH,
+    };
+  } catch {
+    return { open: false, width: STUDY_CHAT_DEFAULT_WIDTH };
+  }
+}
 const NEW_QUIZZES_KEY = 'mv:new-quizzes';
 
 function readNewQuizzes(): string[] {
@@ -201,12 +230,10 @@ export default function App() {
   const persistSelectionRef = useRef(false);
   // Generated quizzes the user hasn't opened yet; badged "New" in the tree.
   const [newQuizPaths, setNewQuizPaths] = useState<string[]>(readNewQuizzes);
-  const [onboarding, setOnboarding] = useState(
-    () => typeof window !== 'undefined' && Boolean(window.vault) && !localStorage.getItem('mv:onboarding-complete'),
-  );
-  /** 'welcome' = vault picker; 'tour' = product advantages walkthrough */
-  const [onboardingMode, setOnboardingMode] = useState<'welcome' | 'tour'>('welcome');
+  const [onboarding, setOnboarding] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
+  const [seededReviewCards, setSeededReviewCards] = useState(false);
+  const [walkthroughNoteCreated, setWalkthroughNoteCreated] = useState(false);
   const [activeFolder, setActiveFolder] = useState('');
   const [treeFocus, setTreeFocus] = useState<{
     kind: TreeItemKind;
@@ -248,8 +275,13 @@ export default function App() {
   const findInputRef = useRef<HTMLInputElement>(null);
   const [rail, setRail] = useState<RailView>('files');
   const [overlay, setOverlay] = useState<Overlay>(null);
-  const [aiChatOpen, setAiChatOpen] = useState(false);
+  const [aiChatOpen, setAiChatOpen] = useState(() => loadStudyChatLayout().open);
+  const [chatWidth, setChatWidth] = useState(() => loadStudyChatLayout().width);
   const [aiSeedPrompt, setAiSeedPrompt] = useState<string | null>(null);
+  const [chatQuote, setChatQuote] = useState<string | null>(null);
+  const [chatFocusToken, setChatFocusToken] = useState(0);
+  const editorRef = useRef<WysiwygEditorHandle>(null);
+  const editorSplitRef = useRef<HTMLDivElement>(null);
   const [reviewRun, setReviewRun] = useState<{ id: number; session: ReviewSession; deck: Deck; paused: boolean } | null>(null);
   const [createCardsOpen, setCreateCardsOpen] = useState(false);
   const [layout, setLayout] = useState<LayoutState>(() => loadLayout());
@@ -280,6 +312,35 @@ export default function App() {
   const openAiChat = (seed?: string) => {
     if (seed?.trim()) setAiSeedPrompt(seed.trim());
     setAiChatOpen(true);
+    setChatFocusToken((n) => n + 1);
+  };
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STUDY_CHAT_KEY, JSON.stringify({ open: aiChatOpen, width: chatWidth }));
+    } catch {
+      // Storage unavailable — layout resets next launch.
+    }
+  }, [aiChatOpen, chatWidth]);
+
+  /** Drag the divider between note and chat. */
+  const startChatResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const split = editorSplitRef.current;
+    if (!split) return;
+    event.preventDefault();
+    const bounds = split.getBoundingClientRect();
+    const onMove = (move: PointerEvent) => {
+      const max = Math.max(STUDY_CHAT_MIN_WIDTH, bounds.width - STUDY_CHAT_EDITOR_MIN);
+      setChatWidth(Math.round(Math.min(max, Math.max(STUDY_CHAT_MIN_WIDTH, bounds.right - move.clientX))));
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      document.body.classList.remove('study-chat-resizing');
+    };
+    document.body.classList.add('study-chat-resizing');
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
   };
 
   const setSidebarOpen = (sidebarOpen: boolean) =>
@@ -288,6 +349,12 @@ export default function App() {
     setLayout((current) => ({ ...current, rightOpen, focusMode: false }));
   const toggleFocusMode = () =>
     setLayout((current) => ({ ...current, focusMode: !current.focusMode }));
+
+  useEffect(() => {
+    if (!onboarding || onboardingStep !== 1) return;
+    setRail('files');
+    setLayout((current) => ({ ...current, sidebarOpen: true, focusMode: false }));
+  }, [onboarding, onboardingStep]);
 
   useEffect(() => {
     localStorage.setItem(
@@ -313,6 +380,29 @@ export default function App() {
         toggleFocusMode();
         return;
       }
+      // ⌘J toggles Study Chat.
+      if (meta && !event.shiftKey && event.key.toLowerCase() === 'j') {
+        event.preventDefault();
+        setAiChatOpen((open) => {
+          if (!open) setChatFocusToken((n) => n + 1);
+          return !open;
+        });
+        return;
+      }
+      // ⌘L asks Study Chat about the selected note text.
+      if (meta && !event.shiftKey && event.key.toLowerCase() === 'l') {
+        const target = event.target as HTMLElement | null;
+        if (!target?.closest?.('.editor-wrap')) return;
+        event.preventDefault();
+        const selection =
+          editorRef.current?.getSelectionMarkdown().trim() ||
+          window.getSelection()?.toString().trim() ||
+          '';
+        if (selection) setChatQuote(selection);
+        setAiChatOpen(true);
+        setChatFocusToken((n) => n + 1);
+        return;
+      }
       if (event.key === 'Escape') {
         if (overlay === 'settings') {
           event.preventDefault();
@@ -331,8 +421,8 @@ export default function App() {
 
   const selectRail = (next: RailView) => {
     if (next === 'ai') {
-      openAiChat();
-      setRail('ai');
+      if (aiChatOpen) setAiChatOpen(false);
+      else openAiChat();
       return;
     }
     if (layout.focusMode) {
@@ -411,25 +501,62 @@ export default function App() {
     return () => setSlashAiHandler(null);
   }, []);
 
-  // Persist into Documents/Concrete so creates/edits survive restarts.
-  // Defer until after first paint so the shell can show immediately.
+  // First launch always creates and opens Documents/Concrete before the required tour.
+  // Returning users restore their existing vault as usual.
   useEffect(() => {
     if (vault.root) return;
     let cancelled = false;
+    const firstRun = !localStorage.getItem('mv:onboarding-complete');
     const restore = () => {
-      void (window.vault?.restore ? vault.restore() : Promise.resolve(null)).then((result) => {
+      const opening = firstRun
+        ? vault.openDefault()
+        : (window.vault?.restore ? vault.restore() : Promise.resolve(null));
+      void opening.then(async (result) => {
         if (cancelled || !result) {
           void window.perf?.mark('renderer-interactive');
           return;
         }
-        // A successfully restored vault means this user has already completed
-        // the vault-selection step; never show first-run onboarding again.
-        localStorage.setItem('mv:onboarding-complete', '1');
-        setOnboarding(false);
+        let seededPath = '';
+        if (firstRun) {
+          const notePaths = result.files.filter((file) => /\.md$/i.test(file) && !isHiddenVaultFile(file));
+          const noteBodies = await Promise.all(notePaths.map(async (path) => {
+            try {
+              return [path, await VaultService.read(result.root, path)] as const;
+            } catch {
+              return [path, ''] as const;
+            }
+          }));
+          const hasCards = noteBodies.some(([path, body]) => cardsFromNote(path, body).length > 0);
+          if (!hasCards && !cancelled) {
+            const occupied = new Set(result.files);
+            let sampleName = 'Concrete Basics';
+            for (let suffix = 2; occupied.has(`${sampleName}.md`); suffix += 1) {
+              sampleName = `Concrete Basics ${suffix}`;
+            }
+            try {
+              seededPath = await vault.create(sampleName);
+              await VaultService.write(
+                result.root,
+                seededPath,
+                '# Concrete Basics\n\nA few sample cards to try in Review. Edit or delete this note whenever you like.\n\nWhat kind of files does Concrete use? :: Plain Markdown files.\nWhere is the default vault? :: Documents/Concrete.\nHow do you link notes? :: Type [[Note title]].\n',
+              );
+              setSeededReviewCards(true);
+            } catch (error) {
+              console.warn('Could not add sample review cards', error);
+            }
+          }
+        }
+        if (cancelled) return;
+        if (firstRun) {
+          setOnboarding(true);
+        } else {
+          setOnboarding(false);
+        }
         setContents({});
         setActiveFolder('');
         const lastNote = readLastNote();
         const visibleFiles = result.files.filter((file) => !isHiddenVaultFile(file));
+        if (seededPath && !visibleFiles.includes(seededPath)) visibleFiles.push(seededPath);
         const preferred =
           (lastNote && visibleFiles.includes(lastNote) ? lastNote : '') ||
           (visibleFiles.find((file) => file === 'Welcome.md') ?? visibleFiles[0] ?? '');
@@ -636,24 +763,6 @@ export default function App() {
     return null;
   })();
 
-  const openVault = async () => {
-    let result;
-    try {
-      result = await vault.open();
-    } catch (error) {
-      window.alert(error instanceof Error ? error.message : 'Could not open that vault.');
-      return;
-    }
-    if (!result) return;
-    setContents({});
-    setActiveFolder('');
-    const first = result.files.find((file) => !isHiddenVaultFile(file)) ?? '';
-    setSelected(first);
-    setOpenTabs(first ? [first] : []);
-    setPreviewTab(null);
-    setOnboardingStep(1);
-  };
-
   const importObsidianVault = async () => {
     try {
       const result = root
@@ -713,6 +822,7 @@ export default function App() {
   const noteTargetFolder = activeFolder || parentDir(selected);
 
   const finishNewNote = (relative: string, body?: string) => {
+    if (onboarding && onboardingStep === 1) setWalkthroughNoteCreated(true);
     const title = relative.split('/').pop()?.replace(/\.md$/i, '') ?? 'Untitled';
     const content = body ?? `# ${title}\n\n`;
     setContents((prev) => ({ ...prev, [relative]: content }));
@@ -751,7 +861,8 @@ export default function App() {
     if (canUseDiskVault(root)) {
       try {
         const created = await vault.create(relative);
-        finishNewNote(created);
+        finishNewNote(created, onboarding && onboardingStep === 1 ? '' : undefined);
+        if (onboarding && onboardingStep === 1) setOnboardingStep(2);
         return;
       } catch (error) {
         console.error('Failed to create note on disk', error);
@@ -764,7 +875,8 @@ export default function App() {
       }
     }
 
-    createDemoNote(relative);
+    createDemoNote(relative, onboarding && onboardingStep === 1 ? '' : undefined);
+    if (onboarding && onboardingStep === 1) setOnboardingStep(2);
   };
 
   const importPdfFromSidebar = async () => {
@@ -831,6 +943,7 @@ export default function App() {
 
     // Close dialog immediately — generation continues in the background.
     setGenerateQuizOpen(false);
+    if (onboarding && onboardingStep === 4) setOnboardingStep(5);
     const jobId = ++quizJobRef.current;
     setQuizJob({ status: 'running', title: titled });
 
@@ -992,6 +1105,29 @@ export default function App() {
     review.store.rekey(result.migrations, cards);
     reviewRun?.session.rekey(result.migrations, cards);
     return null;
+  };
+
+  /** Study Chat → note: at the caret (live editor) or appended to the end. */
+  const insertFromChat = (markdown: string, target: ChatInsertTarget) => {
+    const path = selected;
+    const md = markdown.trim();
+    if (!path || !md) return;
+    const editor = editorRef.current;
+    // An empty note has no caret to restore, so it takes the append path.
+    if (target === 'cursor' && editor && controller.content.trim()) {
+      editor.insertMarkdown(md);
+      return;
+    }
+    const base = controller.content.replace(/\s+$/, '');
+    const addition = preferOneLineDisplayMath(normalizePastedMathMarkdown(md));
+    const next = base ? `${base}\n\n${addition}\n` : `${addition}\n`;
+    controller.setContent(next);
+    setContents((prev) => ({ ...prev, [path]: next }));
+    setEditorRevision((n) => n + 1);
+    requestAnimationFrame(() => {
+      const wrap = document.querySelector<HTMLElement>('.editor-wrap');
+      if (wrap) wrap.scrollTop = wrap.scrollHeight;
+    });
   };
 
   const insertCardBlocks = async (blocks: string[]) => {
@@ -1404,13 +1540,14 @@ export default function App() {
         </IconButton>
         <IconButton
           type="button"
-          className={rail === 'ai' || aiChatOpen ? 'rail-button active' : 'rail-button'}
+          className={aiChatOpen ? 'rail-button active' : 'rail-button'}
           size="2"
           variant="ghost"
           color="gray"
           highContrast
-          aria-label="Tutor"
-          aria-pressed={rail === 'ai' || aiChatOpen}
+          aria-label="Study chat (⌘J)"
+          title="Study chat (⌘J)"
+          aria-pressed={aiChatOpen}
           onClick={() => selectRail('ai')}
         >
           <ChatBubbleIcon width={18} height={18} />
@@ -1649,6 +1786,7 @@ export default function App() {
               <Button
                 size="1"
                 highContrast
+                data-tour="generate-quiz"
                 disabled={generatingQuiz}
                 loading={generatingQuiz}
                 onClick={createQuiz}
@@ -1659,6 +1797,7 @@ export default function App() {
             ) : null}
           </Flex>
         </div>
+        <div className="editor-split" ref={editorSplitRef}>
         <div className={`editor-wrap${isPdfFileName(selected) ? ' pdf-editor-wrap' : ''}`}>
           {findOpen ? (
             <div className="find-bar" role="search">
@@ -1741,6 +1880,7 @@ export default function App() {
             />
           ) : (
             <WysiwygEditor
+              ref={editorRef}
               className="wysiwyg"
               documentId={selected}
               contentRevision={editorRevision}
@@ -1753,34 +1893,53 @@ export default function App() {
             />
           )}
         </div>
-        <Suspense fallback={null}>
-          <AiOrb
-            client={aiClient}
-            noteContext={truncateNoteContext(controller.content)}
-            notePath={selected}
-            vaultRoot={root}
-            agentProviderId={agentProviderId}
-            open={aiChatOpen}
-            onOpenChange={setAiChatOpen}
-            seedPrompt={aiSeedPrompt}
-            onSeedConsumed={() => setAiSeedPrompt(null)}
-            onBeforeAgentRun={async () => {
-              if (controller.isDirty) await controller.persistence.flush();
-            }}
-            onAfterAgentRun={async () => {
-              if (!root || !selected) return;
-              try {
-                const text = await VaultService.read(root, selected);
-                setContents((prev) => ({ ...prev, [selected]: text }));
-                controller.loadContent(text);
-                controller.markSaved();
-                setEditorRevision((n) => n + 1);
-              } catch {
-                // Watcher may still pick up the change.
-              }
-            }}
-          />
-        </Suspense>
+        {aiChatOpen ? (
+          <>
+            <div
+              className="study-chat-resizer"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize chat"
+              onPointerDown={startChatResize}
+              onDoubleClick={() => setChatWidth(STUDY_CHAT_DEFAULT_WIDTH)}
+            />
+            <div className="study-chat-column" style={{ width: chatWidth }}>
+              <Suspense fallback={null}>
+                <StudyChatPane
+                  client={aiClient}
+                  notePath={selected}
+                  noteContent={isPdfFileName(selected) ? '' : controller.content}
+                  vaultRoot={root}
+                  agentProviderId={agentProviderId}
+                  canInsert={Boolean(selected) && !isQuizPath(selected) && !isPdfFileName(selected) && !reviewing}
+                  onInsert={insertFromChat}
+                  onClose={() => setAiChatOpen(false)}
+                  seedPrompt={aiSeedPrompt}
+                  onSeedConsumed={() => setAiSeedPrompt(null)}
+                  pendingQuote={chatQuote}
+                  onQuoteConsumed={() => setChatQuote(null)}
+                  focusToken={chatFocusToken}
+                  onBeforeAgentRun={async () => {
+                    if (controller.isDirty) await controller.persistence.flush();
+                  }}
+                  onAfterAgentRun={async () => {
+                    if (!root || !selected) return;
+                    try {
+                      const text = await VaultService.read(root, selected);
+                      setContents((prev) => ({ ...prev, [selected]: text }));
+                      controller.loadContent(text);
+                      controller.markSaved();
+                      setEditorRevision((n) => n + 1);
+                    } catch {
+                      // Watcher may still pick up the change.
+                    }
+                  }}
+                />
+              </Suspense>
+            </div>
+          </>
+        ) : null}
+        </div>
         <footer className="statusbar">
           <span>{controller.content.length} characters</span>
           <span>•</span>
@@ -1847,7 +2006,6 @@ export default function App() {
           <GenerateQuizDialog
             files={files}
             pdfFiles={pdfFiles}
-            onImportPdf={importPdf}
             defaultSourcePath={selected}
             folderHint={
               selected && !isQuizPath(selected)
@@ -1961,86 +2119,50 @@ export default function App() {
 
       {onboarding && (
         <div
-          className="mv-overlay"
+          className={`mv-overlay mv-onboarding-overlay ${
+            onboardingStep === 2 ||
+            onboardingStep === 1 ||
+            (onboardingStep === 3 && aiChatOpen) ||
+            onboardingStep === 4 ||
+            onboardingStep === 5
+              ? 'mv-onboarding-interactive'
+              : ''
+          }`}
           role="dialog"
           aria-modal="true"
-          aria-label={onboardingMode === 'tour' ? 'Why Concrete' : 'Welcome to Concrete'}
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget && onboardingMode === 'tour') {
-              localStorage.setItem('mv:onboarding-complete', '1');
-              setOnboarding(false);
-            }
+          aria-label="Concrete getting started walkthrough"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') event.preventDefault();
           }}
         >
-          <div
-            className="mv-settings-panel-shell"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="mv-settings-panel">
-              {onboardingMode === 'welcome' ? (
-                <>
-                  <h2>Welcome to Concrete</h2>
-                  <p>
-                    Choose where your local Markdown vault should live. Concrete will remember it
-                    and open it automatically next time.
-                  </p>
-                  <Flex direction="column" gap="2" mt="3">
-                    <Button
-                      type="button"
-                      onClick={() => {
-                        void openVault().then(() => {
-                          localStorage.setItem('mv:onboarding-complete', '1');
-                          setOnboarding(false);
-                        });
-                      }}
-                    >
-                      Choose a vault folder
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="soft"
-                      onClick={() => {
-                        void importObsidianVault().then(() => {
-                          localStorage.setItem('mv:onboarding-complete', '1');
-                          setOnboarding(false);
-                        });
-                      }}
-                    >
-                      Import Obsidian Vault
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="soft"
-                      color="gray"
-                      onClick={() => {
-                        setOnboardingMode('tour');
-                        setOnboardingStep(0);
-                      }}
-                    >
-                      Explore demo
-                    </Button>
-                  </Flex>
-                </>
-              ) : (
-                <ProductTour
-                  stepIndex={onboardingStep}
-                  onStepIndexChange={setOnboardingStep}
-                  onClose={() => {
-                    localStorage.setItem('mv:onboarding-complete', '1');
-                    setOnboarding(false);
-                    setOnboardingMode('welcome');
-                    setOnboardingStep(0);
-                  }}
-                  onFinished={() => {
-                    localStorage.setItem('mv:onboarding-complete', '1');
-                    setOnboarding(false);
-                    setOnboardingMode('welcome');
-                    setOnboardingStep(0);
-                  }}
-                />
-              )}
-            </div>
-          </div>
+          <ProductTour
+            stepIndex={onboardingStep}
+            canAdvance={walkthroughNoteCreated}
+            onStepIndexChange={(nextStep) => {
+              if (onboardingStep === 3 && nextStep === 4) setAiChatOpen(false);
+              if (onboardingStep === 5 && nextStep === 6) {
+                setRail('files');
+                setLayout((current) => ({ ...current, sidebarOpen: true, focusMode: false }));
+              }
+              setOnboardingStep(nextStep);
+            }}
+            excludeWelcome={selected.toLowerCase().split('/').pop() === 'welcome.md'}
+            seededReviewCards={seededReviewCards}
+            targetOverride={
+              onboardingStep === 3 && aiChatOpen
+                ? '.study-chat-column'
+                : onboardingStep === 4 && generateQuizOpen
+                  ? '.generate-quiz-panel'
+                  : onboardingStep === 5 && rail === 'review' && layout.sidebarOpen
+                    ? '.srs-sidebar'
+                    : undefined
+            }
+            onFinished={() => {
+              localStorage.setItem('mv:onboarding-complete', '1');
+              setOnboarding(false);
+              setOnboardingStep(0);
+            }}
+          />
         </div>
       )}
 
@@ -2049,12 +2171,11 @@ export default function App() {
           <SettingsPanel
             store={settingsStore}
             vaultRoot={root}
-            onOpenVault={() => { void openVault().then(() => setOverlay(null)); }}
             onImportObsidian={() => { void importObsidianVault().then(() => setOverlay(null)); }}
             onReplayOnboarding={() => {
               setOverlay(null);
-              setOnboardingMode('tour');
               setOnboardingStep(0);
+              setWalkthroughNoteCreated(false);
               setOnboarding(true);
             }}
             onClose={() => setOverlay(null)}

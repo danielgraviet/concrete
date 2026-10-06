@@ -1119,21 +1119,50 @@ ipcMain.handle('ai:ping', async () => {
   };
 });
 
-async function openRouterChat(body) {
+function openRouterHeaders(apiKey) {
+  return {
+    Authorization: `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+    'HTTP-Referer': 'https://github.com/danielgraviet/concrete',
+    'X-Title': 'Concrete',
+  };
+}
+
+function requireOpenRouterKey() {
   const apiKey = configuredApiKey('openrouter');
   if (!apiKey) {
     throw new Error(
       'OPENROUTER_API_KEY is missing. Add it to the project .env and restart Electron.',
     );
   }
+  return apiKey;
+}
+
+function openRouterHttpError(status, data) {
+  const message =
+    data?.error?.message ||
+    data?.message ||
+    `OpenRouter HTTP ${status}`;
+  const lower = String(message).toLowerCase();
+  if (
+    status === 401 ||
+    lower.includes('user not found') ||
+    lower.includes('invalid api key') ||
+    lower.includes('unauthorized')
+  ) {
+    return new Error(
+      `OpenRouter auth failed (${status}): ${message}. ` +
+        'Check OPENROUTER_API_KEY in .env — create a fresh key at openrouter.ai/keys, save .env, then fully restart Electron.',
+    );
+  }
+  return new Error(`OpenRouter error (${status}): ${message}`);
+}
+
+async function openRouterChat(body) {
+  const apiKey = requireOpenRouterKey();
   const response = await fetch(OPENROUTER_URL, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://github.com/danielgraviet/concrete',
-      'X-Title': 'Concrete',
-    },
+    headers: openRouterHeaders(apiKey),
     body: JSON.stringify(body),
   });
 
@@ -1147,25 +1176,7 @@ async function openRouterChat(body) {
     );
   }
 
-  if (!response.ok) {
-    const message =
-      data?.error?.message ||
-      data?.message ||
-      `OpenRouter HTTP ${response.status}`;
-    const lower = String(message).toLowerCase();
-    if (
-      response.status === 401 ||
-      lower.includes('user not found') ||
-      lower.includes('invalid api key') ||
-      lower.includes('unauthorized')
-    ) {
-      throw new Error(
-        `OpenRouter auth failed (${response.status}): ${message}. ` +
-          'Check OPENROUTER_API_KEY in .env — create a fresh key at openrouter.ai/keys, save .env, then fully restart Electron.',
-      );
-    }
-    throw new Error(`OpenRouter error (${response.status}): ${message}`);
-  }
+  if (!response.ok) throw openRouterHttpError(response.status, data);
 
   const rawContent = data?.choices?.[0]?.message?.content;
   // OpenRouter normally returns a string, but some providers return content
@@ -1193,28 +1204,87 @@ async function openRouterChat(body) {
   };
 }
 
+/** Streamed OpenRouter completion (SSE). Calls onDelta with each text chunk. */
+async function openRouterChatStream(body, onDelta, signal) {
+  const apiKey = requireOpenRouterKey();
+  const response = await fetch(OPENROUTER_URL, {
+    method: 'POST',
+    headers: openRouterHeaders(apiKey),
+    body: JSON.stringify({ ...body, stream: true }),
+    signal,
+  });
+  if (!response.ok || !response.body) {
+    const rawText = await response.text();
+    let data = null;
+    try { data = JSON.parse(rawText); } catch {}
+    throw openRouterHttpError(response.status, data ?? { message: rawText.slice(0, 240) });
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let content = '';
+  let model = body.model;
+  let usage = null;
+  let finishReason = null;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let newline;
+    while ((newline = buffer.indexOf('\n')) !== -1) {
+      const line = buffer.slice(0, newline).trim();
+      buffer = buffer.slice(newline + 1);
+      // Skip SSE comments such as ": OPENROUTER PROCESSING".
+      if (!line.startsWith('data:')) continue;
+      const payload = line.slice(5).trim();
+      if (payload === '[DONE]') continue;
+      let chunk;
+      try { chunk = JSON.parse(payload); } catch { continue; }
+      if (chunk.error) throw new Error(`OpenRouter error: ${chunk.error.message || 'stream failed'}`);
+      const choice = chunk.choices?.[0];
+      const delta = choice?.delta?.content;
+      if (typeof delta === 'string' && delta) {
+        content += delta;
+        onDelta(delta);
+      }
+      if (chunk.model) model = chunk.model;
+      if (chunk.usage) usage = chunk.usage;
+      if (choice?.finish_reason) finishReason = choice.finish_reason;
+    }
+  }
+  if (!content.trim()) {
+    throw new Error(`OpenRouter returned an empty completion (finish_reason=${finishReason ?? 'unknown'}).`);
+  }
+  return { content, model, usage, finishReason, nativeFinishReason: null };
+}
+
 /** One chat completion on the chosen backend: OpenRouter, Claude Code, or Codex. */
-async function completeChat(backend, { model, messages, temperature, max_tokens, provider, reasoning }) {
+async function completeChat(backend, { model, messages, temperature, max_tokens, provider, reasoning, onDelta, signal }) {
   const id = resolveChatBackend(backend);
   if (id === 'openrouter') {
-    return openRouterChat({
+    const body = {
       model: typeof model === 'string' && model ? model : DEFAULT_OPENROUTER_MODEL,
       messages,
       temperature: typeof temperature === 'number' ? temperature : 0.5,
       max_tokens: typeof max_tokens === 'number' ? max_tokens : 4096,
       ...(provider && typeof provider === 'object' ? { provider } : {}),
       ...(reasoning && typeof reasoning === 'object' ? { reasoning } : {}),
-    });
+    };
+    return onDelta ? openRouterChatStream(body, onDelta, signal) : openRouterChat(body);
   }
   const agent = await loadAgentModule(id);
   return agent.completeChat({
     messages,
     model: typeof model === 'string' && model ? model : undefined,
     apiKey: configuredApiKey(id),
+    onDelta,
+    signal,
   });
 }
 
-ipcMain.handle('ai:chatCompletions', async (_, payload = {}) => {
+/** Runs one logged chat completion. Pass onDelta to stream text chunks as they arrive. */
+async function runChatCompletion(payload = {}, { onDelta, signal } = {}) {
   loadDotEnv();
   const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const startedAt = Date.now();
@@ -1248,6 +1318,8 @@ ipcMain.handle('ai:chatCompletions', async (_, payload = {}) => {
       max_tokens: payload.max_tokens,
       provider: payload.provider,
       reasoning: payload.reasoning,
+      onDelta,
+      signal,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -1298,6 +1370,37 @@ ipcMain.handle('ai:chatCompletions', async (_, payload = {}) => {
     usage: result.usage ?? null,
     requestId,
   };
+}
+
+ipcMain.handle('ai:chatCompletions', async (_, payload = {}) => runChatCompletion(payload));
+
+// Streamed chat (Study Chat). Text chunks go to the requesting window as
+// `ai:chatDelta` events tagged with the caller's streamId.
+const chatStreams = new Map();
+
+ipcMain.handle('ai:chatStream', async (event, payload = {}) => {
+  const streamId = typeof payload.streamId === 'string' ? payload.streamId : '';
+  if (!streamId) throw new Error('chatStream requires a streamId');
+  const controller = new AbortController();
+  chatStreams.set(streamId, controller);
+  const sender = event.sender;
+  try {
+    return await runChatCompletion(payload, {
+      signal: controller.signal,
+      onDelta: (text) => {
+        if (!sender.isDestroyed()) sender.send('ai:chatDelta', { streamId, text });
+      },
+    });
+  } finally {
+    chatStreams.delete(streamId);
+  }
+});
+
+ipcMain.handle('ai:chatCancel', async (_, streamId) => {
+  const controller = chatStreams.get(streamId);
+  if (!controller) return false;
+  controller.abort();
+  return true;
 });
 
 ipcMain.handle('ai:activity', () => readAiActivity());

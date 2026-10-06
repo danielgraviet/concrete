@@ -1,5 +1,6 @@
 import type {
   AiProvider,
+  ChatRequest,
   CompleteRequest,
   GenerateQuizRequest,
   GenerateQuizFollowUpRequest,
@@ -125,6 +126,36 @@ export class ChatModelProvider implements AiProvider {
       ...(request.reasoning ? { reasoning: request.reasoning } : {}),
     });
     return result.content;
+  }
+
+  async chat(request: ChatRequest): Promise<string> {
+    const ai = requireAiBridge();
+    const payload: AiChatCompletionsRequest = {
+      backend: this.id,
+      model: this.model,
+      messages: [{ role: 'system', content: request.system }, ...request.messages],
+      temperature: 0.4,
+      max_tokens: request.maxTokens ?? 4096,
+      operation: request.operation ?? 'study_chat',
+      capture: 'full',
+    };
+    const onDelta = request.onDelta;
+    if (!onDelta || !ai.chatStream || !ai.onChatDelta) {
+      return (await ai.chatCompletions(payload)).content;
+    }
+
+    const streamId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const stop = ai.onChatDelta((event) => {
+      if (event.streamId === streamId) onDelta(event.text);
+    });
+    const cancel = () => void ai.chatCancel?.(streamId);
+    request.signal?.addEventListener('abort', cancel, { once: true });
+    try {
+      return (await ai.chatStream({ ...payload, streamId })).content;
+    } finally {
+      stop();
+      request.signal?.removeEventListener('abort', cancel);
+    }
   }
 
   async generateQuiz(request: GenerateQuizRequest): Promise<QuizDocument> {

@@ -1,99 +1,237 @@
-import { Button, Flex, Heading, Text } from '@radix-ui/themes';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { CheckIcon, ChevronLeftIcon, ChevronRightIcon } from '@radix-ui/react-icons';
+import { Flex, Heading, IconButton, Text } from '@radix-ui/themes';
 
 export type ProductTourStep = {
   title: string;
-  body: string;
-  versus?: string;
+  body: string[];
+  target: string;
 };
 
 export const PRODUCT_TOUR_STEPS: ProductTourStep[] = [
   {
-    title: 'Your notes, your disk',
-    body:
-      'Concrete stores plain Markdown files in a folder you choose. No account, no export ritual, no proprietary database.',
-    versus: 'Notion keeps your thinking in their cloud. Concrete keeps it on your machine.',
+    title: 'Your vault is ready',
+    body: [
+      'Your vault is set to Documents/Concrete.',
+      'Notes are plain Markdown files stored on your Mac.',
+      'Browse your notes and folders in the file tree.',
+    ],
+    target: '.sidebar .file-tree',
   },
   {
-    title: 'Works with the rest of your stack',
-    body:
-      'Open the same vault in git, ripgrep, Cursor, or any editor. Folders are folders. Links are [[wikilinks]]. Files stay portable.',
-    versus: 'Obsidian is powerful, but heavy plugin setups get fragile. Concrete stays a fast, opinionated shell around real files.',
+    title: 'Make a note',
+    body: [
+      'Click the highlighted plus button.',
+      'Name your first note and Concrete will open it in the editor.',
+    ],
+    target: '.sidebar-heading-actions button[aria-label^="New note"]',
   },
   {
-    title: 'Write without the dashboard noise',
-    body:
-      'A quiet editor, tabs, and a file tree — built for focus. Themes (Concrete, Martian, Daytona) change the feel without turning the app into a config hobby.',
-    versus: 'Notion pages become nested workspaces. Concrete stays a notes app.',
+    title: 'Write your first note',
+    body: [
+      'Type /h1, then your note title.',
+      'Type /quote, then a sentence.',
+      'Type /mathblock, then an equation such as E = mc^2.',
+    ],
+    target: '.editor-wrap',
   },
   {
-    title: 'Learn from what you already wrote',
-    body:
-      'Generate quizzes grounded in your notes, then take them in-app. Tutor mode explains concepts from the open note instead of generic chat.',
-    versus: 'Neither Notion nor Obsidian ships a tight quiz loop tied to local Markdown by default.',
+    title: 'Study with your notes',
+    body: [
+      'Open Study Chat to ask questions about the note you just wrote.',
+      'The chat can use your open note as context while you work.',
+    ],
+    target: '.rail button[aria-label^="Study chat"]',
   },
   {
-    title: 'An agent that can actually help',
-    body:
-      'Bring your own Codex agent to edit vault notes, switch themes, generate quizzes, and export PDFs — with live progress in the AI orb.',
-    versus: 'Cloud assistants can summarize. Concrete’s agent can change the files in front of you.',
+    title: 'Create a quiz from your notes',
+    body: [
+      'Choose Generate quiz above the note to start a quiz from your writing.',
+      'Pick one or more notes, choose question types, and Concrete builds a quiz grounded in those sources.',
+      'Your quiz is saved in the vault, and your results are tracked in Concrete.',
+    ],
+    target: '[data-tour="generate-quiz"]',
   },
   {
-    title: 'Ready when you are',
-    body:
-      'Pick a vault folder (or keep using Documents/Concrete), write locally, and build knowledge you can take anywhere.',
-    versus: 'Less lock-in than Notion. Less ceremony than a maximal Obsidian vault.',
+    title: 'Build a review habit',
+    body: [
+      'Review opens your flashcard queue.',
+      'Create cards from a note to practice what you have learned.',
+    ],
+    target: '.rail button[aria-label^="Review"]',
+  },
+  {
+    title: 'You’re ready to begin',
+    body: [
+      'Your notes stay in Documents/Concrete as portable Markdown files.',
+      'Create another note and use [[wikilinks]] to connect related ideas.',
+    ],
+    target: '.sidebar-heading-actions button[aria-label^="New note"]',
   },
 ];
 
 type Props = {
   stepIndex: number;
   onStepIndexChange: (index: number) => void;
-  onClose: () => void;
+  canAdvance: boolean;
+  excludeWelcome: boolean;
+  seededReviewCards: boolean;
+  targetOverride?: string;
   onFinished: () => void;
 };
 
 /**
- * Lightweight product tour — Concrete advantages vs Notion / Obsidian.
+ * Required first-run walkthrough of Concrete's core actions.
  */
 export function ProductTour({
   stepIndex,
   onStepIndexChange,
-  onClose,
+  canAdvance,
+  excludeWelcome,
+  seededReviewCards,
+  targetOverride,
   onFinished,
 }: Props) {
   const clamped = Math.max(0, Math.min(stepIndex, PRODUCT_TOUR_STEPS.length - 1));
   const step = PRODUCT_TOUR_STEPS[clamped];
-  const isFirst = clamped === 0;
+  const body = clamped === 5 && seededReviewCards
+    ? [
+        'Review opens your flashcard queue.',
+        'We added three sample cards so the queue is ready to try. Edit or delete them in Concrete Basics.',
+      ]
+    : step.body;
+  const targetSelector = targetOverride ?? step.target;
   const isLast = clamped === PRODUCT_TOUR_STEPS.length - 1;
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [layout, setLayout] = useState({ left: 16, top: 16 });
+  const [writeExerciseChecks, setWriteExerciseChecks] = useState([false, false, false]);
+  const writeExerciseComplete = writeExerciseChecks.every(Boolean);
 
-  return (
-    <div className="mv-product-tour" role="document">
-      <Flex align="center" justify="between" mb="3">
+  useEffect(() => {
+    if (clamped !== 2) return;
+    const editor = document.querySelector<HTMLElement>('.editor-wrap');
+    if (!editor) return;
+    const readChecks = () => {
+      if (excludeWelcome) {
+        setWriteExerciseChecks([false, false, false]);
+        return;
+      }
+      const hasMathBlock = [...editor.querySelectorAll<HTMLElement>('.mv-math-block')].some((block) => {
+        const editing = block.querySelector<HTMLTextAreaElement>('.mv-math-input.block');
+        const value = editing?.value.trim() ?? block.querySelector('.mv-math-render')?.textContent?.trim() ?? '';
+        return Boolean(value) && value !== 'formula' && value !== '…';
+      });
+      setWriteExerciseChecks([
+        Boolean(editor.querySelector('h1')),
+        Boolean(editor.querySelector('blockquote')),
+        hasMathBlock,
+      ]);
+    };
+    readChecks();
+    const observer = new MutationObserver(readChecks);
+    observer.observe(editor, { childList: true, subtree: true, characterData: true });
+    editor.addEventListener('input', readChecks, true);
+    return () => {
+      observer.disconnect();
+      editor.removeEventListener('input', readChecks, true);
+    };
+  }, [clamped, excludeWelcome]);
+
+  useLayoutEffect(() => {
+    const card = cardRef.current;
+    if (!card) return;
+    let target: HTMLElement | null = null;
+    const measure = () => {
+      if (!target) return;
+      const rect = target.getBoundingClientRect();
+      const cardRect = card.getBoundingClientRect();
+      const width = Math.min(390, window.innerWidth - 32);
+      let left: number;
+      let top: number;
+      if (clamped === 0) {
+        left = (window.innerWidth - width) / 2;
+        top = (window.innerHeight - cardRect.height) / 2;
+      } else if (targetSelector === '.editor-wrap') {
+        left = window.innerWidth - width - 24;
+        top = 18;
+      } else if (targetSelector === '.generate-quiz-panel') {
+        left = rect.right + 24;
+        top = rect.top;
+      } else if (rect.left + rect.width / 2 < window.innerWidth / 2) {
+        left = rect.right + 28;
+        top = Math.max(16, rect.top + (targetSelector.includes('file-tree') ? 54 : -8));
+      } else {
+        left = rect.left - width - 28;
+        top = Math.max(16, rect.top - 8);
+      }
+      left = Math.max(16, Math.min(left, window.innerWidth - width - 16));
+      top = Math.max(16, Math.min(top, window.innerHeight - cardRect.height - 16));
+      setLayout({ left, top });
+    };
+    const syncTarget = () => {
+      const found = document.querySelector<HTMLElement>(targetSelector);
+      if (!found || found === target) return;
+      target?.classList.remove('mv-tour-target-active');
+      target = found;
+      if (clamped > 0) target.classList.add('mv-tour-target-active');
+      measure();
+    };
+    syncTarget();
+    const observer = new MutationObserver(syncTarget);
+    observer.observe(document.body, { childList: true, subtree: true });
+    window.addEventListener('resize', measure);
+    window.addEventListener('scroll', measure, true);
+    return () => {
+      observer.disconnect();
+      target?.classList.remove('mv-tour-target-active');
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('scroll', measure, true);
+    };
+  }, [targetSelector, clamped]);
+
+  return createPortal((
+    <>
+      <div
+        ref={cardRef}
+        className="mv-product-tour mv-onboarding-card"
+        role="document"
+        data-tour-target={targetSelector}
+        style={{ left: layout.left, top: layout.top }}
+      >
+      <Flex align="center" justify="between" className="mv-tour-step-count">
         <Text size="1" color="gray" weight="medium">
-          Why Concrete · {clamped + 1}/{PRODUCT_TOUR_STEPS.length}
+          Getting started · {clamped + 1}/{PRODUCT_TOUR_STEPS.length}
         </Text>
-        <Button type="button" variant="ghost" color="gray" size="1" onClick={onClose}>
-          Skip
-        </Button>
       </Flex>
 
-      <Heading size="5" mb="2">
+      <Heading size="5" className="mv-tour-step-title">
         {step.title}
       </Heading>
-      <Text as="p" size="2" mb="3">
-        {step.body}
-      </Text>
-      {step.versus ? (
-        <div className="mv-product-tour-versus">
-          <Text size="1" weight="medium">
-            vs Notion & Obsidian
-          </Text>
-          <Text as="p" size="2" color="gray" mt="1">
-            {step.versus}
-          </Text>
-        </div>
+      {clamped === 2 ? (
+        <ul className="mv-tour-instructions mv-tour-checklist">
+          {body.map((item, index) => {
+            const checked = writeExerciseChecks[index] ?? false;
+            return (
+              <li key={item} className={checked ? 'checked' : ''}>
+                <span className="mv-tour-checkbox" role="checkbox" aria-checked={checked} aria-label={item}>
+                  {checked ? <CheckIcon width={12} height={12} /> : null}
+                </span>
+                <span>{item}</span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <ul className="mv-tour-instructions">
+          {body.map((item) => <li key={item}>{item}</li>)}
+        </ul>
+      )}
+      {clamped === 2 && !writeExerciseComplete ? (
+        <Text as="p" size="1" color="gray" className="mv-tour-hint">
+          Finish the heading, quote, and equation to continue.
+        </Text>
       ) : null}
-
       <div className="mv-product-tour-dots" aria-hidden>
         {PRODUCT_TOUR_STEPS.map((_, index) => (
           <span
@@ -103,26 +241,48 @@ export function ProductTour({
         ))}
       </div>
 
-      <Flex gap="2" mt="4" justify="end">
-        <Button
+      <Flex align="center" justify="end" gap="3" className="mv-tour-actions">
+        <IconButton
           type="button"
           variant="soft"
           color="gray"
-          disabled={isFirst}
+          size="4"
+          className="mv-tour-nav-button"
+          aria-label="Back"
+          title="Back"
+          disabled={clamped === 0}
           onClick={() => onStepIndexChange(clamped - 1)}
         >
-          Back
-        </Button>
+          <ChevronLeftIcon width={18} height={18} />
+        </IconButton>
         {isLast ? (
-          <Button type="button" onClick={onFinished}>
-            Start writing
-          </Button>
+          <IconButton
+            type="button"
+            variant="solid"
+            size="4"
+            className="mv-tour-nav-button"
+            aria-label="Finish walkthrough"
+            title="Finish walkthrough"
+            onClick={onFinished}
+          >
+            <CheckIcon width={22} height={22} />
+          </IconButton>
         ) : (
-          <Button type="button" onClick={() => onStepIndexChange(clamped + 1)}>
-            Next
-          </Button>
+          <IconButton
+            type="button"
+            variant="solid"
+            size="4"
+            className="mv-tour-nav-button"
+            aria-label="Next"
+            title="Next"
+            disabled={(clamped === 1 && !canAdvance) || (clamped === 2 && !writeExerciseComplete)}
+            onClick={() => onStepIndexChange(clamped + 1)}
+          >
+            <ChevronRightIcon width={18} height={18} />
+          </IconButton>
         )}
       </Flex>
-    </div>
-  );
+      </div>
+    </>
+  ), document.querySelector('.radix-themes') ?? document.body);
 }

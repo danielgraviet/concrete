@@ -29,3 +29,7 @@ release/
 
 # Generated perf artifacts
 docs/bundle-stats.html
+
+# Video recording scripts (local only)
+docs/demo-video-script.md
+docs/install-video-script.md

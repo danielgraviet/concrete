@@ -34,12 +34,31 @@ export type CompleteRequest = {
   reasoning?: OpenRouterReasoningPrefs;
 };
 
+/** One turn of a multi-turn chat (Study Chat). */
+export type ChatTurn = {
+  role: 'user' | 'assistant';
+  content: string;
+};
+
+export type ChatRequest = {
+  system: string;
+  messages: ChatTurn[];
+  /** Receives text chunks as they stream in. The resolved string is authoritative. */
+  onDelta?: (text: string) => void;
+  signal?: AbortSignal;
+  maxTokens?: number;
+  /** Activity-log operation label. */
+  operation?: string;
+};
+
 export type { GenerateQuizRequest, GenerateQuizFollowUpRequest, GradeQuizRequest, GradeReport, QuizDocument };
 
 export interface AiProvider {
   readonly id: string;
   readonly label: string;
   complete(request: CompleteRequest): Promise<string>;
+  /** Optional multi-turn, streamable chat. AiClient falls back to complete(). */
+  chat?(request: ChatRequest): Promise<string>;
   embed?(text: string): Promise<number[]>;
   /** Optional structured quiz generation (stubbed until live keys). */
   generateQuiz?(request: GenerateQuizRequest): Promise<QuizDocument>;
