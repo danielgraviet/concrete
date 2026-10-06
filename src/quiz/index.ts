@@ -25,6 +25,7 @@ export type {
 export {
   isQuizFileName,
   isQuizPath,
+  nextQuizTitle,
   quizDisplayTitle,
   quizFileTitle,
 } from './paths';

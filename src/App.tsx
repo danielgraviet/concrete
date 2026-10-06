@@ -89,6 +89,7 @@ import {
 } from './ai';
 import {
   isQuizPath,
+  nextQuizTitle,
   quizDocumentToMarkdown,
   QuizShell,
   type GenerateQuizDialogResult,
@@ -214,6 +215,12 @@ function resolveAiProvider(settings: AppSettings) {
     default:
       return new MockAiProvider();
   }
+}
+
+function isAlreadyExistsError(error: unknown): boolean {
+  const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
+  const message = error instanceof Error ? error.message : String(error);
+  return code === 'EEXIST' || /EEXIST|already exists/i.test(message);
 }
 
 export default function App() {
@@ -962,10 +969,11 @@ export default function App() {
       return;
     }
 
-    const titled = result.title;
     const primary = sourcePaths[0];
     const saveFolder = parentDir(primary) || activeFolder;
-    const relative = joinNotePath(saveFolder, titled);
+    const takenPaths = [...vault.files];
+    let titled = nextQuizTitle(result.title, saveFolder, takenPaths);
+    let relative = joinNotePath(saveFolder, titled);
     if (!relative) return;
 
     // Close dialog immediately — generation continues in the background.
@@ -1024,21 +1032,36 @@ export default function App() {
         used[question.type] += 1;
         return true;
       });
-      doc.title = titled;
       doc.source = primary;
       if (quizSettings.customRubric.trim()) {
         doc.rubric = quizSettings.customRubric.trim();
       }
-      const body = quizDocumentToMarkdown(doc, titled);
 
       let createdPath = relative;
       if (canUseDiskVault(root)) {
-        const created = await vault.create(relative);
+        let created = '';
+        let body = '';
+        for (let attempt = 0; attempt < 50; attempt += 1) {
+          doc.title = titled;
+          body = quizDocumentToMarkdown(doc, titled);
+          try {
+            created = await vault.create(relative);
+            break;
+          } catch (error) {
+            if (!isAlreadyExistsError(error) || attempt === 49) throw error;
+            takenPaths.push(relative);
+            titled = nextQuizTitle(result.title, saveFolder, takenPaths);
+            relative = joinNotePath(saveFolder, titled);
+            if (!relative) throw error;
+          }
+        }
         await vault.write(created, body);
         createdPath = created;
         setContents((prev) => ({ ...prev, [created]: body }));
         // Don't steal focus mid-edit — toast lets the user open it.
       } else {
+        doc.title = titled;
+        const body = quizDocumentToMarkdown(doc, titled);
         vault.setFiles((current) =>
           current.includes(relative)
             ? current

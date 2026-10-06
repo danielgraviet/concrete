@@ -40,7 +40,7 @@ export function QuizTakeView({ markdown, documentPath, client, onEdit, historySt
   if (phase === 'graded' && report) {
     return (
       <>
-        <QuizGradeView report={report} quiz={quiz} responses={responses} client={client} onRetake={retake} onEdit={onEdit} />
+        <QuizGradeView report={report} quiz={quiz} responses={responses} sessionSeed={sessionSeed} client={client} onRetake={retake} onEdit={onEdit} />
         <div className="quiz-grade-attempts">
           <QuizAttempts store={history} quizPath={documentPath} currentId={sessionSeed} />
         </div>
