@@ -330,6 +330,24 @@
 .theme-pack-concrete .quiz-grade-score{ color: #333; }
 .theme-pack-concrete .quiz-grade-score small{ color: #6b6b6b; }
 .theme-pack-concrete .quiz-grade-list p{ color: #333; }
+.theme-pack-concrete .generate-quiz-file{
+  border: 1px solid var(--mv-border);
+  border-radius: 8px;
+  background: #fff;
+  color: #111;
+}
+.theme-pack-concrete .generate-quiz-file .rt-Text{
+  color: #111;
+}
+.theme-pack-concrete .generate-quiz-file .rt-Text[data-accent-color],
+.theme-pack-concrete .generate-quiz-file .rt-Text:where(.rt-r-color-gray){
+  color: #6b6b6b;
+}
+.theme-pack-concrete .generate-quiz-file.selected{
+  background: #ececec;
+  border-color: #cfcfcf;
+  color: #111;
+}
 .theme-pack-concrete .generate-quiz-submit{
   background: #333;
   color: #fff;
