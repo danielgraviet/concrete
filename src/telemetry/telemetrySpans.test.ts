@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import * as spans from '../../telemetrySpans.cjs';
+import * as spans from '../../electron/telemetrySpans.cjs';
 
 describe('normalizeUsage', () => {
   it('reads OpenRouter usage with cost, cache, and reasoning', () => {

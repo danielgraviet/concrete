@@ -5,7 +5,7 @@
   "author": "Daniel Graviet",
   "license": "MIT",
   "type": "module",
-  "main": "electron.cjs",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "tsc && vite build",
@@ -80,23 +80,14 @@
     },
     "files": [
       "dist/**",
-      "electron.cjs",
-      "agentTrajectory.cjs",
-      "pdfText.cjs",
-      "telemetrySpans.cjs",
-      "preload.cjs",
-      "sandbox/**",
-      "codexAgent.mjs",
-      "claudeAgent.mjs",
-      "concreteBridge.mjs",
-      "concreteMcp.mjs",
-      "concreteToolCli.mjs",
+      "electron/**",
+      "!electron/**/*.test.ts",
       "package.json",
       "!node_modules/@anthropic-ai/claude-agent-sdk-*/**"
     ],
     "asarUnpack": [
-      "concreteMcp.mjs",
-      "concreteToolCli.mjs",
+      "electron/bridge/concreteMcp.mjs",
+      "electron/bridge/concreteToolCli.mjs",
       "node_modules/@modelcontextprotocol/sdk/**",
       "node_modules/zod/**",
       "node_modules/marked/**"

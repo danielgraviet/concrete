@@ -1,4 +1,4 @@
-/** Mirrors the records written by telemetrySpans.cjs in the main process. */
+/** Mirrors the records written by electron/telemetrySpans.cjs in the main process. */
 export type SpanTokens = {
   /** All input tokens, cache reads and writes included. */
   prompt: number;

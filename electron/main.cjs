@@ -9,6 +9,9 @@ const { createTrajectory } = require('./agentTrajectory.cjs');
 const { extractPdfPages } = require('./pdfText.cjs');
 const telemetrySpans = require('./telemetrySpans.cjs');
 
+/** Project / app root (this file lives in electron/). */
+const APP_ROOT = path.join(__dirname, '..');
+
 /** Cap Chromium disk cache (~50MB) before app ready. */
 app.commandLine.appendSwitch('disk-cache-size', String(50 * 1024 * 1024));
 
@@ -204,7 +207,7 @@ function loadDotEnv() {
   if (dotEnvLoaded) return;
   dotEnvLoaded = true;
   try {
-    const envPath = path.join(__dirname, '.env');
+    const envPath = path.join(APP_ROOT, '.env');
     if (!fsSync.existsSync(envPath)) {
       console.warn('[ai] .env not found at', envPath);
       return;
@@ -257,7 +260,7 @@ const DEFAULT_OPENROUTER_MODEL = 'deepseek/deepseek-v4-flash-0731';
 async function ensureConcreteBridge() {
   if (concreteBridgeInfo) return concreteBridgeInfo;
   const bridge = await import(
-    pathToFileURL(path.join(__dirname, 'concreteBridge.mjs')).href
+    pathToFileURL(path.join(__dirname, 'bridge', 'concreteBridge.mjs')).href
   );
   concreteBridgeInfo = await bridge.startConcreteBridge({
     getMainWindow: () => mainWindow,
@@ -281,7 +284,7 @@ async function ensureConcreteBridge() {
 
 function buildConcreteMcpConfig() {
   if (!concreteBridgeInfo) return null;
-  const mcpPath = path.join(__dirname, 'concreteMcp.mjs');
+  const mcpPath = path.join(__dirname, 'bridge', 'concreteMcp.mjs');
   const unpacked = mcpPath.includes(`${path.sep}app.asar${path.sep}`)
     ? mcpPath.replace(
         `${path.sep}app.asar${path.sep}`,
@@ -322,7 +325,7 @@ function buildConcreteMcpConfig() {
     CONCRETE_BRIDGE_FILE: bridgeFile,
   };
 
-  const cliPathRaw = path.join(__dirname, 'concreteToolCli.mjs');
+  const cliPathRaw = path.join(__dirname, 'bridge', 'concreteToolCli.mjs');
   const cliPath = cliPathRaw.includes(`${path.sep}app.asar${path.sep}`)
     ? cliPathRaw.replace(
         `${path.sep}app.asar${path.sep}`,
@@ -392,7 +395,7 @@ function createWindow() {
   });
 
   if (app.isPackaged) {
-    mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'));
+    mainWindow.loadFile(path.join(APP_ROOT, 'dist', 'index.html'));
   } else {
     mainWindow.loadURL('http://localhost:5173');
   }
@@ -959,8 +962,8 @@ ipcMain.handle('sandbox:run', async (event, payload = {}) => {
 });
 
 const AGENT_MODULES = {
-  codex: 'codexAgent.mjs',
-  claude: 'claudeAgent.mjs',
+  codex: 'agents/codexAgent.mjs',
+  claude: 'agents/claudeAgent.mjs',
 };
 
 /** Provider id of the agent module last used for run/status, so cancel targets the right one. */

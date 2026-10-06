@@ -2,12 +2,15 @@ export type {
   Appearance,
   AgentProviderId,
   AppSettings,
+  BrandLogoId,
   QuizDifficulty,
   QuizGenerationSettings,
   ThemePackId,
 } from './types';
 export {
   DEFAULT_SETTINGS,
+  BRAND_LOGOS,
+  isBrandLogoId,
   DEFAULT_QUIZ_SETTINGS,
   isAppearance,
   isAgentProviderId,

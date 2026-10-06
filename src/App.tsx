@@ -99,6 +99,7 @@ import { QuizHistoryStore } from './quiz';
 import { buildPdfContext, cleanPdfPages, parsePageRange } from './quiz/pdfContext';
 import { AUTO_QUIZ_ANALYSIS_SYSTEM, parseAutoQuizCounts, type AutoQuizCounts } from './quiz/autoComposition';
 import { settingsStore } from './settings';
+import { BrandLogo } from './branding/BrandLogo';
 import { getSandboxStatus } from './sandbox';
 import { verifyCodeQuestions } from './quiz/verifyCode';
 import type { AgentProviderId, AppSettings } from './settings';
@@ -308,6 +309,7 @@ export default function App() {
   const [agentProviderId, setAgentProviderId] = useState<AgentProviderId>(
     () => settingsStore.get().agentProviderId,
   );
+  const [brandLogo, setBrandLogo] = useState(() => settingsStore.get().brandLogo);
   const [editorRevision, setEditorRevision] = useState(0);
 
   const openAiChat = (seed?: string) => {
@@ -450,9 +452,11 @@ export default function App() {
   useEffect(() => {
     const settings = settingsStore.hydrate();
     setAgentProviderId(settings.agentProviderId);
+    setBrandLogo(settings.brandLogo);
     aiClient.setProvider(resolveAiProvider(settings));
     const unsub = settingsStore.subscribe((next) => {
       setAgentProviderId(next.agentProviderId);
+      setBrandLogo(next.brandLogo);
       aiClient.setProvider(resolveAiProvider(next));
     });
 
@@ -1504,6 +1508,9 @@ export default function App() {
   return (
     <div className={shellClass}>
       <aside className="rail" aria-label="Primary">
+        <div className="brand-rail-mark" title="Concrete">
+          <BrandLogo logo={brandLogo} />
+        </div>
         <IconButton
           type="button"
           className={

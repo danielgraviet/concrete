@@ -646,7 +646,7 @@
 
 @font-face{
   font-family:'EK Modena Mono';
-  src:url('../EKModenaMono-Regular.otf') format('opentype');
+  src:url('./assets/fonts/EKModenaMono-Regular.otf') format('opentype');
   font-weight:400;
   font-style:normal;
   font-display:swap;
@@ -957,6 +957,9 @@ body{
   background:var(--mv-surface);
   border-right-color:var(--mv-border);
 }
+.brand-rail-mark{width:32px;height:36px;flex:0 0 36px;display:grid;place-items:center;margin:0 0 1px}
+.brand-logo{display:block;width:100%;height:100%;object-fit:contain}
+.theme-pack-daytona .brand-logo{filter:brightness(0) invert(1)}
 /* Fixed rail hit-targets — active/hover must not change button metrics. */
 .rail .rail-button.rt-IconButton,
 .rail .rt-IconButton.rail-button{
@@ -1153,6 +1156,18 @@ body{
 }
 .mv-theme-pack-meta strong{font-size:13px;font-weight:600}
 .mv-theme-pack-meta small{color:var(--mv-muted);font-size:11px}
+.mv-branding-title{margin-top:12px}
+.mv-brand-logo-options{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:2px}
+.mv-brand-logo-option{position:relative;min-width:0;min-height:148px;display:flex;flex-direction:column;align-items:stretch;gap:8px;padding:10px;border:1px solid var(--mv-border);border-radius:8px;background:var(--mv-surface-2);color:var(--mv-text);text-align:left;cursor:pointer;font:inherit}
+.mv-brand-logo-option:hover{border-color:var(--mv-accent)}
+.mv-brand-logo-option.selected{border-color:var(--mv-accent);box-shadow:inset 0 0 0 1px var(--mv-accent)}
+.mv-brand-logo-sample{height:82px;display:grid;place-items:center;border-radius:5px;background:var(--mv-bg);padding:7px}
+.mv-brand-logo-sample .brand-logo{width:100%;height:100%}
+.mv-brand-logo-meta{display:flex;flex-direction:column;gap:2px;padding-right:30px}
+.mv-brand-logo-meta strong{font-size:12px;font-weight:600}
+.mv-brand-logo-meta small{font-size:10px;color:var(--mv-muted);line-height:1.35}
+.mv-brand-rail-preview{position:absolute;right:10px;bottom:12px;width:27px;height:30px;display:grid;place-items:center;padding:3px;border:1px solid var(--mv-border);border-radius:4px;background:var(--mv-surface)}
+.theme-pack-daytona .mv-brand-rail-preview .brand-logo{filter:brightness(0) invert(1)}
 
 .sidebar-heading-actions{display:flex;gap:2px}
 .sidebar-heading-minimal{

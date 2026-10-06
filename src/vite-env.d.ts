@@ -1,3 +1,8 @@
+declare module '*.svg?url' {
+  const url: string;
+  export default url;
+}
+
 type VaultWatchType = 'add' | 'change' | 'unlink' | 'addDir' | 'unlinkDir';
 
 interface VaultWatchEvent {
