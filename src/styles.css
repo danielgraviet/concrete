@@ -1075,6 +1075,7 @@ body{
   outline:2px solid var(--mv-accent, #888);
   outline-offset:1px;
 }
+.rail .rail-button.rt-IconButton:disabled{opacity:.35;cursor:default}
 .rail-button{color:var(--mv-muted)}
 .rail-button.active,.rail-button:hover{
   color:var(--mv-text);
@@ -2531,6 +2532,27 @@ div[class*="selectContainer"] [class*="selectItem"][data-state="checked"]{
 .study-chat-launcher:hover{border-color:var(--mv-accent,#6e6e6e)}
 .study-chat-launcher.active{box-shadow:0 0 0 2px var(--mv-accent,#6e6e6e),0 8px 22px color-mix(in srgb,#000 16%,transparent)}
 .study-chat-launcher .brand-logo{width:100%;height:100%;pointer-events:none}
+.editor-wrap:has(.quiz-from-note) .wysiwyg,
+.editor-wrap:has(.quiz-from-note) .wysiwyg .mdxeditor,
+.editor-wrap:has(.quiz-from-note) .wysiwyg .mdxeditor-root-contenteditable{min-height:0}
+.editor-wrap:has(.quiz-from-note) .wysiwyg .mdxeditor-root-contenteditable{padding-bottom:28px}
+.quiz-from-note{
+  display:block;
+  max-width:760px;
+  margin:28px auto 0;
+  padding:0;
+  border:0;
+  background:transparent;
+  color:var(--mv-muted,#6b6b6b);
+  font:inherit;
+  font-size:15px;
+  line-height:1.4;
+  text-align:left;
+  text-decoration:underline;
+  text-underline-offset:3px;
+  cursor:pointer;
+}
+.quiz-from-note:hover{color:var(--mv-text,#111)}
 .study-chat-resizer{
   flex:0 0 6px;
   margin-left:-3px;

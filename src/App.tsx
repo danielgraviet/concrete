@@ -95,6 +95,7 @@ import {
   ProgressPanel,
   quizGradingJobs,
 } from './quiz';
+import { notePathKey, QuizFromNotePrompt, quizSourceFromMarkdown } from './quiz/QuizFromNotePrompt';
 import { QuizHistoryStore } from './quiz';
 import { buildPdfContext, cleanPdfPages, parsePageRange } from './quiz/pdfContext';
 import { AUTO_QUIZ_ANALYSIS_SYSTEM, parseAutoQuizCounts, type AutoQuizCounts } from './quiz/autoComposition';
@@ -312,6 +313,8 @@ export default function App() {
     return status;
   }, [gradingJobs]);
   const quizJobRef = useRef(0);
+  const [quizzedSources, setQuizzedSources] = useState<ReadonlySet<string>>(() => new Set());
+  const [quizSourceScan, setQuizSourceScan] = useState(0);
   const [agentProviderId, setAgentProviderId] = useState<AgentProviderId>(
     () => settingsStore.get().agentProviderId,
   );
@@ -450,6 +453,32 @@ export default function App() {
   const root = vault.root;
   const files = vault.files;
   const pdfFiles = vault.pdfFiles;
+
+  useEffect(() => {
+    let cancelled = false;
+    const quizPaths = files.filter((path) => isQuizPath(path));
+    void (async () => {
+      const sources = new Set<string>();
+      await Promise.all(
+        quizPaths.map(async (path) => {
+          try {
+            const cached = noteCacheRef.current.get(path);
+            const body =
+              cached ??
+              (canUseDiskVault(root) ? await vault.read(path) : (demoContent[path] ?? ''));
+            const source = quizSourceFromMarkdown(body);
+            if (source) sources.add(source);
+          } catch {
+            // A quiz that cannot be read leaves its note eligible again.
+          }
+        }),
+      );
+      if (!cancelled) setQuizzedSources(sources);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [files, root, quizSourceScan]);
 
   const quizHistory = useMemo(() => new QuizHistoryStore(root ?? ''), [root]);
   const review = useReviewSystem(root, quizHistory);
@@ -1074,6 +1103,7 @@ export default function App() {
       }
 
       setNewQuizPaths((current) => (current.includes(createdPath) ? current : [...current, createdPath]));
+      setQuizSourceScan((n) => n + 1);
       if (quizJobRef.current === jobId) {
         const keptCode = used.code;
         const note =
@@ -1591,6 +1621,21 @@ export default function App() {
             <span className="rail-badge">{reviewDueCount > 99 ? '99+' : reviewDueCount}</span>
           ) : null}
         </IconButton>
+        <IconButton
+          type="button"
+          className="rail-button"
+          size="2"
+          variant="ghost"
+          color="gray"
+          highContrast
+          aria-label="Generate quiz"
+          title="Generate quiz"
+          data-tour="generate-quiz"
+          disabled={!selected || reviewing || isQuizPath(selected) || generatingQuiz}
+          onClick={createQuiz}
+        >
+          <ClipboardIcon width={18} height={18} />
+        </IconButton>
         <div className="rail-spacer" />
         <IconButton
           type="button"
@@ -1822,19 +1867,6 @@ export default function App() {
               </IconButton>
             )}
             {!reviewing && isQuizPath(selected) ? <QuizReviewToggle system={review} path={selected} /> : null}
-            {!reviewing && !isQuizPath(selected) && selected ? (
-              <Button
-                size="1"
-                highContrast
-                data-tour="generate-quiz"
-                disabled={generatingQuiz}
-                loading={generatingQuiz}
-                onClick={createQuiz}
-              >
-                <ClipboardIcon />
-                Generate quiz
-              </Button>
-            ) : null}
           </Flex>
         </div>
         <div className="editor-split" ref={editorSplitRef}>
@@ -1920,18 +1952,25 @@ export default function App() {
               onBlur={() => void controller.persistence.flush()}
             />
           ) : (
-            <WysiwygEditor
-              ref={editorRef}
-              className="wysiwyg"
-              documentId={selected}
-              contentRevision={editorRevision}
-              markdown={controller.content}
-              onChange={(value) => {
-                controller.setContent(value);
-                setContents((prev) => ({ ...prev, [selected]: value }));
-              }}
-              onBlur={() => void controller.persistence.flush()}
-            />
+            <>
+              <WysiwygEditor
+                ref={editorRef}
+                className="wysiwyg"
+                documentId={selected}
+                contentRevision={editorRevision}
+                markdown={controller.content}
+                onChange={(value) => {
+                  controller.setContent(value);
+                  setContents((prev) => ({ ...prev, [selected]: value }));
+                }}
+                onBlur={() => void controller.persistence.flush()}
+              />
+              <QuizFromNotePrompt
+                markdown={controller.content}
+                alreadyQuizzed={quizzedSources.has(notePathKey(selected))}
+                onGenerate={createQuiz}
+              />
+            </>
           )}
         </div>
         <button

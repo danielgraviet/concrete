@@ -47,7 +47,7 @@ export const PRODUCT_TOUR_STEPS: ProductTourStep[] = [
   {
     title: 'Create a quiz from your notes',
     body: [
-      'Choose Generate quiz above the note to start a quiz from your writing.',
+      'Choose the quiz icon on the left, next to Review, to start a quiz from your writing.',
       'Pick one or more notes, choose question types, and Concrete builds a quiz grounded in those sources.',
       'Your quiz is saved in the vault, and your results are tracked in Concrete.',
     ],
