@@ -1,3 +1,13 @@
+<p align="center">
+  <img src="docs/readme/triple-c.png" alt="Triple C" width="120" align="middle">
+  &emsp;&emsp;&emsp;
+  <img src="docs/readme/square-boxy.png" alt="Square boxy Concrete" width="120" align="middle">
+  &emsp;&emsp;&emsp;
+  <img src="docs/readme/logo.png" alt="Cinderblock Concrete" width="170" align="middle">
+  &emsp;&emsp;&emsp;
+  <img src="docs/readme/full-text-blocks.png" alt="Full text Concrete" width="210" align="middle">
+</p>
+
 # Concrete
 
 [![GitHub stars](https://img.shields.io/github/stars/danielgraviet/concrete?style=flat-square)](https://github.com/danielgraviet/concrete/stargazers)
@@ -11,6 +21,30 @@
 > Built for students who want their notes, tools, and learning progress in one place.
 
 [Get started](#getting-started) · [Contribute](#contributing) · [Report a bug](https://github.com/danielgraviet/concrete/issues/new) · [Request an idea](https://github.com/danielgraviet/concrete/issues/new)
+
+## Notes
+
+Write and organize notes as ordinary Markdown. Keep topics in folders, link related notes, and edit checklists in place.
+
+<img src="docs/readme/notes.gif" alt="Browsing folders and editing a note" width="800">
+
+## Quizzes
+
+Generate a quiz from the note you have open. Answer multiple-choice, cloze, open, and code questions without leaving the app.
+
+<img src="docs/readme/quiz.gif" alt="Generating a quiz from a note and choosing an answer" width="800">
+
+## Tutor
+
+Ask about the open note. Explanations stay grounded in the material you are studying.
+
+<img src="docs/readme/tutor.gif" alt="Asking the study tutor about the open note" width="800">
+
+## Progress
+
+After a quiz, see the score, skill breakdown, and recent activity.
+
+<img src="docs/readme/progress.gif" alt="Learning progress after finishing a quiz" width="800">
 
 ## What it does
 
