@@ -25,6 +25,10 @@ contextBridge.exposeInMainWorld('vault', {
   revealInFolder: (root, name) => ipcRenderer.invoke('vault:revealInFolder', root, name),
   importPdf: (root, folder) => ipcRenderer.invoke('vault:importPdf', root, folder),
   extractPdfText: (root, name) => ipcRenderer.invoke('vault:extractPdfText', root, name),
+  exportNotePdf: (payload) => ipcRenderer.invoke('vault:exportNotePdf', payload),
+  takePdfExport: () => ipcRenderer.invoke('vault:takePdfExport'),
+  pdfExportReady: () => ipcRenderer.send('vault:pdfExportReady'),
+  readImageDataUrl: (root, notePath, src) => ipcRenderer.invoke('vault:readImageDataUrl', root, notePath, src),
   onWatch: (callback) => {
     if (typeof callback !== 'function') return () => {};
     const listener = (_event, payload) => callback(payload);

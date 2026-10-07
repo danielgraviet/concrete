@@ -42,12 +42,12 @@ export const PRODUCT_TOUR_STEPS: ProductTourStep[] = [
       'Open Study Chat to ask questions about the note you just wrote.',
       'The chat can use your open note as context while you work.',
     ],
-    target: '.rail button[aria-label^="Study chat"]',
+    target: '.study-chat-launcher',
   },
   {
     title: 'Create a quiz from your notes',
     body: [
-      'Choose Generate quiz above the note to start a quiz from your writing.',
+      'Choose the quiz icon on the left, next to Review, to start a quiz from your writing.',
       'Pick one or more notes, choose question types, and Concrete builds a quiz grounded in those sources.',
       'Your quiz is saved in the vault, and your results are tracked in Concrete.',
     ],

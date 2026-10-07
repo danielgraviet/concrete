@@ -123,6 +123,24 @@ interface Window {
     importPdf: (root: string, folder: string) => Promise<string | null>;
     /** Raw text per page (capped at 500 pages); `totalPages` is the real count. */
     extractPdfText: (root: string, name: string) => Promise<{ pages: string[]; totalPages: number }>;
+    /** Prints a note to a PDF beside it. Returns the vault-relative PDF path. */
+    exportNotePdf?: (payload: {
+      root: string;
+      notePath: string;
+      markdown: string;
+      title: string;
+    }) => Promise<string>;
+    /** Job for the hidden export window. Null when nothing is waiting. */
+    takePdfExport?: () => Promise<{
+      root: string;
+      notePath: string;
+      markdown: string;
+      title: string;
+    } | null>;
+    /** Tells the main process the export document has finished laying out. */
+    pdfExportReady?: () => void;
+    /** Local image beside a note, as a data URL. Empty when it cannot be read. */
+    readImageDataUrl?: (root: string, notePath: string, src: string) => Promise<string>;
   };
   /** Code execution bridge — the runner (Docker, hosted, …) lives in Electron main. */
   sandbox?: {

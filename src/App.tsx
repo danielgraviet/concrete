@@ -10,7 +10,6 @@ import {
 } from 'react';
 import { Button, Flex, IconButton, Text } from '@radix-ui/themes';
 import {
-  ChatBubbleIcon,
   ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -30,6 +29,7 @@ import {
 } from '@radix-ui/react-icons';
 import { WysiwygEditor, useEditorController, type WysiwygEditorHandle } from './editor';
 import { normalizePastedMathMarkdown, preferOneLineDisplayMath } from './editor/math';
+import { noteExportTitle } from './export/prepareNoteMarkdown';
 import type { ChatInsertTarget } from './ai/chat/StudyChatPane';
 import {
   askText,
@@ -89,12 +89,14 @@ import {
 } from './ai';
 import {
   isQuizPath,
+  nextQuizTitle,
   quizDocumentToMarkdown,
   QuizShell,
   type GenerateQuizDialogResult,
   ProgressPanel,
   quizGradingJobs,
 } from './quiz';
+import { notePathKey, QuizFromNotePrompt, quizSourceFromMarkdown } from './quiz/QuizFromNotePrompt';
 import { QuizHistoryStore } from './quiz';
 import { buildPdfContext, cleanPdfPages, parsePageRange } from './quiz/pdfContext';
 import { AUTO_QUIZ_ANALYSIS_SYSTEM, parseAutoQuizCounts, type AutoQuizCounts } from './quiz/autoComposition';
@@ -216,6 +218,12 @@ function resolveAiProvider(settings: AppSettings) {
   }
 }
 
+function isAlreadyExistsError(error: unknown): boolean {
+  const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
+  const message = error instanceof Error ? error.message : String(error);
+  return code === 'EEXIST' || /EEXIST|already exists/i.test(message);
+}
+
 export default function App() {
   const vault = useVault(demoNotes, demoFolders);
   const [selected, setSelected] = useState('Welcome.md');
@@ -295,6 +303,7 @@ export default function App() {
     | { status: 'error'; title: string; message: string }
   >({ status: 'idle' });
   const generatingQuiz = quizJob.status === 'running';
+  const [exportingPdf, setExportingPdf] = useState(false);
   // Quizzes grading in the background keep going when another note is opened.
   const gradingJobs = useSyncExternalStore(quizGradingJobs.subscribe, quizGradingJobs.getAll);
   const quizStatus = useMemo(() => {
@@ -306,6 +315,8 @@ export default function App() {
     return status;
   }, [gradingJobs]);
   const quizJobRef = useRef(0);
+  const [quizzedSources, setQuizzedSources] = useState<ReadonlySet<string>>(() => new Set());
+  const [quizSourceScan, setQuizSourceScan] = useState(0);
   const [agentProviderId, setAgentProviderId] = useState<AgentProviderId>(
     () => settingsStore.get().agentProviderId,
   );
@@ -444,6 +455,32 @@ export default function App() {
   const root = vault.root;
   const files = vault.files;
   const pdfFiles = vault.pdfFiles;
+
+  useEffect(() => {
+    let cancelled = false;
+    const quizPaths = files.filter((path) => isQuizPath(path));
+    void (async () => {
+      const sources = new Set<string>();
+      await Promise.all(
+        quizPaths.map(async (path) => {
+          try {
+            const cached = noteCacheRef.current.get(path);
+            const body =
+              cached ??
+              (canUseDiskVault(root) ? await vault.read(path) : (demoContent[path] ?? ''));
+            const source = quizSourceFromMarkdown(body);
+            if (source) sources.add(source);
+          } catch {
+            // A quiz that cannot be read leaves its note eligible again.
+          }
+        }),
+      );
+      if (!cancelled) setQuizzedSources(sources);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [files, root, quizSourceScan]);
 
   const quizHistory = useMemo(() => new QuizHistoryStore(root ?? ''), [root]);
   const review = useReviewSystem(root, quizHistory);
@@ -898,6 +935,21 @@ export default function App() {
     setGenerateQuizOpen(true);
   };
 
+  const exportNotePdf = async (path: string) => {
+    if (!root || exportingPdf || isPdfFileName(path)) return;
+    setExportingPdf(true);
+    try {
+      if (path === selected && controller.isDirty) await controller.persistence.flush();
+      const markdown = path === selected ? controller.content : await loadNoteBody(path);
+      await VaultService.exportNotePdf(root, path, markdown, noteExportTitle(markdown, path));
+    } catch (error) {
+      console.error('PDF export failed', error);
+      window.alert(error instanceof Error ? error.message : 'Could not export that note.');
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   const loadNoteBody = async (path: string): Promise<string> => {
     if (contents[path] !== undefined) return contents[path];
     if (demoContent[path] !== undefined) return demoContent[path];
@@ -933,7 +985,10 @@ export default function App() {
         role: 'user',
         content: `Analyze the selected source material and estimate its quiz composition. Return JSON only.\n\n${chunks.join('\n\n-----\n\n')}`,
       }],
-      maxTokens: 300,
+      // Reasoning models otherwise spend a small budget thinking and return
+      // finish_reason=length with an empty completion.
+      maxTokens: 2048,
+      reasoning: { enabled: false, effort: 'none' },
       operation: 'quiz_composition_analysis',
     });
     return parseAutoQuizCounts(response);
@@ -959,10 +1014,11 @@ export default function App() {
       return;
     }
 
-    const titled = result.title;
     const primary = sourcePaths[0];
     const saveFolder = parentDir(primary) || activeFolder;
-    const relative = joinNotePath(saveFolder, titled);
+    const takenPaths = [...vault.files];
+    let titled = nextQuizTitle(result.title, saveFolder, takenPaths);
+    let relative = joinNotePath(saveFolder, titled);
     if (!relative) return;
 
     // Close dialog immediately — generation continues in the background.
@@ -1021,21 +1077,36 @@ export default function App() {
         used[question.type] += 1;
         return true;
       });
-      doc.title = titled;
       doc.source = primary;
       if (quizSettings.customRubric.trim()) {
         doc.rubric = quizSettings.customRubric.trim();
       }
-      const body = quizDocumentToMarkdown(doc, titled);
 
       let createdPath = relative;
       if (canUseDiskVault(root)) {
-        const created = await vault.create(relative);
+        let created = '';
+        let body = '';
+        for (let attempt = 0; attempt < 50; attempt += 1) {
+          doc.title = titled;
+          body = quizDocumentToMarkdown(doc, titled);
+          try {
+            created = await vault.create(relative);
+            break;
+          } catch (error) {
+            if (!isAlreadyExistsError(error) || attempt === 49) throw error;
+            takenPaths.push(relative);
+            titled = nextQuizTitle(result.title, saveFolder, takenPaths);
+            relative = joinNotePath(saveFolder, titled);
+            if (!relative) throw error;
+          }
+        }
         await vault.write(created, body);
         createdPath = created;
         setContents((prev) => ({ ...prev, [created]: body }));
         // Don't steal focus mid-edit — toast lets the user open it.
       } else {
+        doc.title = titled;
+        const body = quizDocumentToMarkdown(doc, titled);
         vault.setFiles((current) =>
           current.includes(relative)
             ? current
@@ -1049,6 +1120,7 @@ export default function App() {
       }
 
       setNewQuizPaths((current) => (current.includes(createdPath) ? current : [...current, createdPath]));
+      setQuizSourceScan((n) => n + 1);
       if (quizJobRef.current === jobId) {
         const keptCode = used.code;
         const note =
@@ -1568,17 +1640,18 @@ export default function App() {
         </IconButton>
         <IconButton
           type="button"
-          className={aiChatOpen ? 'rail-button active' : 'rail-button'}
+          className="rail-button"
           size="2"
           variant="ghost"
           color="gray"
           highContrast
-          aria-label="Study chat (⌘J)"
-          title="Study chat (⌘J)"
-          aria-pressed={aiChatOpen}
-          onClick={() => selectRail('ai')}
+          aria-label="Generate quiz"
+          title="Generate quiz"
+          data-tour="generate-quiz"
+          disabled={!selected || reviewing || isQuizPath(selected) || generatingQuiz}
+          onClick={createQuiz}
         >
-          <ChatBubbleIcon width={18} height={18} />
+          <ClipboardIcon width={18} height={18} />
         </IconButton>
         <div className="rail-spacer" />
         <IconButton
@@ -1728,6 +1801,7 @@ export default function App() {
               }}
               onRename={renameTreeItem}
               onDelete={(path, kind) => void deleteTreeItem({ path, kind })}
+              onExportPdf={window.vault?.exportNotePdf ? (path) => void exportNotePdf(path) : undefined}
             />
           </>
         )}
@@ -1815,7 +1889,6 @@ export default function App() {
               <Button
                 size="1"
                 highContrast
-                data-tour="generate-quiz"
                 disabled={generatingQuiz}
                 loading={generatingQuiz}
                 onClick={createQuiz}
@@ -1827,6 +1900,7 @@ export default function App() {
           </Flex>
         </div>
         <div className="editor-split" ref={editorSplitRef}>
+        <div className="editor-stage">
         <div className={`editor-wrap${isPdfFileName(selected) ? ' pdf-editor-wrap' : ''}`}>
           {findOpen ? (
             <div className="find-bar" role="search">
@@ -1908,19 +1982,37 @@ export default function App() {
               onBlur={() => void controller.persistence.flush()}
             />
           ) : (
-            <WysiwygEditor
-              ref={editorRef}
-              className="wysiwyg"
-              documentId={selected}
-              contentRevision={editorRevision}
-              markdown={controller.content}
-              onChange={(value) => {
-                controller.setContent(value);
-                setContents((prev) => ({ ...prev, [selected]: value }));
-              }}
-              onBlur={() => void controller.persistence.flush()}
-            />
+            <>
+              <WysiwygEditor
+                ref={editorRef}
+                className="wysiwyg"
+                documentId={selected}
+                contentRevision={editorRevision}
+                markdown={controller.content}
+                onChange={(value) => {
+                  controller.setContent(value);
+                  setContents((prev) => ({ ...prev, [selected]: value }));
+                }}
+                onBlur={() => void controller.persistence.flush()}
+              />
+              <QuizFromNotePrompt
+                markdown={controller.content}
+                alreadyQuizzed={quizzedSources.has(notePathKey(selected))}
+                onGenerate={createQuiz}
+              />
+            </>
           )}
+        </div>
+        <button
+          type="button"
+          className={aiChatOpen ? 'study-chat-launcher active' : 'study-chat-launcher'}
+          aria-label="Study chat (⌘J)"
+          title="Study chat (⌘J)"
+          aria-pressed={aiChatOpen}
+          onClick={() => selectRail('ai')}
+        >
+          <BrandLogo logo="triple-c" />
+        </button>
         </div>
         {aiChatOpen ? (
           <>

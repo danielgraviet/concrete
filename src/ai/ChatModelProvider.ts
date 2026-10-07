@@ -138,6 +138,7 @@ export class ChatModelProvider implements AiProvider {
       max_tokens: request.maxTokens ?? 4096,
       operation: request.operation ?? 'study_chat',
       capture: 'full',
+      ...(request.reasoning ? { reasoning: request.reasoning } : {}),
     };
     const onDelta = request.onDelta;
     if (!onDelta || !ai.chatStream || !ai.onChatDelta) {

@@ -86,9 +86,12 @@ export function answerText(question: QuizQuestion, response: QuizResponse | unde
 export class QuizHistoryStore {
   private attempts: QuizAttempt[] = [];
   private readonly key: string;
+  /** Same scope key used for in-progress quiz drafts. */
+  readonly vaultRoot: string;
 
   constructor(vaultRoot = '') {
-    this.key = `mv:quiz-history:${vaultRoot || '__default__'}`;
+    this.vaultRoot = vaultRoot || '__default__';
+    this.key = `mv:quiz-history:${this.vaultRoot}`;
     this.load();
   }
 

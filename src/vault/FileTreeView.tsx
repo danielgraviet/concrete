@@ -38,6 +38,8 @@ type FileTreeViewProps = {
   onSelectFolder: (path: string) => void;
   onRename: (path: string, kind: TreeItemKind, nextName: string) => void | Promise<void>;
   onDelete: (path: string, kind: TreeItemKind) => void | Promise<void>;
+  /** Present for markdown files. Omitted when PDF export is unavailable. */
+  onExportPdf?: (path: string) => void | Promise<void>;
 };
 
 function InlineRenameInput({
@@ -105,6 +107,7 @@ function FolderBranch({
   onCommitRename,
   onCancelRename,
   onDelete,
+  onExportPdf,
 }: {
   node: VaultFolderNode;
   depth: number;
@@ -119,6 +122,7 @@ function FolderBranch({
   onCommitRename: (path: string, kind: TreeItemKind, nextName: string) => void;
   onCancelRename: () => void;
   onDelete: (path: string, kind: TreeItemKind) => void;
+  onExportPdf?: (path: string) => void | Promise<void>;
 }) {
   const skipFocusRestore = useRef(false);
   const isOpen = expanded.has(node.path);
@@ -241,6 +245,7 @@ function FolderBranch({
               onCommitRename={onCommitRename}
               onCancelRename={onCancelRename}
               onDelete={onDelete}
+              onExportPdf={onExportPdf}
             />
           ))
         : null}
@@ -262,6 +267,7 @@ function TreeNode({
   onCommitRename,
   onCancelRename,
   onDelete,
+  onExportPdf,
 }: {
   node: VaultTreeNode;
   depth: number;
@@ -276,6 +282,7 @@ function TreeNode({
   onCommitRename: (path: string, kind: TreeItemKind, nextName: string) => void;
   onCancelRename: () => void;
   onDelete: (path: string, kind: TreeItemKind) => void;
+  onExportPdf?: (path: string) => void | Promise<void>;
 }) {
   const skipFocusRestore = useRef(false);
   if (node.type === 'folder') {
@@ -294,6 +301,7 @@ function TreeNode({
         onCommitRename={onCommitRename}
         onCancelRename={onCancelRename}
         onDelete={onDelete}
+        onExportPdf={onExportPdf}
       />
     );
   }
@@ -368,6 +376,11 @@ function TreeNode({
         >
           Rename
         </ContextMenu.Item>
+        {!isPdf && onExportPdf ? (
+          <ContextMenu.Item onSelect={() => void onExportPdf(node.path)}>
+            Export as PDF
+          </ContextMenu.Item>
+        ) : null}
         <ContextMenu.Separator />
         <ContextMenu.Item
           color="red"
@@ -406,6 +419,7 @@ export function FileTreeView({
   onSelectFolder,
   onRename,
   onDelete,
+  onExportPdf,
 }: FileTreeViewProps) {
   const tree = useMemo(() => {
     const full = buildFileTree(files, folders);
@@ -502,6 +516,7 @@ export function FileTreeView({
             onCommitRename={commitRename}
             onCancelRename={() => setRenaming(null)}
             onDelete={onDelete}
+            onExportPdf={onExportPdf}
           />
         ))}
       </BadgesContext.Provider>
