@@ -29,6 +29,7 @@ import {
 } from '@radix-ui/react-icons';
 import { WysiwygEditor, useEditorController, type WysiwygEditorHandle } from './editor';
 import { normalizePastedMathMarkdown, preferOneLineDisplayMath } from './editor/math';
+import { noteExportTitle } from './export/prepareNoteMarkdown';
 import type { ChatInsertTarget } from './ai/chat/StudyChatPane';
 import {
   askText,
@@ -302,6 +303,7 @@ export default function App() {
     | { status: 'error'; title: string; message: string }
   >({ status: 'idle' });
   const generatingQuiz = quizJob.status === 'running';
+  const [exportingPdf, setExportingPdf] = useState(false);
   // Quizzes grading in the background keep going when another note is opened.
   const gradingJobs = useSyncExternalStore(quizGradingJobs.subscribe, quizGradingJobs.getAll);
   const quizStatus = useMemo(() => {
@@ -931,6 +933,21 @@ export default function App() {
 
   const createQuiz = () => {
     setGenerateQuizOpen(true);
+  };
+
+  const exportNotePdf = async (path: string) => {
+    if (!root || exportingPdf || isPdfFileName(path)) return;
+    setExportingPdf(true);
+    try {
+      if (path === selected && controller.isDirty) await controller.persistence.flush();
+      const markdown = path === selected ? controller.content : await loadNoteBody(path);
+      await VaultService.exportNotePdf(root, path, markdown, noteExportTitle(markdown, path));
+    } catch (error) {
+      console.error('PDF export failed', error);
+      window.alert(error instanceof Error ? error.message : 'Could not export that note.');
+    } finally {
+      setExportingPdf(false);
+    }
   };
 
   const loadNoteBody = async (path: string): Promise<string> => {
@@ -1784,6 +1801,7 @@ export default function App() {
               }}
               onRename={renameTreeItem}
               onDelete={(path, kind) => void deleteTreeItem({ path, kind })}
+              onExportPdf={window.vault?.exportNotePdf ? (path) => void exportNotePdf(path) : undefined}
             />
           </>
         )}
@@ -1867,6 +1885,18 @@ export default function App() {
               </IconButton>
             )}
             {!reviewing && isQuizPath(selected) ? <QuizReviewToggle system={review} path={selected} /> : null}
+            {!reviewing && !isQuizPath(selected) && selected ? (
+              <Button
+                size="1"
+                highContrast
+                disabled={generatingQuiz}
+                loading={generatingQuiz}
+                onClick={createQuiz}
+              >
+                <ClipboardIcon />
+                Generate quiz
+              </Button>
+            ) : null}
           </Flex>
         </div>
         <div className="editor-split" ref={editorSplitRef}>

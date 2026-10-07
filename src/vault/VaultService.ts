@@ -101,6 +101,13 @@ export const VaultService = {
     return requireVault().extractPdfText(root, name);
   },
 
+  /** Render a note to a PDF saved beside it. Returns the vault-relative path. */
+  exportNotePdf(root: string, notePath: string, markdown: string, title: string): Promise<string> {
+    const exportNote = requireVault().exportNotePdf;
+    if (!exportNote) throw new Error('Restart Concrete to export PDFs.');
+    return exportNote({ root, notePath, markdown, title });
+  },
+
   watchStart(root: string): Promise<boolean> {
     return requireVault().watchStart(root);
   },

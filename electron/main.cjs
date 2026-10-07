@@ -864,6 +864,111 @@ ipcMain.handle('vault:extractPdfText', async (_, root, name) => {
   return extractPdfPages(await fs.readFile(resolved), MAX_PDF_PAGES);
 });
 
+const IMAGE_MIME = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+};
+let pdfExportJob = null;
+let pdfExportBusy = false;
+
+ipcMain.handle('vault:takePdfExport', () => pdfExportJob);
+
+ipcMain.handle('vault:readImageDataUrl', async (_event, root, notePath, src) => {
+  if (typeof src !== 'string' || /^(https?:|data:)/i.test(src)) return '';
+  const noteDir = path.posix.dirname(String(notePath || '').split(path.sep).join('/'));
+  let decoded = src.trim().replace(/^<|>$/g, '');
+  try {
+    decoded = decodeURIComponent(decoded);
+  } catch {
+    // Keep the raw path when it is not percent-encoded.
+  }
+  const relative = path.posix.normalize(noteDir && noteDir !== '.' ? `${noteDir}/${decoded}` : decoded);
+  const { resolved } = resolveWithinRoot(root, relative);
+  const bytes = await fs.readFile(resolved);
+  if (bytes.length > 8 * 1024 * 1024) return '';
+  const mime = IMAGE_MIME[path.extname(resolved).toLowerCase()] || 'application/octet-stream';
+  return `data:${mime};base64,${bytes.toString('base64')}`;
+});
+
+function waitForPdfExport(win) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      ipcMain.removeListener('vault:pdfExportReady', onReady);
+      if (!win.isDestroyed()) win.webContents.removeListener('did-fail-load', onFail);
+      if (error) reject(error);
+      else resolve();
+    };
+    const timer = setTimeout(() => finish(new Error('PDF export timed out.')), 30000);
+    const onReady = () => finish();
+    const onFail = (_event, _code, _desc, _url, isMainFrame) => {
+      if (!isMainFrame) return;
+      finish(new Error('Could not open the PDF view.'));
+    };
+    ipcMain.on('vault:pdfExportReady', onReady);
+    win.webContents.on('did-fail-load', onFail);
+  });
+}
+
+/** Render the open note in a hidden window and save a PDF beside it. */
+ipcMain.handle('vault:exportNotePdf', async (_event, payload = {}) => {
+  if (pdfExportBusy) throw new Error('A PDF export is already running.');
+  const { root, notePath, markdown, title } = payload;
+  if (typeof markdown !== 'string') throw new Error('Nothing to export.');
+  if (!String(notePath || '').toLowerCase().endsWith('.md')) {
+    throw new Error('Choose a markdown note to export.');
+  }
+  pdfExportBusy = true;
+  pdfExportJob = {
+    root,
+    notePath,
+    markdown,
+    title: typeof title === 'string' ? title : '',
+  };
+  const win = new BrowserWindow({
+    show: false,
+    width: 900,
+    height: 1200,
+    backgroundColor: '#ffffff',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+    },
+  });
+  try {
+    const ready = waitForPdfExport(win);
+    if (app.isPackaged) {
+      await win.loadFile(path.join(APP_ROOT, 'dist', 'index.html'), { query: { export: 'pdf' } });
+    } else {
+      await win.loadURL('http://localhost:5173/?export=pdf');
+    }
+    await ready;
+    const pdf = await win.webContents.printToPDF({
+      printBackground: true,
+      preferCSSPageSize: true,
+      pageSize: 'Letter',
+      margins: { marginType: 'none' },
+    });
+    const notePosix = String(notePath).split(path.sep).join('/');
+    const pdfRelative = notePosix.replace(/\.md$/i, '.pdf');
+    const { resolved, relative } = resolveWithinRoot(root, pdfRelative);
+    await fs.mkdir(path.dirname(resolved), { recursive: true });
+    await fs.writeFile(resolved, pdf);
+    return relative;
+  } finally {
+    pdfExportJob = null;
+    pdfExportBusy = false;
+    if (!win.isDestroyed()) win.close();
+  }
+});
+
 /** OpenRouter needs a key; Claude and Codex also accept their CLI login. */
 async function aiStatusFor(backend) {
   const key = configuredApiKey(backend);
