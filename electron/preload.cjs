@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('vault', {
   readData: (root, name) => ipcRenderer.invoke('vault:readData', root, name),
   writeData: (root, name, content) => ipcRenderer.invoke('vault:writeData', root, name, content),
   appendData: (root, name, content) => ipcRenderer.invoke('vault:appendData', root, name, content),
+  deleteData: (root, name) => ipcRenderer.invoke('vault:deleteData', root, name),
   mkdir: (root, name) => ipcRenderer.invoke('vault:mkdir', root, name),
   ensureDefault: () => ipcRenderer.invoke('vault:ensureDefault'),
   importObsidian: (root) => ipcRenderer.invoke('vault:importObsidian', root),

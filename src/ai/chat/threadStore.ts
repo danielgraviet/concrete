@@ -1,6 +1,6 @@
 /**
- * Per-note Study Chat threads, saved as `.vault/chat-<hash>.json` so a note's
- * conversation comes back when it is reopened. Notes stay free of chat data.
+ * Study Chat message types, plus the reader for the legacy per-note thread
+ * files (`.vault/chat-<hash>.json`) that sessions are migrated from.
  */
 
 export type StudyChatMode = 'chat' | 'agent';
@@ -10,6 +10,8 @@ export type StudyChatMessage = {
   role: 'user' | 'assistant' | 'log';
   mode: StudyChatMode;
   text: string;
+  /** Note open when this question was asked; sessions follow the user across notes. */
+  notePath?: string;
   /** Note excerpt the user attached to this question. */
   quote?: string;
   /** Agent log line kind (status / file / command / error / message). */
@@ -20,8 +22,7 @@ export type StudyChatMessage = {
   error?: boolean;
 };
 
-type StoredThread = {
-  version: 1;
+export type LegacyThread = {
   path: string;
   updatedAt: number;
   messages: StudyChatMessage[];
@@ -37,44 +38,27 @@ function hashPath(path: string): string {
   return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
-function threadFile(notePath: string): string {
+export function legacyThreadFile(notePath: string): string {
   return `.vault/chat-${hashPath(notePath)}.json`;
 }
 
 /** Agent logs are progress noise; only the conversation is kept. */
-function persistable(messages: StudyChatMessage[]): StudyChatMessage[] {
+export function persistable(messages: StudyChatMessage[]): StudyChatMessage[] {
   return messages.filter((m) => m.role !== 'log');
 }
 
-export async function loadThread(root: string | null, notePath: string): Promise<StudyChatMessage[]> {
-  if (!root || !notePath || !window.vault?.readData) return [];
+/** Parse a legacy thread file; null when missing, malformed, or another note's (hash collision). */
+export function parseLegacyThread(raw: string | null, notePath: string): LegacyThread | null {
+  if (!raw) return null;
   try {
-    const raw = await window.vault.readData(root, threadFile(notePath));
-    if (!raw) return [];
-    const stored = JSON.parse(raw) as Partial<StoredThread>;
-    // Hash collisions are possible; the stored path settles it.
-    if (stored.path !== notePath || !Array.isArray(stored.messages)) return [];
-    return stored.messages;
+    const stored = JSON.parse(raw) as Partial<LegacyThread>;
+    if (stored.path !== notePath || !Array.isArray(stored.messages)) return null;
+    return {
+      path: notePath,
+      updatedAt: typeof stored.updatedAt === 'number' ? stored.updatedAt : 0,
+      messages: stored.messages,
+    };
   } catch {
-    return [];
-  }
-}
-
-export async function saveThread(
-  root: string | null,
-  notePath: string,
-  messages: StudyChatMessage[],
-): Promise<void> {
-  if (!root || !notePath || !window.vault?.writeData) return;
-  const stored: StoredThread = {
-    version: 1,
-    path: notePath,
-    updatedAt: Date.now(),
-    messages: persistable(messages),
-  };
-  try {
-    await window.vault.writeData(root, threadFile(notePath), JSON.stringify(stored));
-  } catch {
-    // Chat history is a convenience; never block the conversation on it.
+    return null;
   }
 }

@@ -16,12 +16,22 @@ export function userTurnContent(message: StudyChatMessage): string {
   return `About this part of my note:\n"""\n${message.quote}\n"""\n\n${message.text}`;
 }
 
-/** Chat-mode turns the model should see; failed replies are left out. */
+/**
+ * Turns the model should see. Sessions span notes and modes, so a question
+ * is marked when the user moved to another note, and agent requests are
+ * labelled so the tutor knows what the agent was asked to change.
+ * Logs and failed replies are left out.
+ */
 export function chatHistory(messages: StudyChatMessage[]): ChatTurn[] {
+  let lastNote: string | undefined;
   return messages
-    .filter((m) => m.mode === 'chat' && m.role !== 'log' && !(m.role === 'assistant' && m.error))
-    .map((m) => ({
-      role: m.role === 'user' ? 'user' : 'assistant',
-      content: m.role === 'user' ? userTurnContent(m) : m.text,
-    }));
+    .filter((m) => m.role !== 'log' && !(m.role === 'assistant' && m.error))
+    .map((m): ChatTurn => {
+      if (m.role === 'assistant') return { role: 'assistant', content: m.text };
+      const notes: string[] = [];
+      if (m.notePath && m.notePath !== lastNote) notes.push(`(Now viewing note: ${m.notePath})`);
+      if (m.mode === 'agent') notes.push('(Sent to the editing agent)');
+      if (m.notePath) lastNote = m.notePath;
+      return { role: 'user', content: [...notes, userTurnContent(m)].join('\n\n') };
+    });
 }
