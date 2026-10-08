@@ -142,16 +142,31 @@ function readAiSettings() {
   }
 }
 
-function configuredApiKey(backend) {
+/** Key for one source ({ env, saved }), plus where it came from. */
+function keyFor(source) {
   // A project .env key is the operator-controlled source of truth.  The
   // persisted key is only a fallback for users who configure the key through
   // Settings (and have no .env key).  Previously the persisted value won,
   // which made rotating OPENROUTER_API_KEY in .env appear to have no effect.
-  const source = CHAT_BACKENDS[resolveChatBackend(backend)];
   const envKey = process.env[source.env]?.trim() ?? '';
-  if (envKey) return envKey;
+  if (envKey) return { key: envKey, origin: 'env' };
   const saved = readAiSettings()[source.saved];
-  return typeof saved === 'string' ? saved.trim() : '';
+  const savedKey = typeof saved === 'string' ? saved.trim() : '';
+  return { key: savedKey, origin: savedKey ? 'saved' : null };
+}
+
+function configuredApiKey(backend) {
+  return keyFor(CHAT_BACKENDS[resolveChatBackend(backend)]).key;
+}
+
+/** Persist (or clear, with '') a key entered in Settings. */
+async function saveApiKey(source, value) {
+  await fs.mkdir(path.dirname(AI_SETTINGS_PATH), { recursive: true });
+  await fs.writeFile(
+    AI_SETTINGS_PATH,
+    JSON.stringify({ ...readAiSettings(), [source.saved]: value }),
+    { mode: 0o600 },
+  );
 }
 
 /** Native Edit roles so Cmd+C / Cmd+V work in the renderer. */
@@ -1008,22 +1023,45 @@ ipcMain.handle('ai:setApiKey', async (_, apiKey, backend) => {
   // precedence over this persisted fallback.
   if (value) process.env[source.env] = value;
   else delete process.env[source.env];
-  await fs.mkdir(path.dirname(AI_SETTINGS_PATH), { recursive: true });
-  await fs.writeFile(
-    AI_SETTINGS_PATH,
-    JSON.stringify({ ...readAiSettings(), [source.saved]: value }),
-    { mode: 0o600 },
-  );
+  await saveApiKey(source, value);
   return aiStatusFor(id);
 });
 
-// Code execution for quiz questions. The provider id picks a registered runner
-// (see sandbox/factory.cjs), so Docker can be swapped for a hosted sandbox.
+// Code execution for code blocks and quiz questions. The provider id picks a
+// registered runner (see sandbox/factory.cjs): Daytona by default, Docker locally.
 ipcMain.handle('sandbox:providers', async () => sandbox.listRunners());
 
+/** Daytona cloud runner key: .env / environment first, then the key saved in Settings. */
+const DAYTONA_KEY = { env: 'DAYTONA_API_KEY', saved: 'daytonaApiKey' };
+
+// Runners resolve secrets on every use, so a key saved in Settings applies immediately.
+const SANDBOX_CONFIG = { apiKey: () => keyFor(DAYTONA_KEY).key || null };
+
+function sandboxRunner(providerId) {
+  return sandbox.getRunner(providerId, SANDBOX_CONFIG);
+}
+
+function daytonaKeyStatus() {
+  const { key, origin } = keyFor(DAYTONA_KEY);
+  return { configured: Boolean(key), keySuffix: key ? key.slice(-4) : null, origin };
+}
+
+ipcMain.handle('sandbox:keyStatus', async () => {
+  loadDotEnv();
+  return daytonaKeyStatus();
+});
+
+ipcMain.handle('sandbox:setApiKey', async (_, apiKey) => {
+  loadDotEnv();
+  if (typeof apiKey !== 'string') throw new Error('API key must be text');
+  await saveApiKey(DAYTONA_KEY, apiKey.trim());
+  return daytonaKeyStatus();
+});
+
 ipcMain.handle('sandbox:status', async (_, providerId) => {
+  loadDotEnv();
   try {
-    return await sandbox.getRunner(providerId).status();
+    return await sandboxRunner(providerId).status();
   } catch (error) {
     return { available: false, detail: error?.message ?? 'Sandbox unavailable', languages: [] };
   }
@@ -1037,8 +1075,9 @@ function sandboxProgress(event) {
 }
 
 ipcMain.handle('sandbox:prepare', async (event, payload = {}) => {
+  loadDotEnv();
   try {
-    const runner = sandbox.getRunner(payload.providerId);
+    const runner = sandboxRunner(payload.providerId);
     if (typeof runner.prepare !== 'function') return { ok: false, error: 'This runner needs no setup.' };
     return await runner.prepare({ tier: String(payload.tier ?? ''), onProgress: sandboxProgress(event) });
   } catch (error) {
@@ -1056,8 +1095,9 @@ ipcMain.handle('sandbox:run', async (event, payload = {}) => {
     };
   }
   const timeoutMs = Math.min(30000, Math.max(1000, Number(payload.timeoutMs) || 8000));
+  loadDotEnv();
   try {
-    return await sandbox.getRunner(payload.providerId).run({
+    return await sandboxRunner(payload.providerId).run({
       language,
       code,
       timeoutMs,
@@ -1721,6 +1761,7 @@ app.on('window-all-closed', () => {
 });
 app.on('before-quit', () => {
   void stopWatch();
+  sandbox.disposeAll();
   // Shrink App Support growth: drop Chromium disk cache on quit.
   void session.defaultSession.clearCache().catch(() => {});
 });

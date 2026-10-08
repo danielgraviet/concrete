@@ -13,6 +13,7 @@
  *   status(): Promise<{ available, detail?, languages, images?: [{ id, label, ready, buildable, sizeHint? }] }>
  *   run({ language, code, timeoutMs, onProgress?, allowBuild? }): Promise<RunResult>
  *   prepare?({ tier, onProgress? }): Promise<{ ok, error? }>   (optional: set up an image/environment ahead of time)
+ *   dispose?(): void   (optional: release remote resources on quit)
  *   RunResult = { ok, stdout, stderr, exitCode, timedOut, durationMs, error? }
  *
  * Runners must never throw from `run`: report failures as `{ ok: false, error }`.
@@ -50,4 +51,9 @@ function createRunner(id, fallbackId = 'off', config = {}) {
   return runner;
 }
 
-module.exports = { registerRunner, hasRunner, listRunners, createRunner };
+/** Let created runners release remote resources (optional `dispose()` on a Runner). */
+function disposeRunners() {
+  for (const runner of instances.values()) runner.dispose?.();
+}
+
+module.exports = { registerRunner, hasRunner, listRunners, createRunner, disposeRunners };

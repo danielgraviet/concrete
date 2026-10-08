@@ -1,5 +1,6 @@
-const { registerRunner, hasRunner, listRunners, createRunner } = require('./factory.cjs');
+const { registerRunner, hasRunner, listRunners, createRunner, disposeRunners } = require('./factory.cjs');
 const docker = require('./dockerRunner.cjs');
+const daytona = require('./daytonaRunner.cjs');
 
 const DEFAULT_RUNNER_ID = 'docker';
 
@@ -22,14 +23,17 @@ registerRunner('off', {
 });
 
 registerRunner('docker', { label: 'Docker (local)', create: docker.create });
+registerRunner('daytona', { label: 'Daytona (cloud)', create: daytona.create });
 
 // Future backends plug in here, e.g.:
 // registerRunner('e2b', { label: 'E2B', create: (config) => require('./e2bRunner.cjs').create(config) });
-// registerRunner('daytona', { label: 'Daytona', create: (config) => require('./daytonaRunner.cjs').create(config) });
 
 module.exports = {
   DEFAULT_RUNNER_ID,
   listRunners,
   hasRunner,
-  getRunner: (id) => createRunner(id || DEFAULT_RUNNER_ID, 'off'),
+  /** `config` reaches a runner's create() the first time it is used (e.g. key resolvers). */
+  getRunner: (id, config) => createRunner(id || DEFAULT_RUNNER_ID, 'off', config),
+  /** Release remote resources (e.g. the warm Daytona sandbox) on quit. */
+  disposeAll: disposeRunners,
 };

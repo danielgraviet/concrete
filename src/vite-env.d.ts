@@ -11,6 +11,14 @@ interface VaultWatchEvent {
   root: string;
 }
 
+interface SandboxKeyStatusPayload {
+  configured: boolean;
+  /** Last four characters, for "ending …abcd". */
+  keySuffix: string | null;
+  /** 'env' when DAYTONA_API_KEY comes from the environment / .env, which wins over Settings. */
+  origin: 'env' | 'saved' | null;
+}
+
 interface VaultOpenResult {
   root: string;
   files: string[];
@@ -169,6 +177,9 @@ interface Window {
       images?: Array<{ id: string; label: string; ready: boolean; buildable?: boolean; sizeHint?: string }>;
     }>;
     prepare: (payload: { providerId?: string; tier: string }) => Promise<{ ok: boolean; error?: string }>;
+    /** Daytona API key state (never the key itself). Missing on older Electron builds. */
+    keyStatus?: () => Promise<SandboxKeyStatusPayload>;
+    setApiKey?: (apiKey: string) => Promise<SandboxKeyStatusPayload>;
     onProgress: (callback: (event: { message: string }) => void) => () => void;
     run: (payload: {
       providerId?: string;

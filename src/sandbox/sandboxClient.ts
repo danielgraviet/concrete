@@ -79,6 +79,30 @@ export function onSandboxProgress(callback: (message: string) => void): () => vo
   return window.sandbox.onProgress((event) => callback(event.message));
 }
 
+export type SandboxKeyStatus = SandboxKeyStatusPayload;
+
+/** Where to create a Daytona API key. */
+export const DAYTONA_KEYS_URL = 'https://app.daytona.io/dashboard/keys';
+
+const NO_KEY: SandboxKeyStatus = { configured: false, keySuffix: null, origin: null };
+
+export async function getSandboxKeyStatus(): Promise<SandboxKeyStatus> {
+  if (typeof window === 'undefined' || !window.sandbox?.keyStatus) return NO_KEY;
+  try {
+    return await window.sandbox.keyStatus();
+  } catch {
+    return NO_KEY;
+  }
+}
+
+/** Save the Daytona API key ('' removes it). Stored by main, never readable back. */
+export async function setSandboxApiKey(apiKey: string): Promise<SandboxKeyStatus> {
+  if (typeof window === 'undefined' || !window.sandbox?.setApiKey) {
+    throw new Error(UNAVAILABLE.detail);
+  }
+  return window.sandbox.setApiKey(apiKey);
+}
+
 export async function prepareSandboxImage(
   tier: string,
   providerId?: string,
