@@ -17,6 +17,7 @@ import {
   ClipboardIcon,
   Cross1Icon,
   LayersIcon,
+  MagnifyingGlassIcon,
   EnterFullScreenIcon,
   ExitFullScreenIcon,
   FilePlusIcon,
@@ -59,8 +60,14 @@ import {
 import { useBacklinks } from './graph';
 
 const NOTE_BODY_CACHE_MAX = 24;
-import { useSearch } from './search';
-import { applyTextHighlights, clearTextHighlights, findTextRanges, revealTextRange } from './search/inFileFind';
+import { SearchIndex, SearchPalette, useSearch, type SearchResult } from './search';
+import {
+  applyTextHighlights,
+  clearTextHighlights,
+  findTextRanges,
+  revealTextRange,
+  waitForTextRanges,
+} from './search/inFileFind';
 import { MetaService } from './meta';
 import {
   appendCardLines,
@@ -141,7 +148,7 @@ const demoContent: Record<string, string> = {
 };
 
 type RailView = 'files' | 'tags' | 'review' | 'ai';
-type Overlay = 'settings' | null;
+type Overlay = 'settings' | 'search' | null;
 
 const LAYOUT_KEY = 'mv:layout';
 const LAST_NOTE_KEY = 'mv:last-note';
@@ -389,6 +396,12 @@ export default function App() {
         requestAnimationFrame(() => findInputRef.current?.focus());
         return;
       }
+      // ⌘P searches the whole vault.
+      if (meta && !event.shiftKey && event.key.toLowerCase() === 'p') {
+        event.preventDefault();
+        setOverlay((current) => (current === 'search' ? null : 'search'));
+        return;
+      }
       if (meta && event.shiftKey && event.key.toLowerCase() === 'f') {
         event.preventDefault();
         toggleFocusMode();
@@ -418,7 +431,7 @@ export default function App() {
         return;
       }
       if (event.key === 'Escape') {
-        if (overlay === 'settings') {
+        if (overlay === 'settings' || overlay === 'search') {
           event.preventDefault();
           setOverlay(null);
           return;
@@ -485,6 +498,7 @@ export default function App() {
   const quizHistory = useMemo(() => new QuizHistoryStore(root ?? ''), [root]);
   const review = useReviewSystem(root, quizHistory);
   const reviewIndex = review.index;
+  const searchIndex = useMemo(() => new SearchIndex(), [root]);
 
   useEffect(() => {
     const settings = settingsStore.hydrate();
@@ -732,13 +746,13 @@ export default function App() {
         }),
       );
       if (cancelled) return;
-      reviewIndex.replaceAll(
-        entries.map(([path, text]) =>
-          path === selectedRef.current && editorPathRef.current === path && contentRef.current
-            ? ([path, contentRef.current] as const)
-            : ([path, text] as const),
-        ),
+      const indexed = entries.map(([path, text]) =>
+        path === selectedRef.current && editorPathRef.current === path && contentRef.current
+          ? ([path, contentRef.current] as const)
+          : ([path, text] as const),
       );
+      reviewIndex.replaceAll(indexed);
+      searchIndex.replaceAll(indexed);
       setContents((prev) => {
         const next = { ...prev };
         for (const [path, text] of entries) {
@@ -763,37 +777,46 @@ export default function App() {
   // Demo mode has no disk to scan; index the in-memory notes instead.
   useEffect(() => {
     if (root) return;
-    reviewIndex.replaceAll(files.map((path) => [path, contents[path] ?? demoContent[path] ?? ''] as const));
+    const entries = files.map((path) => [path, contents[path] ?? demoContent[path] ?? ''] as const);
+    reviewIndex.replaceAll(entries);
+    searchIndex.replaceAll(entries);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild when the file list changes
-  }, [root, files, reviewIndex]);
+  }, [root, files, reviewIndex, searchIndex]);
 
-  // Keep cards current when notes change on disk (other apps, agents, sync).
+  // Keep cards and search current when notes change on disk (other apps, agents, sync).
   useEffect(() => {
     if (!root) return;
     return VaultService.onWatch((event) => {
       if (event.root !== root || !/\.md$/i.test(event.path)) return;
       if (event.type === 'unlink') {
         reviewIndex.remove(event.path);
+        searchIndex.remove(event.path);
         return;
       }
       if (event.type !== 'add' && event.type !== 'change') return;
       // The open note is indexed from the editor instead.
       if (event.path === selectedRef.current) return;
-      void VaultService.read(root, event.path).then((text) => reviewIndex.update(event.path, text));
+      void VaultService.read(root, event.path).then((text) => {
+        reviewIndex.update(event.path, text);
+        searchIndex.update(event.path, text);
+      });
     });
-  }, [root, reviewIndex]);
+  }, [root, reviewIndex, searchIndex]);
 
-  // Cards typed into the open note show up as you write.
+  // Cards and search terms typed into the open note show up as you write.
   useEffect(() => {
     if (!selected || editorPathRef.current !== selected) return;
     const path = selected;
     const text = controller.content;
-    const timer = window.setTimeout(() => reviewIndex.update(path, text), 500);
+    const timer = window.setTimeout(() => {
+      reviewIndex.update(path, text);
+      searchIndex.update(path, text);
+    }, 500);
     return () => window.clearTimeout(timer);
-  }, [selected, controller.content, reviewIndex]);
+  }, [selected, controller.content, reviewIndex, searchIndex]);
 
   const { backlinks } = useBacklinks(selected, notes);
-  const { results: searchResults } = useSearch(query, notes);
+  const searchResults = useSearch(searchIndex, query);
   const meta = useMemo(() => new MetaService().build(notes), [notes]);
   const allTags = meta.getTags();
   const noteTags = selected ? meta.getTags(selected) : [];
@@ -872,6 +895,37 @@ export default function App() {
       editorPathRef.current = name;
       controller.loadContent(cached);
     }
+  };
+
+  /** Open a search hit and, for heading/body matches, jump to the first match. */
+  const openSearchResult = (path: string, result?: SearchResult) => {
+    setOverlay(null);
+    select(path);
+    const needle = result && result.field !== 'title' ? result.matches[0] : undefined;
+    if (!needle) return;
+    setFindQuery(needle);
+    setFindIndex(0);
+    setFindOpen(true);
+    const editorRoot = () => document.querySelector<HTMLElement>('.editor-wrap');
+    void waitForTextRanges(
+      editorRoot,
+      needle,
+      () => selectedRef.current === path && editorPathRef.current === path,
+    ).then((ranges) => {
+      const root = editorRoot();
+      if (!root || !ranges.length || selectedRef.current !== path) return;
+      findRangesRef.current = ranges;
+      setFindMatchCount(ranges.length);
+      applyTextHighlights(ranges, ranges[0]);
+      revealTextRange(root, ranges[0]);
+    });
+  };
+
+  const readNoteForSearch = async (path: string): Promise<string> => {
+    if (path === selected && editorPathRef.current === path) return controller.content;
+    const cached = contents[path] ?? demoContent[path];
+    if (cached !== undefined) return cached;
+    return root ? VaultService.read(root, path) : '';
   };
 
   const closeOpenTab = (path: string) => {
@@ -1781,6 +1835,18 @@ export default function App() {
                   variant="ghost"
                   color="gray"
                   highContrast
+                  aria-label="Search notes"
+                  title="Search notes (⌘P)"
+                  onClick={() => setOverlay('search')}
+                >
+                  <MagnifyingGlassIcon width={16} height={16} />
+                </IconButton>
+                <IconButton
+                  type="button"
+                  size="2"
+                  variant="ghost"
+                  color="gray"
+                  highContrast
                   aria-label={
                     noteTargetFolder ? `New note in ${noteTargetFolder}` : 'New note'
                   }
@@ -2312,6 +2378,16 @@ export default function App() {
             }}
           />
         </div>
+      )}
+
+      {overlay === 'search' && (
+        <SearchPalette
+          index={searchIndex}
+          recentPaths={openTabs.filter((path) => path && path !== selected).reverse()}
+          readNote={readNoteForSearch}
+          onOpen={openSearchResult}
+          onClose={() => setOverlay(null)}
+        />
       )}
 
       {overlay === 'settings' && (

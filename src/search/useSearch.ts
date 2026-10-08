@@ -1,21 +1,15 @@
-import { useMemo } from 'react';
-import { SearchIndex, type SearchNote, type SearchResult } from './SearchIndex';
+import { useMemo, useSyncExternalStore } from 'react';
+import type { SearchIndex, SearchResult } from './SearchIndex';
 
 /**
- * Builds a SearchIndex from notes and returns ranked results for `query`.
+ * Ranked results for `query` from a live SearchIndex; re-queries whenever
+ * the index changes (notes added, edited, or removed).
  */
-export function useSearch(
-  query: string,
-  notes: SearchNote[],
-  limit = 50,
-): {
-  results: SearchResult[];
-  index: SearchIndex;
-} {
-  const index = useMemo(() => new SearchIndex().build(notes), [notes]);
-  const results = useMemo(
+export function useSearch(index: SearchIndex, query: string, limit = 50): SearchResult[] {
+  const version = useSyncExternalStore(index.subscribe, index.getVersion);
+  return useMemo(
     () => index.query(query, limit),
-    [index, query, limit],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- version tracks index contents
+    [index, version, query, limit],
   );
-  return { results, index };
 }
