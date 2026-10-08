@@ -77,3 +77,31 @@ export function revealTextRange(root: HTMLElement, range: Range): void {
     root.scrollBy({ top: rect.top - rootRect.top - root.clientHeight / 2, behavior: 'smooth' });
   }
 }
+
+const RENDER_SETTLE_FRAMES = 2;
+const RENDER_TIMEOUT_FRAMES = 60;
+
+/**
+ * Resolve the ranges for `query` once the editor has rendered a newly
+ * opened note. `isReady` gates on the note being loaded; a couple of extra
+ * frames let the editor replace the previous note's DOM before we look.
+ */
+export function waitForTextRanges(
+  getRoot: () => HTMLElement | null,
+  query: string,
+  isReady: () => boolean,
+): Promise<Range[]> {
+  return new Promise((resolve) => {
+    let frames = 0;
+    let readyFrames = 0;
+    const tick = () => {
+      frames += 1;
+      if (isReady()) readyFrames += 1;
+      const root = readyFrames > RENDER_SETTLE_FRAMES ? getRoot() : null;
+      const ranges = root ? findTextRanges(root, query) : [];
+      if (ranges.length || frames >= RENDER_TIMEOUT_FRAMES) resolve(ranges);
+      else requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+}
