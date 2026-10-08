@@ -732,6 +732,11 @@ ipcMain.handle('vault:appendData', async (_, root, name, content) => {
   return true;
 });
 
+ipcMain.handle('vault:deleteData', async (_, root, name) => {
+  await fs.rm(resolveDataFile(root, name), { force: true });
+  return true;
+});
+
 ipcMain.handle('vault:create', async (_, root, name) => {
   const safeName = ensureMdExtension(name.replace(/\\/g, '/'));
   assertMarkdown(safeName);

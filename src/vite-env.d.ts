@@ -120,6 +120,7 @@ interface Window {
     readData?: (root: string, name: string) => Promise<string | null>;
     writeData?: (root: string, name: string, content: string) => Promise<boolean>;
     appendData?: (root: string, name: string, content: string) => Promise<boolean>;
+    deleteData?: (root: string, name: string) => Promise<boolean>;
     mkdir: (root: string, name: string) => Promise<string>;
     ensureDefault: () => Promise<VaultOpenResult>;
     importObsidian: (root: string) => Promise<VaultOpenResult>;

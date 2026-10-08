@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   CheckIcon,
   CopyIcon,
+  CounterClockwiseClockIcon,
   Cross2Icon,
   CursorTextIcon,
   FileTextIcon,
@@ -17,22 +18,21 @@ import { buildStudyChatSystemPrompt } from '../systemPrompt';
 import { ensureKatexCss } from '../../editor/math/ensureKatexCss';
 import type { AgentProviderId } from '../../settings/types';
 import { ChatMarkdown } from './ChatMarkdown';
+import { ChatSessionList } from './ChatSessionList';
 import { asBlockquote, chatHistory } from './history';
-import {
-  loadThread,
-  saveThread,
-  type StudyChatMessage,
-  type StudyChatMode,
-} from './threadStore';
+import type { ChatSessionStore } from './sessionStore';
+import type { StudyChatMessage, StudyChatMode } from './threadStore';
 
 export type ChatInsertTarget = 'cursor' | 'end';
 
 type Props = {
   client: AiClient;
-  /** Open note path ('' when none). Threads are kept per note. */
+  /** Open note path ('' when none); sent as context with each question. */
   notePath: string;
   noteContent: string;
   vaultRoot: string | null;
+  /** Vault-wide sessions; the active one follows the user across notes. */
+  sessions: ChatSessionStore;
   agentProviderId: AgentProviderId;
   /** False when the open file is not an editable Markdown note. */
   canInsert: boolean;
@@ -69,6 +69,7 @@ export function StudyChatPane({
   notePath,
   noteContent,
   vaultRoot,
+  sessions,
   agentProviderId,
   canInsert,
   onInsert,
@@ -90,56 +91,35 @@ export function StudyChatPane({
   const [busy, setBusy] = useState(false);
   const [streamingId, setStreamingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
-  // Threads live in a ref so async turns can read and save the latest copy.
-  const threadsRef = useRef<Record<string, StudyChatMessage[]>>({});
-  const loadedRef = useRef(new Set<string>());
-  const [, rerender] = useReducer((n: number) => n + 1, 0);
+  useSyncExternalStore(sessions.subscribe, sessions.getVersion);
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
 
-  const messages = threadsRef.current[notePath] ?? [];
+  const messages = sessions.messages();
 
+  // Turns write to the session they started in, even if the user switches mid-reply.
   const updateThread = useCallback(
-    (path: string, fn: (messages: StudyChatMessage[]) => StudyChatMessage[]) => {
-      threadsRef.current = { ...threadsRef.current, [path]: fn(threadsRef.current[path] ?? []) };
-      rerender();
-    },
-    [],
+    (sessionId: string, fn: (messages: StudyChatMessage[]) => StudyChatMessage[]) =>
+      sessions.update(sessionId, fn),
+    [sessions],
   );
 
   const patchMessage = useCallback(
-    (path: string, id: string, patch: Partial<StudyChatMessage>) => {
-      updateThread(path, (list) => list.map((m) => (m.id === id ? { ...m, ...patch } : m)));
+    (sessionId: string, id: string, patch: Partial<StudyChatMessage>) => {
+      updateThread(sessionId, (list) => list.map((m) => (m.id === id ? { ...m, ...patch } : m)));
     },
     [updateThread],
   );
 
-  const persist = useCallback(
-    (path: string) => void saveThread(vaultRoot, path, threadsRef.current[path] ?? []),
-    [vaultRoot],
-  );
+  const persist = useCallback((sessionId: string) => sessions.save(sessionId), [sessions]);
 
   useEffect(() => {
     void ensureKatexCss();
   }, []);
-
-  // Load the open note's saved thread once per session.
-  useEffect(() => {
-    if (!notePath || loadedRef.current.has(notePath)) return;
-    loadedRef.current.add(notePath);
-    let cancelled = false;
-    void loadThread(vaultRoot, notePath).then((saved) => {
-      if (cancelled || saved.length === 0) return;
-      // Keep anything sent while the file was loading.
-      updateThread(notePath, (current) => [...saved, ...current]);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [notePath, vaultRoot, updateThread]);
 
   // The attached excerpt belongs to the note it came from.
   useEffect(() => {
@@ -177,16 +157,18 @@ export function StudyChatPane({
       const prompt = raw.trim();
       if (!prompt || busy) return;
       const path = notePath;
+      const sessionId = sessions.ensureActive();
       const userMsg: StudyChatMessage = {
         id: newId(),
         role: 'user',
         mode: 'chat',
         text: prompt,
+        ...(path ? { notePath: path } : {}),
         ...(quote ? { quote } : {}),
       };
       const replyId = newId();
-      const history = chatHistory([...(threadsRef.current[path] ?? []), userMsg]);
-      updateThread(path, (list) => [
+      const history = chatHistory([...sessions.messages(sessionId), userMsg]);
+      updateThread(sessionId, (list) => [
         ...list,
         userMsg,
         { id: replyId, role: 'assistant', mode: 'chat', text: '' },
@@ -204,7 +186,7 @@ export function StudyChatPane({
       let frame = 0;
       const flush = () => {
         frame = 0;
-        patchMessage(path, replyId, { text: streamed });
+        patchMessage(sessionId, replyId, { text: streamed });
       };
 
       try {
@@ -220,7 +202,7 @@ export function StudyChatPane({
           },
         });
         if (frame) cancelAnimationFrame(frame);
-        patchMessage(path, replyId, { text });
+        patchMessage(sessionId, replyId, { text });
       } catch (err) {
         if (frame) cancelAnimationFrame(frame);
         const message = err instanceof Error ? err.message : 'Request failed';
@@ -229,15 +211,15 @@ export function StudyChatPane({
           : streamed
             ? `${streamed}\n\n_${message}_`
             : message;
-        patchMessage(path, replyId, { text, error: true });
+        patchMessage(sessionId, replyId, { text, error: true });
       } finally {
         abortRef.current = null;
         setBusy(false);
         setStreamingId(null);
-        persist(path);
+        persist(sessionId);
       }
     },
-    [busy, client, includeNote, noteContent, notePath, patchMessage, persist, quote, updateThread],
+    [busy, client, includeNote, noteContent, notePath, patchMessage, persist, quote, sessions, updateThread],
   );
 
   const sendAgent = useCallback(
@@ -245,8 +227,9 @@ export function StudyChatPane({
       const prompt = raw.trim();
       if (!prompt || busy) return;
       const path = notePath;
+      const sessionId = sessions.ensureActive();
       const push = (...items: Omit<StudyChatMessage, 'id' | 'mode'>[]) =>
-        updateThread(path, (list) => [
+        updateThread(sessionId, (list) => [
           ...list,
           ...items.map((item) => ({ ...item, id: newId(), mode: 'agent' as const })),
         ]);
@@ -260,17 +243,19 @@ export function StudyChatPane({
           : typeof window.ai?.agentRun !== 'function'
             ? 'Agent bridge missing. Fully restart Electron after updating.'
             : null;
+      const userMsg = { role: 'user' as const, text: prompt, ...(path ? { notePath: path } : {}) };
       if (blocked || !vaultRoot) {
-        push({ role: 'user', text: prompt }, { role: 'assistant', text: blocked ?? '' });
+        push(userMsg, { role: 'assistant', text: blocked ?? '' });
+        persist(sessionId);
         return;
       }
 
-      push({ role: 'user', text: prompt });
+      push(userMsg);
       setBusy(true);
       const appendLog = (text: string, kind = 'status') => {
         const trimmed = text.trim();
         if (!trimmed) return;
-        updateThread(path, (list) => {
+        updateThread(sessionId, (list) => {
           const last = list[list.length - 1];
           // Collapse repeated status lines (e.g. many "Thinking…").
           if (last?.role === 'log' && last.kind === kind && kind === 'status' && last.text === trimmed) {
@@ -308,7 +293,7 @@ export function StudyChatPane({
       } finally {
         stopProgress?.();
         setBusy(false);
-        persist(path);
+        persist(sessionId);
       }
     },
     [
@@ -321,6 +306,7 @@ export function StudyChatPane({
       onAfterAgentRun,
       onBeforeAgentRun,
       persist,
+      sessions,
       updateThread,
       vaultRoot,
     ],
@@ -348,10 +334,16 @@ export function StudyChatPane({
 
   const newChat = () => {
     if (busy) return;
-    updateThread(notePath, (list) => list.filter((m) => m.mode !== mode));
-    persist(notePath);
+    sessions.startNew();
+    setHistoryOpen(false);
     setQuote(null);
     inputRef.current?.focus();
+  };
+
+  const openSession = (id: string) => {
+    setHistoryOpen(false);
+    stickToBottomRef.current = true;
+    void sessions.open(id).then(() => inputRef.current?.focus());
   };
 
   const copy = (message: StudyChatMessage) => {
@@ -362,8 +354,14 @@ export function StudyChatPane({
   };
 
   const insertDisabledReason = canInsert ? undefined : 'Open a Markdown note to insert';
-  // Chat and Agent keep separate transcripts for the same note.
-  const visible = messages.filter((m) => m.mode === mode);
+  // Mark where the conversation moved to another note.
+  const noteChanges = new Set<string>();
+  let lastNote: string | undefined;
+  for (const m of messages) {
+    if (m.role !== 'user' || !m.notePath) continue;
+    if (m.notePath !== lastNote) noteChanges.add(m.id);
+    lastNote = m.notePath;
+  }
 
   return (
     <section className="study-chat" aria-label="Study chat">
@@ -395,11 +393,21 @@ export function StudyChatPane({
         </span>
         <button
           type="button"
+          className={`study-chat-icon${historyOpen ? ' active' : ''}`}
+          onClick={() => setHistoryOpen((open) => !open)}
+          title="Chat history"
+          aria-label="Chat history"
+          aria-pressed={historyOpen}
+        >
+          <CounterClockwiseClockIcon />
+        </button>
+        <button
+          type="button"
           className="study-chat-icon"
           onClick={newChat}
-          disabled={busy || visible.length === 0}
-          title="New chat for this note"
-          aria-label="New chat for this note"
+          disabled={busy || messages.length === 0}
+          title="New chat"
+          aria-label="New chat"
         >
           <Pencil2Icon />
         </button>
@@ -414,6 +422,14 @@ export function StudyChatPane({
         </button>
       </header>
 
+      {historyOpen ? (
+        <ChatSessionList
+          sessions={sessions.sessions()}
+          activeId={sessions.activeId}
+          onOpen={openSession}
+          onDelete={(id) => sessions.remove(id)}
+        />
+      ) : (
       <div
         className="study-chat-messages"
         ref={listRef}
@@ -422,12 +438,12 @@ export function StudyChatPane({
           stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}
       >
-        {visible.length === 0 ? (
+        {messages.length === 0 ? (
           <div className="study-chat-empty">
             <p>Let’s make it concrete.</p>
           </div>
         ) : (
-          visible.map((msg) => {
+          messages.map((msg) => {
             if (msg.role === 'log') {
               return (
                 <div key={msg.id} className={`study-chat-log log-${msg.kind || 'status'}`}>
@@ -437,9 +453,18 @@ export function StudyChatPane({
             }
             if (msg.role === 'user') {
               return (
-                <div key={msg.id} className="study-chat-user">
-                  {msg.quote ? <blockquote>{msg.quote}</blockquote> : null}
-                  <div>{msg.text}</div>
+                <div key={msg.id} className="study-chat-turn">
+                  {msg.notePath && noteChanges.has(msg.id) ? (
+                    <div className="study-chat-note-change" title={msg.notePath}>
+                      <FileTextIcon />
+                      <span>{noteTitle(msg.notePath)}</span>
+                    </div>
+                  ) : null}
+                  <div className="study-chat-user">
+                    {msg.mode === 'agent' ? <span className="study-chat-user-mode">{agentLabel}</span> : null}
+                    {msg.quote ? <blockquote>{msg.quote}</blockquote> : null}
+                    <div>{msg.text}</div>
+                  </div>
                 </div>
               );
             }
@@ -521,6 +546,7 @@ export function StudyChatPane({
           })
         )}
       </div>
+      )}
 
       <form
         className="study-chat-composer"

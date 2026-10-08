@@ -32,6 +32,7 @@ import { WysiwygEditor, useEditorController, type WysiwygEditorHandle } from './
 import { normalizePastedMathMarkdown, preferOneLineDisplayMath } from './editor/math';
 import { noteExportTitle } from './export/prepareNoteMarkdown';
 import type { ChatInsertTarget } from './ai/chat/StudyChatPane';
+import { useChatSessions } from './ai/chat/useChatSessions';
 import {
   askText,
   canMkdir,
@@ -499,6 +500,7 @@ export default function App() {
   const review = useReviewSystem(root, quizHistory);
   const reviewIndex = review.index;
   const searchIndex = useMemo(() => new SearchIndex(), [root]);
+  const chatSessions = useChatSessions(root, files);
 
   useEffect(() => {
     const settings = settingsStore.hydrate();
@@ -2123,6 +2125,7 @@ export default function App() {
                   notePath={selected}
                   noteContent={isPdfFileName(selected) ? '' : controller.content}
                   vaultRoot={root}
+                  sessions={chatSessions}
                   agentProviderId={agentProviderId}
                   canInsert={Boolean(selected) && !isQuizPath(selected) && !isPdfFileName(selected) && !reviewing}
                   onInsert={insertFromChat}

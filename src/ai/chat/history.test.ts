@@ -9,11 +9,10 @@ const msg = (partial: Partial<StudyChatMessage> & Pick<StudyChatMessage, 'role' 
 });
 
 describe('chatHistory', () => {
-  it('keeps chat turns, folds excerpts into the question, and drops agent, log and failed replies', () => {
+  it('folds excerpts into the question and drops log and failed replies', () => {
     const history = chatHistory([
       msg({ role: 'user', text: 'What is entropy?', quote: 'S = k ln W' }),
       msg({ role: 'assistant', text: 'A count of microstates.' }),
-      msg({ role: 'user', text: 'Add a section', mode: 'agent' }),
       msg({ role: 'log', text: 'Thinking…', mode: 'agent' }),
       msg({ role: 'user', text: 'Why log?' }),
       msg({ role: 'assistant', text: 'network error', error: true }),
@@ -22,6 +21,23 @@ describe('chatHistory', () => {
       { role: 'user', content: 'About this part of my note:\n"""\nS = k ln W\n"""\n\nWhat is entropy?' },
       { role: 'assistant', content: 'A count of microstates.' },
       { role: 'user', content: 'Why log?' },
+    ]);
+  });
+
+  it('marks note changes and agent requests so one session can span notes and modes', () => {
+    const history = chatHistory([
+      msg({ role: 'user', text: 'Explain this', notePath: 'A.md' }),
+      msg({ role: 'assistant', text: 'Sure.' }),
+      msg({ role: 'user', text: 'More', notePath: 'A.md' }),
+      msg({ role: 'user', text: 'Add a summary', notePath: 'B.md', mode: 'agent' }),
+      msg({ role: 'assistant', text: 'Done.', mode: 'agent' }),
+    ]);
+    expect(history.map((turn) => turn.content)).toEqual([
+      '(Now viewing note: A.md)\n\nExplain this',
+      'Sure.',
+      'More',
+      '(Now viewing note: B.md)\n\n(Sent to the editing agent)\n\nAdd a summary',
+      'Done.',
     ]);
   });
 });

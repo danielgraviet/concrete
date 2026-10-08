@@ -2672,6 +2672,67 @@ body.study-chat-resizing iframe{pointer-events:none}
   max-height:6.2em;
   overflow:hidden;
 }
+.study-chat-turn{display:flex;flex-direction:column;gap:8px}
+.study-chat-note-change{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  color:var(--mv-muted,#888);
+  font-size:11px;
+}
+.study-chat-note-change::before,.study-chat-note-change::after{content:'';flex:1;border-top:1px solid var(--mv-border,#303030)}
+.study-chat-note-change span{max-width:70%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.study-chat-user-mode{
+  display:block;
+  margin:0 0 3px;
+  color:var(--mv-muted,#888);
+  font-size:10px;
+  font-weight:700;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+}
+.study-chat-icon.active{background:var(--mv-surface-2,#292929);color:var(--mv-text,#eee)}
+
+.study-chat-history{
+  flex:1 1 auto;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  padding:12px 10px;
+  gap:8px;
+}
+.study-chat-history-filter{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:7px 10px;
+  border:1px solid var(--mv-border,#353535);
+  border-radius:8px;
+  color:var(--mv-muted,#888);
+}
+.study-chat-history-filter input{flex:1;min-width:0;border:0;outline:0;background:transparent;color:var(--mv-text,#eee);font:inherit;font-size:13px}
+.study-chat-history ul{flex:1 1 auto;min-height:0;overflow-y:auto;margin:0;padding:0;list-style:none}
+.study-chat-history li{display:flex;align-items:center;gap:4px;border-radius:8px}
+.study-chat-history li:hover,.study-chat-history li.active{background:var(--mv-surface-2,#292929)}
+.study-chat-history li .study-chat-icon{opacity:0}
+.study-chat-history li:hover .study-chat-icon,.study-chat-history li .study-chat-icon:focus-visible{opacity:1}
+.study-chat-history-open{
+  flex:1;
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  border:0;
+  background:transparent;
+  color:var(--mv-text,#eee);
+  text-align:left;
+  padding:8px 10px;
+  font:inherit;
+  cursor:pointer;
+}
+.study-chat-history-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.study-chat-history-meta{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--mv-muted,#888);font-size:11px}
+.study-chat-history-empty{margin:24px 0;color:var(--mv-muted,#888);text-align:center;font-size:13px}
 .study-chat-reply{font-size:14.5px;line-height:1.65}
 .study-chat-reply.error .study-chat-markdown{color:var(--mv-muted,#999)}
 .study-chat-log{
