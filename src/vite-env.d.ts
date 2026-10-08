@@ -19,6 +19,21 @@ interface VaultOpenResult {
   folders: string[];
 }
 
+interface VaultImportSummary {
+  importedNotes: string[];
+  skippedNotes: string[];
+  removedFiles: string[];
+  uncertainFilesKept: string[];
+  preservedFiles: string[];
+  skippedFiles: string[];
+  copiedAssets: string[];
+  warnings: string[];
+}
+
+interface VaultImportResult extends VaultOpenResult {
+  importSummary: VaultImportSummary;
+}
+
 interface VaultListResult {
   files: string[];
   pdfFiles: string[];
@@ -108,6 +123,7 @@ interface Window {
     mkdir: (root: string, name: string) => Promise<string>;
     ensureDefault: () => Promise<VaultOpenResult>;
     importObsidian: (root: string) => Promise<VaultOpenResult>;
+    importNotion: (root: string) => Promise<VaultImportResult | null>;
     restore: () => Promise<VaultOpenResult | null>;
     rename: (root: string, from: string, to: string) => Promise<string>;
     delete: (root: string, name: string) => Promise<boolean>;

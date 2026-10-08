@@ -1,4 +1,4 @@
-import type { VaultListResult, VaultOpenResult, VaultWatchEvent } from './types';
+import type { VaultImportResult, VaultListResult, VaultOpenResult, VaultWatchEvent } from './types';
 import { subscribeVaultWatch, type VaultWatchCallback } from './watch';
 
 function requireVault() {
@@ -71,6 +71,14 @@ export const VaultService = {
       throw new Error('Obsidian import requires an Electron restart');
     }
     return api.importObsidian(root);
+  },
+
+  importNotion(root: string | null): Promise<VaultImportResult | null> {
+    const api = requireVault();
+    if (typeof api.importNotion !== 'function') {
+      throw new Error('Notion import requires an Electron restart');
+    }
+    return api.importNotion(root ?? '');
   },
 
   rename(root: string, from: string, to: string): Promise<string> {

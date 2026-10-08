@@ -45,6 +45,7 @@
     "@radix-ui/themes": "^3.3.0",
     "@vitejs/plugin-react": "latest",
     "chokidar": "^5.0.0",
+    "fflate": "^0.8.3",
     "katex": "^0.18.7",
     "marked": "^18.0.13",
     "pdfjs-dist": "^6.4.299",

@@ -7,6 +7,7 @@ const chokidar = require('chokidar');
 const sandbox = require('./sandbox/index.cjs');
 const { createTrajectory } = require('./agentTrajectory.cjs');
 const { extractPdfPages } = require('./pdfText.cjs');
+const { importNotionExport, inspectNotionExport } = require('./notionImport.cjs');
 const telemetrySpans = require('./telemetrySpans.cjs');
 
 /** Project / app root (this file lives in electron/). */
@@ -1634,6 +1635,45 @@ ipcMain.handle('vault:importObsidian', async (_, root) => {
   await startWatch(destination);
   await saveVaultPath(destination);
   return { root: destination, files, pdfFiles, folders };
+});
+
+ipcMain.handle('vault:importNotion', async (_, root) => {
+  const source = await dialog.showOpenDialog({
+    properties: ['openFile', 'openDirectory'],
+    filters: [{ name: 'Notion export', extensions: ['zip'] }],
+  });
+  if (source.canceled || !source.filePaths[0]) return null;
+
+  const destination = path.resolve(typeof root === 'string' && root.trim() ? root : defaultVaultRoot());
+  if (!destination || destination === path.parse(destination).root) throw new Error('Invalid vault root');
+  await fs.mkdir(destination, { recursive: true });
+  const inspection = await inspectNotionExport(source.filePaths[0]);
+  let uncertainAction = 'keep';
+  if (inspection.uncertain.length > 0) {
+    const preview = inspection.uncertain
+      .slice(0, 12)
+      .map((item) => `• ${item.path} — ${item.reason}`)
+      .join('\n');
+    const extra = inspection.uncertain.length > 12
+      ? `\n…and ${inspection.uncertain.length - 12} more.`
+      : '';
+    const response = await dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      title: 'Review Notion import',
+      message: 'Some imported files may be incomplete.',
+      detail: `${preview}${extra}\n\nThese files will be kept by default. Choose “Skip flagged files” only if you want them left out of Concrete.`,
+      buttons: ['Cancel import', 'Keep flagged files', 'Skip flagged files'],
+      defaultId: 1,
+      cancelId: 0,
+    });
+    if (response.response === 0) return null;
+    uncertainAction = response.response === 2 ? 'remove' : 'keep';
+  }
+  const importSummary = await importNotionExport(source.filePaths[0], destination, { uncertainAction });
+  const { files, pdfFiles, folders } = await listVaultEntries(destination);
+  await startWatch(destination);
+  await saveVaultPath(destination);
+  return { root: destination, files, pdfFiles, folders, importSummary };
 });
 
 // `vault-file://local/<vault-relative path>` lets the renderer show vault PDFs
