@@ -823,6 +823,32 @@ export default function App() {
     }
   };
 
+  const importNotionExport = async () => {
+    try {
+      const result = await VaultService.importNotion(root);
+      if (!result) return;
+      setContents({});
+      setActiveFolder('');
+      const first = result.files.find((file) => !isHiddenVaultFile(file)) ?? '';
+      setSelected(first);
+      setOpenTabs(first ? [first] : []);
+      setPreviewTab(null);
+      setOnboardingStep(1);
+      const summary = result.importSummary;
+      const warningText = summary.warnings.length ? `\nWarnings: ${summary.warnings.length}` : '';
+      window.alert(
+        `Notion import complete: ${summary.importedNotes.length} notes imported, `
+        + `${summary.skippedNotes.length} existing notes skipped, `
+        + `${summary.removedFiles.length} empty/broken files omitted, `
+        + `${summary.uncertainFilesKept.length} uncertain files kept, `
+        + `${summary.preservedFiles.length} other files preserved, `
+        + `${summary.skippedFiles.length} existing files skipped.${warningText}`,
+      );
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Could not import the Notion export.');
+    }
+  };
+
   const select = (name: string, options?: { recordTab?: boolean; preview?: boolean }) => {
     persistSelectionRef.current = true;
     if (controller.isDirty) void controller.persistence.flush();
@@ -2294,6 +2320,7 @@ export default function App() {
             store={settingsStore}
             vaultRoot={root}
             onImportObsidian={() => { void importObsidianVault().then(() => setOverlay(null)); }}
+            onImportNotion={() => { void importNotionExport().then(() => setOverlay(null)); }}
             onReplayOnboarding={() => {
               setOverlay(null);
               setOnboardingStep(0);

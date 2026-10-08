@@ -15,6 +15,21 @@ export interface VaultOpenResult {
   folders: string[];
 }
 
+export interface VaultImportSummary {
+  importedNotes: string[];
+  skippedNotes: string[];
+  removedFiles: string[];
+  uncertainFilesKept: string[];
+  preservedFiles: string[];
+  skippedFiles: string[];
+  copiedAssets: string[];
+  warnings: string[];
+}
+
+export interface VaultImportResult extends VaultOpenResult {
+  importSummary: VaultImportSummary;
+}
+
 export interface VaultListResult {
   files: string[];
   pdfFiles: string[];

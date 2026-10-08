@@ -25,6 +25,7 @@ type Props = {
   store: SettingsStore;
   vaultRoot?: string | null;
   onImportObsidian?: () => void;
+  onImportNotion?: () => void;
   onReplayOnboarding?: () => void;
   providerOptions?: { id: string; label: string }[];
   onClose?: () => void;
@@ -58,6 +59,7 @@ export function SettingsPanel({
   store,
   vaultRoot,
   onImportObsidian,
+  onImportNotion,
   onReplayOnboarding,
   providerOptions = [
     { id: 'openrouter', label: 'OpenRouter' },
@@ -633,6 +635,14 @@ export function SettingsPanel({
           disabled={!onImportObsidian}
         >
           Import Obsidian Vault
+        </Button>
+        <Button
+          type="button"
+          variant="soft"
+          onClick={onImportNotion}
+          disabled={!onImportNotion}
+        >
+          Import Notion Export
         </Button>
         <Button
           type="button"

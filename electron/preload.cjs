@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('vault', {
   mkdir: (root, name) => ipcRenderer.invoke('vault:mkdir', root, name),
   ensureDefault: () => ipcRenderer.invoke('vault:ensureDefault'),
   importObsidian: (root) => ipcRenderer.invoke('vault:importObsidian', root),
+  importNotion: (root) => ipcRenderer.invoke('vault:importNotion', root),
   restore: () => ipcRenderer.invoke('vault:restore'),
   rename: (root, from, to) => ipcRenderer.invoke('vault:rename', root, from, to),
   delete: (root, name) => ipcRenderer.invoke('vault:delete', root, name),
