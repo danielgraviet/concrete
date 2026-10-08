@@ -1,3 +1,6 @@
+/** Where to create an OpenRouter API key. */
+export const OPENROUTER_KEYS_URL = 'https://openrouter.ai/keys';
+
 /** Curated cheap OpenRouter models for quiz generation / tutoring. */
 
 export type OpenRouterModelOption = {

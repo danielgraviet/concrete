@@ -99,6 +99,8 @@ contextBridge.exposeInMainWorld('sandbox', {
   status: (providerId) => ipcRenderer.invoke('sandbox:status', providerId),
   run: (payload) => ipcRenderer.invoke('sandbox:run', payload),
   prepare: (payload) => ipcRenderer.invoke('sandbox:prepare', payload),
+  keyStatus: () => ipcRenderer.invoke('sandbox:keyStatus'),
+  setApiKey: (apiKey) => ipcRenderer.invoke('sandbox:setApiKey', apiKey),
   onProgress: (callback) => {
     if (typeof callback !== 'function') return () => {};
     const listener = (_event, payload) => callback(payload);

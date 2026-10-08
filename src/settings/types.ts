@@ -58,7 +58,7 @@ export type AppSettings = {
   claudeModelId: string;
   /** BYO coding agent: off | codex | claude */
   agentProviderId: AgentProviderId;
-  /** Where quiz code runs: a registered sandbox runner id ('docker', 'off', …). */
+  /** Where code runs: a registered sandbox runner id ('docker', 'daytona', 'off', …). */
   sandboxProviderId: string;
   quiz: QuizGenerationSettings;
   review: ReviewSettings;

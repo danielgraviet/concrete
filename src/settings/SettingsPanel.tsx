@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { Button, Flex, Heading, Select, Text, TextField } from '@radix-ui/themes';
+import { Button, Flex, Heading, Link, Select, Text, TextField } from '@radix-ui/themes';
 import { ArrowLeftIcon } from '@radix-ui/react-icons';
 import type { SettingsStore } from './SettingsStore';
 import type {
@@ -11,10 +11,11 @@ import type {
 import { THEME_PACKS } from './themePacks';
 import { BRAND_LOGOS } from './types';
 import { BrandLogo } from '../branding/BrandLogo';
-import { OPENROUTER_MODEL_OPTIONS } from '../ai/openRouterModels';
+import { OPENROUTER_KEYS_URL, OPENROUTER_MODEL_OPTIONS } from '../ai/openRouterModels';
 import { CLAUDE_MODEL_OPTIONS } from '../ai/claudeModels';
 import { isChatBackendId, type ChatBackendId } from '../ai/ChatModelProvider';
 import { getSandboxStatus, onSandboxProgress, prepareSandboxImage, type SandboxStatus } from '../sandbox';
+import { DaytonaKeyField } from './DaytonaKeyField';
 
 // Charts load only when the AI Activity tab is opened.
 const TelemetryView = lazy(() =>
@@ -440,6 +441,11 @@ export function SettingsPanel({
             : 'Checking…'}{' '}
           Code questions run here to verify their answers; without a runner they are marked unverified.
         </Text>
+        {settings.sandboxProviderId === 'daytona' ? (
+          <DaytonaKeyField
+            onChange={() => void getSandboxStatus('daytona').then(setSandboxStatus)}
+          />
+        ) : null}
         {sandboxStatus?.available
           ? sandboxStatus.images
               ?.filter((image) => image.buildable)
@@ -541,7 +547,7 @@ export function SettingsPanel({
               value={apiKeyInput}
               onChange={(event) => setApiKeyInput(event.target.value)}
             />
-            <Flex align="center" gap="2">
+            <Flex align="center" gap="2" wrap="wrap">
               <Button
                 type="button"
                 variant="soft"
@@ -570,6 +576,11 @@ export function SettingsPanel({
                 >
                   Use login instead
                 </Button>
+              ) : null}
+              {backend === 'openrouter' ? (
+                <Link size="1" href={OPENROUTER_KEYS_URL} target="_blank" rel="noreferrer">
+                  Get an OpenRouter API key →
+                </Link>
               ) : null}
               {keyStatus ? <Text size="1" color="gray">{keyStatus}</Text> : null}
             </Flex>
