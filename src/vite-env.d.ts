@@ -145,7 +145,7 @@ interface Window {
     /** Reveals a vault-relative file in Finder / Explorer. */
     revealInFolder: (root: string, name: string) => Promise<boolean>;
     /** Picks a PDF from disk and copies it into `folder`. Null when cancelled. */
-    importPdf: (root: string, folder: string) => Promise<string | null>;
+    importFile: (root: string, folder: string) => Promise<string | null>;
     /** Raw text per page (capped at 500 pages); `totalPages` is the real count. */
     extractPdfText: (root: string, name: string) => Promise<{ pages: string[]; totalPages: number }>;
     /** Prints a note to a PDF beside it. Returns the vault-relative PDF path. */

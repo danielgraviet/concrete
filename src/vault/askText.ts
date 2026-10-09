@@ -3,7 +3,7 @@
  * so create/rename flows must use this instead.
  */
 export type AskTextOptions = {
-  /** Small left-aligned action (e.g. "Import PDF…"). Closes the prompt (resolving null), then runs. */
+  /** Small left-aligned action (e.g. "Import file…"). Closes the prompt (resolving null), then runs. */
   extraAction?: { label: string; onClick: () => void };
 };
 

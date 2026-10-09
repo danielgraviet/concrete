@@ -25,7 +25,7 @@ contextBridge.exposeInMainWorld('vault', {
   watchStop: () => ipcRenderer.invoke('vault:watchStop'),
   openPath: (root, name) => ipcRenderer.invoke('vault:openPath', root, name),
   revealInFolder: (root, name) => ipcRenderer.invoke('vault:revealInFolder', root, name),
-  importPdf: (root, folder) => ipcRenderer.invoke('vault:importPdf', root, folder),
+  importFile: (root, folder) => ipcRenderer.invoke('vault:importFile', root, folder),
   extractPdfText: (root, name) => ipcRenderer.invoke('vault:extractPdfText', root, name),
   exportNotePdf: (payload) => ipcRenderer.invoke('vault:exportNotePdf', payload),
   takePdfExport: () => ipcRenderer.invoke('vault:takePdfExport'),

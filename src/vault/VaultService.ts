@@ -99,9 +99,9 @@ export const VaultService = {
     return requireVault().revealInFolder(root, name);
   },
 
-  /** Picks a PDF from disk and copies it into `folder`. Null when cancelled. */
-  importPdf(root: string, folder: string): Promise<string | null> {
-    return requireVault().importPdf(root, folder);
+  /** Picks a Markdown or PDF file from disk and copies it into `folder`. Null when cancelled. */
+  importFile(root: string, folder: string): Promise<string | null> {
+    return requireVault().importFile(root, folder);
   },
 
   /** Raw text per page of a vault PDF. */

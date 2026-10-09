@@ -975,7 +975,7 @@ export default function App() {
       noteTargetFolder ? `New note in ${noteTargetFolder}` : 'New note name',
       '',
       canUseDiskVault(root)
-        ? { extraAction: { label: 'Import PDF…', onClick: () => void importPdfFromSidebar() } }
+        ? { extraAction: { label: 'Import file…', onClick: () => void importFileFromSidebar() } }
         : {},
     );
     if (!name) return;
@@ -1003,13 +1003,13 @@ export default function App() {
     if (onboarding && onboardingStep === 1) setOnboardingStep(2);
   };
 
-  const importPdfFromSidebar = async () => {
+  const importFileFromSidebar = async () => {
     try {
-      const imported = await importPdf();
+      const imported = await importFile();
       if (imported) setTreeFocus({ kind: 'file', path: imported });
     } catch (error) {
-      console.error('Failed to import PDF', error);
-      window.alert(error instanceof Error ? error.message : 'Could not import that PDF.');
+      console.error('Failed to import file', error);
+      window.alert(error instanceof Error ? error.message : 'Could not import that file.');
     }
   };
 
@@ -1076,12 +1076,13 @@ export default function App() {
     return parseAutoQuizCounts(response);
   };
 
-  /** Import a PDF into the folder the user is working in and show it in the tree. */
-  const importPdf = async (): Promise<string | null> => {
-    if (!root) throw new Error('Open a vault folder to import PDFs.');
-    const imported = await VaultService.importPdf(root, noteTargetFolder);
+  /** Import a Markdown or PDF file into the folder the user is working in and show it in the tree. */
+  const importFile = async (): Promise<string | null> => {
+    if (!root) throw new Error('Open a vault folder to import files.');
+    const imported = await VaultService.importFile(root, noteTargetFolder);
     if (imported) {
-      vault.setPdfFiles((current) => (current.includes(imported) ? current : [...current, imported].sort()));
+      const setList = isPdfFileName(imported) ? vault.setPdfFiles : vault.setFiles;
+      setList((current) => (current.includes(imported) ? current : [...current, imported].sort()));
     }
     return imported;
   };
