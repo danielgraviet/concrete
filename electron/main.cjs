@@ -851,21 +851,31 @@ ipcMain.handle('vault:revealInFolder', async (_, root, name) => {
 const MAX_PDF_BYTES = 50 * 1024 * 1024;
 const MAX_PDF_PAGES = 500;
 
-/** Copy a PDF picked from disk into a vault folder; returns its vault-relative path. */
-ipcMain.handle('vault:importPdf', async (_, root, folder = '') => {
+const MAX_MD_IMPORT_BYTES = 10 * 1024 * 1024;
+
+/** Copy a Markdown or PDF file picked from disk into a vault folder; returns its vault-relative path. */
+ipcMain.handle('vault:importFile', async (_, root, folder = '') => {
   const result = await dialog.showOpenDialog({
     properties: ['openFile'],
-    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    filters: [
+      { name: 'Markdown or PDF', extensions: ['md', 'markdown', 'pdf'] },
+      { name: 'Markdown', extensions: ['md', 'markdown'] },
+      { name: 'PDF', extensions: ['pdf'] },
+    ],
   });
   if (result.canceled || !result.filePaths[0]) return null;
   const source = result.filePaths[0];
-  if ((await fs.stat(source)).size > MAX_PDF_BYTES) {
-    throw new Error('PDF is larger than 50 MB.');
-  }
+  const sourceExt = path.extname(source).toLowerCase();
+  // ".markdown" lands as ".md" so the vault picks it up as a note.
+  const ext = sourceExt === '.pdf' ? '.pdf' : sourceExt === '.md' || sourceExt === '.markdown' ? '.md' : null;
+  if (!ext) throw new Error('Only .md and .pdf files can be imported.');
+  const size = (await fs.stat(source)).size;
+  if (ext === '.pdf' && size > MAX_PDF_BYTES) throw new Error('PDF is larger than 50 MB.');
+  if (ext === '.md' && size > MAX_MD_IMPORT_BYTES) throw new Error('Markdown file is larger than 10 MB.');
   const stem = path.basename(source, path.extname(source));
   // Never overwrite: "Notes.pdf" → "Notes 2.pdf" → "Notes 3.pdf" …
   for (let n = 1; ; n += 1) {
-    const name = n === 1 ? `${stem}.pdf` : `${stem} ${n}.pdf`;
+    const name = n === 1 ? `${stem}${ext}` : `${stem} ${n}${ext}`;
     const { resolved, relative } = resolveWithinRoot(root, folder ? `${folder}/${name}` : name);
     try {
       await fs.mkdir(path.dirname(resolved), { recursive: true });
