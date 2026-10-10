@@ -183,7 +183,7 @@ Contributions from students, educators, and curious builders are welcome. You do
    git checkout -b dg/fix-agent-workflow
    ```
 
-3. Make your change and test it locally with `npm run build`.
+3. Make your change and test it locally with `npm run build` and `npm test`.
 4. Open a pull request explaining what changed, why it helps learners, and how you tested it.
 
 Please keep pull requests small and focused when possible. Screenshots or short recordings are especially helpful for UI changes. Never commit API keys, personal vaults, private notes, or generated trajectory data.
@@ -199,7 +199,7 @@ Please keep pull requests small and focused when possible. Screenshots or short 
 
 ### Finding something to work on
 
-Browse the [open issues](https://github.com/danielgraviet/concrete/issues) to find a feature, bug, design question, or documentation task. Issues labeled [`good-first-issue`](https://github.com/danielgraviet/concrete/labels/good-first-issue) are a good place to start. Other useful labels include `enhancement`, `bug`, `needs-design`, `ux`, `education`, `telemetry`, and `documentation`.
+Browse the [open issues](https://github.com/danielgraviet/concrete/issues) to find a feature, bug, design question, or documentation task. Issues labeled [`good first issue`](https://github.com/danielgraviet/concrete/labels/good%20first%20issue) are a good place to start. Other useful labels include `enhancement`, `bug`, `needs-design`, `ux`, `education`, `telemetry`, `documentation`, `accessibility`, `performance`, and `help wanted`.
 
 Feature ideas should begin as issues so the community can discuss the problem and possible approaches. Once the direction is clear, implement the work on a branch using your initials—such as `dg/fix-agent-workflow`—and open a pull request that links back to the issue.
 
