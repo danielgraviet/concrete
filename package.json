@@ -2,6 +2,7 @@
   "name": "concrete",
   "version": "0.1.2",
   "description": "Concrete — a local Markdown vault for knowledge you can build on",
+  "desktopName": "concrete",
   "author": "Daniel Graviet",
   "license": "MIT",
   "type": "module",
@@ -15,6 +16,7 @@
     "pack:mac": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --arm64",
     "pack:mac:intel": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --x64",
     "pack:mac:universal": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --universal",
+    "pack:linux": "npm run build && electron-builder --linux --x64",
     "preview": "vite preview",
     "test": "vitest run"
   },
@@ -123,6 +125,26 @@
           "y": 180,
           "type": "link",
           "path": "/Applications"
+        }
+      ]
+    },
+    "linux": {
+      "category": "Office",
+      "maintainer": "Daniel Graviet",
+      "syncDesktopName": true,
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
         }
       ]
     }

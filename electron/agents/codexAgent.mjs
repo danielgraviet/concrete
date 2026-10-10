@@ -10,36 +10,27 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { Codex } from '@openai/codex-sdk';
+import runtimePaths from '../runtimePaths.cjs';
 
 const execFileAsync = promisify(execFile);
 
 /** @type {{ abort: AbortController } | null} */
 let activeRun = null;
 
-function homebrewPathPrefix() {
-  return '/opt/homebrew/bin:/usr/local/bin';
-}
-
 function codexEnv() {
-  const envPath = process.env.PATH || '';
   // API keys configured for Tutor AI chat are passed explicitly to chat
   // requests. The BYO agent always uses the Codex CLI's own login/config.
   const { CODEX_API_KEY: _ignoredApiKey, ...env } = process.env;
   return {
     ...env,
-    PATH: `${homebrewPathPrefix()}:${envPath}`,
+    PATH: runtimePaths.commandPathPrefix(),
   };
 }
 
 function resolveCodexBin() {
   const override = process.env.CODEX_PATH?.trim();
   if (override && existsSync(override)) return override;
-  const pathDirs = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
-  for (const dir of ['/opt/homebrew/bin', '/usr/local/bin', ...pathDirs]) {
-    const candidate = path.join(dir, 'codex');
-    if (existsSync(candidate)) return candidate;
-  }
-  return null;
+  return runtimePaths.findExecutable('codex');
 }
 
 function toVaultRelative(vaultRoot, filePath) {

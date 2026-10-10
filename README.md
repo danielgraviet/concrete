@@ -15,6 +15,7 @@
 [![GitHub issues](https://img.shields.io/github/issues/danielgraviet/concrete?style=flat-square)](https://github.com/danielgraviet/concrete/issues)
 [![Last commit](https://img.shields.io/github/last-commit/danielgraviet/concrete?style=flat-square)](https://github.com/danielgraviet/concrete/commits/main)
 [![macOS](https://img.shields.io/badge/platform-macOS-000000?style=flat-square&logo=apple&logoColor=white)](https://www.apple.com/macos/)
+[![Linux beta](https://img.shields.io/badge/platform-Linux%20beta-FCC624?style=flat-square&logo=linux&logoColor=black)](https://github.com/danielgraviet/concrete/releases)
 
 **Concrete is a local-first Markdown workspace for learning STEM subjects.** Write and organize notes as ordinary Markdown files, use AI to work with the material, and turn notes into active practice with generated quizzes.
 
@@ -64,14 +65,14 @@ Most note-taking tools stop at storage, and most AI tools are disconnected from 
 
 ### Requirements
 
-- macOS
+- macOS or 64-bit Linux (Ubuntu/Debian officially supported; other distributions can use the AppImage)
 - Node.js 20 or newer
 - For live quiz generation, tutoring, and agent workflows, one of:
   - the Claude Code CLI, logged in (Claude Pro/Max) or with an Anthropic API key,
   - the Codex CLI, logged in (ChatGPT plan) or with an OpenAI API key,
   - an OpenRouter API key (quizzes and tutoring only).
 
-### Install
+### macOS development install
 
 Open Terminal (⌘ Space, type “Terminal”) and run each step. Already have Homebrew or Node 20+? Skip ahead.
 
@@ -131,6 +132,32 @@ cd concrete && npm run dev
 
 </details>
 
+### Linux install (beta)
+
+The quickest user install needs only `curl`—no Node.js, npm, Git, or sudo:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/danielgraviet/concrete/main/scripts/install-linux.sh
+sh install-linux.sh
+rm install-linux.sh
+```
+
+This installs the latest x86_64 AppImage under your user account, adds a `concrete` terminal command, and creates an application-menu launcher. Run the same installer again to update.
+
+To use a checked-out copy of this repository instead, run `./scripts/install-linux.sh`.
+
+You can also download either Linux artifact from the release page:
+
+- **Ubuntu or Debian:** install the `.deb` with `sudo apt install ./Concrete-*.deb`.
+- **Other distributions:** mark the AppImage executable, then run it:
+
+  ```bash
+  chmod +x Concrete-*.AppImage
+  ./Concrete-*.AppImage
+  ```
+
+Concrete creates its default vault in `~/Documents/Concrete`. Docker-backed code execution is optional; install Docker and make sure your user can access its daemon before enabling it. If you use the Codex or Claude agent, restart Concrete after installing its CLI so the desktop launcher can discover it.
+
 ### AI features
 
 Open or create a Markdown vault, then use the quiz controls from a note to generate practice material. Pick the model backend under Settings → Tutor AI. Claude Code and Codex use your CLI login unless you save an API key; keys stay in the Electron main process.
@@ -140,6 +167,7 @@ Open or create a Markdown vault, then use the quiz controls from a note to gener
 ```bash
 npm run build
 npm run pack:mac
+npm run pack:linux
 ```
 
 The packaged app is written to `release/`.

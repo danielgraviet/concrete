@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Button } from '@radix-ui/themes';
+import { shortcut } from '../platform';
 import type { QuizQuestion } from '../quiz/types';
 import type { CardEdit } from './editCard';
 import type { ReviewCard } from './types';
@@ -167,7 +168,7 @@ export function CardEditor({ card, question, onSave, onCancel }: Props) {
           Cancel <kbd>Esc</kbd>
         </Button>
         <Button size="1" highContrast disabled={saving} onClick={() => void save()}>
-          Save <kbd>⌘↵</kbd>
+          Save <kbd>{shortcut('↵')}</kbd>
         </Button>
       </div>
     </div>

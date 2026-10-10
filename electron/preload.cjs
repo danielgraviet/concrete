@@ -93,7 +93,7 @@ contextBridge.exposeInMainWorld('ai', {
   },
 });
 
-/** Sync renderer copies onto the macOS pasteboard for other apps / terminals. */
+/** Sync renderer copies onto the system clipboard for other apps / terminals. */
 contextBridge.exposeInMainWorld('sandbox', {
   providers: () => ipcRenderer.invoke('sandbox:providers'),
   status: (providerId) => ipcRenderer.invoke('sandbox:status', providerId),
