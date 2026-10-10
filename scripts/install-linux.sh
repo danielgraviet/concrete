@@ -91,7 +91,9 @@ fi
 
 trap - EXIT HUP INT TERM
 printf '%s\n' "Concrete installed to $app_path"
-printf '%s\n' 'Launch it from your application menu, or run: concrete'
+printf '%s\n' 'Starting Concrete…'
+"$app_path" >/dev/null 2>&1 &
+printf '%s\n' 'Concrete is also available from your application menu, or by running: concrete'
 if ! printf '%s' ":$PATH:" | grep -q ":$bin_dir:"; then
   printf '%s\n' "Tip: add $bin_dir to PATH to use the concrete command in new terminals."
 fi
