@@ -59,6 +59,7 @@ import {
   type TreeItemKind,
 } from './vault';
 import { useBacklinks } from './graph';
+import { shortcut, shortcutWithShift } from './platform';
 
 const NOTE_BODY_CACHE_MAX = 24;
 import { SearchIndex, SearchPalette, useSearch, type SearchResult } from './search';
@@ -397,7 +398,7 @@ export default function App() {
         requestAnimationFrame(() => findInputRef.current?.focus());
         return;
       }
-      // ⌘P searches the whole vault.
+      // Primary-modifier + P searches the whole vault.
       if (meta && !event.shiftKey && event.key.toLowerCase() === 'p') {
         event.preventDefault();
         setOverlay((current) => (current === 'search' ? null : 'search'));
@@ -408,7 +409,7 @@ export default function App() {
         toggleFocusMode();
         return;
       }
-      // ⌘J toggles Study Chat.
+      // Primary-modifier + J toggles Study Chat.
       if (meta && !event.shiftKey && event.key.toLowerCase() === 'j') {
         event.preventDefault();
         setAiChatOpen((open) => {
@@ -417,7 +418,7 @@ export default function App() {
         });
         return;
       }
-      // ⌘L asks Study Chat about the selected note text.
+      // Primary-modifier + L asks Study Chat about the selected note text.
       if (meta && !event.shiftKey && event.key.toLowerCase() === 'l') {
         const target = event.target as HTMLElement | null;
         if (!target?.closest?.('.editor-wrap')) return;
@@ -1839,7 +1840,7 @@ export default function App() {
                   color="gray"
                   highContrast
                   aria-label="Search notes"
-                  title="Search notes (⌘P)"
+                  title={`Search notes (${shortcut('P')})`}
                   onClick={() => setOverlay('search')}
                 >
                   <MagnifyingGlassIcon width={16} height={16} />
@@ -1957,7 +1958,7 @@ export default function App() {
               variant={layout.focusMode ? 'soft' : 'ghost'}
               color="gray"
               highContrast
-              aria-label={layout.focusMode ? 'Exit focus mode (Esc)' : 'Focus mode (⌘⇧F)'}
+              aria-label={layout.focusMode ? 'Exit focus mode (Esc)' : `Focus mode (${shortcutWithShift('F')})`}
               onClick={toggleFocusMode}
             >
               {layout.focusMode ? <ExitFullScreenIcon width={16} height={16} /> : <EnterFullScreenIcon width={16} height={16} />}
@@ -2101,8 +2102,8 @@ export default function App() {
         <button
           type="button"
           className={aiChatOpen ? 'study-chat-launcher active' : 'study-chat-launcher'}
-          aria-label="Study chat (⌘J)"
-          title="Study chat (⌘J)"
+          aria-label={`Study chat (${shortcut('J')})`}
+          title={`Study chat (${shortcut('J')})`}
           aria-pressed={aiChatOpen}
           onClick={() => selectRail('ai')}
         >

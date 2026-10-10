@@ -637,7 +637,7 @@ export function SettingsPanel({
 
       <Flex direction="column" gap="2" className={`mv-settings-group ${section === 'vault' ? 'active' : ''}`}>
         <Text size="2" weight="medium">Vault</Text>
-        <Text size="1" color="gray">Your Markdown files live in Documents/Concrete.</Text>
+        <Text size="1" color="gray">Your Markdown files live in your Documents/Concrete folder by default.</Text>
         <Text size="1" color="gray">{vaultRoot ?? 'Documents/Concrete'}</Text>
         <Button
           type="button"

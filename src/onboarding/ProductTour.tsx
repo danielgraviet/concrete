@@ -14,7 +14,7 @@ export const PRODUCT_TOUR_STEPS: ProductTourStep[] = [
     title: 'Your vault is ready',
     body: [
       'Your vault is set to Documents/Concrete.',
-      'Notes are plain Markdown files stored on your Mac.',
+      'Notes are plain Markdown files stored on your computer.',
       'Browse your notes and folders in the file tree.',
     ],
     target: '.sidebar .file-tree',

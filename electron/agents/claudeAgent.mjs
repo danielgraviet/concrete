@@ -12,6 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import runtimePaths from '../runtimePaths.cjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -20,15 +21,10 @@ const MCP_TOOL_PREFIX = 'mcp__concrete__';
 /** @type {{ abortController: AbortController } | null} */
 let activeRun = null;
 
-function homebrewPathPrefix() {
-  return `${path.join(os.homedir(), '.local', 'bin')}:/opt/homebrew/bin:/usr/local/bin`;
-}
-
 function claudeEnv(apiKey) {
-  const envPath = process.env.PATH || '';
   return {
     ...process.env,
-    PATH: `${homebrewPathPrefix()}:${envPath}`,
+    PATH: runtimePaths.commandPathPrefix(),
     ...(apiKey ? { ANTHROPIC_API_KEY: apiKey } : {}),
   };
 }
@@ -36,15 +32,10 @@ function claudeEnv(apiKey) {
 function resolveClaudeBin() {
   const override = process.env.CLAUDE_PATH?.trim();
   if (override && existsSync(override)) return override;
-  for (const candidate of [
-    path.join(os.homedir(), '.local', 'bin', 'claude'),
-    path.join(os.homedir(), '.claude', 'local', 'claude'),
-    '/opt/homebrew/bin/claude',
-    '/usr/local/bin/claude',
-  ]) {
+  for (const candidate of [path.join(os.homedir(), '.claude', 'local', 'claude')]) {
     if (existsSync(candidate)) return candidate;
   }
-  return null;
+  return runtimePaths.findExecutable('claude');
 }
 
 function toVaultRelative(vaultRoot, filePath) {

@@ -5,6 +5,7 @@ import { ALL_DECK, deckFilter, deckKey, listDecks, type Deck } from './decks';
 import { queueCounts, type QueueCounts } from './ReviewSession';
 import { studyDayEnd } from './studyDay';
 import type { ReviewSystem } from './useReviewSystem';
+import { shortcutWithShift } from '../platform';
 
 function CountPills({ counts }: { counts: QueueCounts }) {
   return (
@@ -67,7 +68,7 @@ export function ReviewSidebar({ system, onStart, onClose }: Props) {
             <code>{'The {{answer}} is hidden'}</code>
             <code>?mcq … - [x] option</code>
             <p>
-              Or select text and press <kbd>⌘⇧C</kbd> to make a blank, or <kbd>⌘⇧K</kbd> to start a card.
+              Or select text and press <kbd>{shortcutWithShift('C')}</kbd> to make a blank, or <kbd>{shortcutWithShift('K')}</kbd> to start a card.
             </p>
           </div>
         ) : (

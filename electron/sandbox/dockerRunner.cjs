@@ -75,6 +75,8 @@ function findDocker() {
     path.join(home, '.docker/bin/docker'),
     path.join(home, '.orbstack/bin/docker'),
     path.join(home, '.rd/bin/docker'),
+    path.join(home, '.local/bin/docker'),
+    '/home/linuxbrew/.linuxbrew/bin/docker',
     '/usr/bin/docker',
   ];
   for (const candidate of candidates) {

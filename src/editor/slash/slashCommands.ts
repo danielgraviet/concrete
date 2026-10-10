@@ -1,3 +1,5 @@
+import { shortcutWithShift } from '../../platform';
+
 export type SlashCommandId =
   | 'h1'
   | 'h2'
@@ -154,7 +156,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     aliases: ['card', 'flashcard'],
     keywords: ['review', 'anki', 'question', 'answer', 'srs'],
     symbol: '::',
-    hint: 'Question :: Answer card (⌘⇧K)',
+    hint: `Question :: Answer card (${shortcutWithShift('K')})`,
   },
   {
     id: 'cloze',
@@ -162,7 +164,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     aliases: ['cloze', 'blank'],
     keywords: ['review', 'anki', 'fill', 'flashcard', 'srs'],
     symbol: '{}',
-    hint: 'Fill-in-the-blank {{answer}} (⌘⇧C)',
+    hint: `Fill-in-the-blank {{answer}} (${shortcutWithShift('C')})`,
   },
 ];
 

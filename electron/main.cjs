@@ -9,6 +9,7 @@ const { createTrajectory } = require('./agentTrajectory.cjs');
 const { extractPdfPages } = require('./pdfText.cjs');
 const { importNotionExport, inspectNotionExport } = require('./notionImport.cjs');
 const telemetrySpans = require('./telemetrySpans.cjs');
+const { commandPathPrefix, findExecutable } = require('./runtimePaths.cjs');
 
 /** Project / app root (this file lives in electron/). */
 const APP_ROOT = path.join(__dirname, '..');
@@ -328,10 +329,10 @@ function buildConcreteMcpConfig() {
     console.error('[concrete] failed to write bridge file', error);
   }
 
-  const pathPrefix = '/opt/homebrew/bin:/usr/local/bin';
+  const pathPrefix = commandPathPrefix();
   // Keep this small — Codex flattens env into CLI --config flags (argv limits).
   const mergedEnv = {
-    PATH: `${pathPrefix}:${process.env.PATH || ''}`,
+    PATH: pathPrefix,
     HOME: process.env.HOME || '',
     TMPDIR: process.env.TMPDIR || '',
     USER: process.env.USER || '',
@@ -352,18 +353,17 @@ function buildConcreteMcpConfig() {
   /** @type {{ command: string, args: string[], env: Record<string, string>, cliPath: string, bridgeFile: string }} */
   let launch = null;
 
-  // Prefer real Node when available (dev + typical Mac).
-  for (const candidate of ['/opt/homebrew/bin/node', '/usr/local/bin/node']) {
-    if (fsSync.existsSync(candidate)) {
-      launch = {
-        command: candidate,
-        args: [unpacked],
-        env: mergedEnv,
-        cliPath,
-        bridgeFile,
-      };
-      break;
-    }
+  // Prefer a real Node installation. This covers desktop launches on Linux,
+  // whose PATH commonly omits ~/.local/bin and package-manager prefixes.
+  const node = findExecutable('node');
+  if (node) {
+    launch = {
+      command: node,
+      args: [unpacked],
+      env: mergedEnv,
+      cliPath,
+      bridgeFile,
+    };
   }
 
   if (!launch) {
