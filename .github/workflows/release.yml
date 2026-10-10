@@ -32,7 +32,12 @@ jobs:
       - name: Publish release assets
         uses: softprops/action-gh-release@v2
         with:
+          # electron-builder is deliberately run with --publish never; this
+          # action publishes using the short-lived token GitHub issues to the
+          # workflow, so no personal access token is required.
+          token: ${{ secrets.GITHUB_TOKEN }}
           generate_release_notes: true
+          fail_on_unmatched_files: true
           files: |
             release/Concrete-*.AppImage
             release/concrete_*_amd64.deb
