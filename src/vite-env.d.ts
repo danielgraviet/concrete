@@ -131,7 +131,7 @@ interface Window {
     deleteData?: (root: string, name: string) => Promise<boolean>;
     mkdir: (root: string, name: string) => Promise<string>;
     ensureDefault: () => Promise<VaultOpenResult>;
-    importObsidian: (root: string) => Promise<VaultOpenResult>;
+    importObsidian: (root: string) => Promise<VaultOpenResult | null>;
     importNotion: (root: string) => Promise<VaultImportResult | null>;
     restore: () => Promise<VaultOpenResult | null>;
     rename: (root: string, from: string, to: string) => Promise<string>;
