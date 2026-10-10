@@ -69,7 +69,16 @@ curl -fL --progress-bar "$asset_url" -o "$temporary_app"
 chmod 755 "$temporary_app"
 mv -f "$temporary_app" "$app_path"
 
-printf '%s\n' '#!/usr/bin/env sh' "exec \"$app_path\" \"\$@\"" >"$wrapper_path"
+cat >"$wrapper_path" <<EOF
+#!/usr/bin/env sh
+# AppImages normally mount through FUSE 2. Ubuntu 24.04+ and many other
+# distributions no longer install that compatibility library by default.
+# In that case the runtime can extract and run itself without sudo.
+if command -v ldconfig >/dev/null 2>&1 && ldconfig -p 2>/dev/null | grep -q 'libfuse\\.so\\.2'; then
+  exec "$app_path" "\$@"
+fi
+exec "$app_path" --appimage-extract-and-run "\$@"
+EOF
 chmod 755 "$wrapper_path"
 
 # A desktop entry lets users launch Concrete from their application menu even
