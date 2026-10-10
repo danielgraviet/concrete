@@ -65,7 +65,7 @@ export const VaultService = {
     return api.ensureDefault();
   },
 
-  importObsidian(root: string): Promise<VaultOpenResult> {
+  importObsidian(root: string): Promise<VaultOpenResult | null> {
     const api = requireVault();
     if (typeof api.importObsidian !== 'function') {
       throw new Error('Obsidian import requires an Electron restart');

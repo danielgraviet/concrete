@@ -478,8 +478,8 @@ const OBSIDIAN_IMPORT_MARKER = '.concrete-obsidian-imported';
 
 /** Copy an Obsidian vault's user files into Concrete without replacing existing work. */
 async function importObsidianVault(sourceRoot, destinationRoot, markerName = OBSIDIAN_IMPORT_MARKER) {
-  const marker = path.join(destinationRoot, markerName);
-  if (!fsSync.existsSync(sourceRoot) || fsSync.existsSync(marker)) return false;
+  const marker = markerName ? path.join(destinationRoot, markerName) : null;
+  if (!fsSync.existsSync(sourceRoot) || (marker && fsSync.existsSync(marker))) return false;
 
   async function copyDirectory(sourceDir, destinationDir) {
     const entries = await fs.readdir(sourceDir, { withFileTypes: true });
@@ -503,7 +503,7 @@ async function importObsidianVault(sourceRoot, destinationRoot, markerName = OBS
   }
 
   await copyDirectory(sourceRoot, destinationRoot);
-  await fs.writeFile(marker, 'Imported from Documents/Obsidian Vault\n');
+  if (marker) await fs.writeFile(marker, 'Imported from Documents/Obsidian Vault\n');
   return true;
 }
 
@@ -1684,8 +1684,22 @@ ipcMain.handle('vault:ensureDefault', async () => {
 ipcMain.handle('vault:importObsidian', async (_, root) => {
   const destination = path.resolve(typeof root === 'string' ? root : '');
   if (!destination || destination === path.parse(destination).root) throw new Error('Invalid vault root');
+  const defaultSource = path.join(app.getPath('documents'), 'Obsidian Vault');
+  const picked = await dialog.showOpenDialog(mainWindow, {
+    title: 'Import Obsidian Vault',
+    buttonLabel: 'Import',
+    defaultPath: fsSync.existsSync(defaultSource) ? defaultSource : app.getPath('documents'),
+    properties: ['openDirectory'],
+  });
+  if (picked.canceled || !picked.filePaths[0]) return null;
+  const source = path.resolve(picked.filePaths[0]);
+  const isWithin = (child, parent) => child === parent || child.startsWith(`${parent}${path.sep}`);
+  if (isWithin(source, destination) || isWithin(destination, source)) {
+    throw new Error('Choose an Obsidian vault folder outside your Concrete vault.');
+  }
   await fs.mkdir(destination, { recursive: true });
-  await importObsidianVault(path.join(app.getPath('documents'), 'Obsidian Vault'), destination);
+  // An explicit import always copies; existing files are never overwritten.
+  await importObsidianVault(source, destination, null);
   const { files, pdfFiles, folders } = await listVaultEntries(destination);
   await startWatch(destination);
   await saveVaultPath(destination);
