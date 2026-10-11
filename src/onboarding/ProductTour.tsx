@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckIcon, ChevronLeftIcon, ChevronRightIcon } from '@radix-ui/react-icons';
+import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, Cross1Icon } from '@radix-ui/react-icons';
 import { Flex, Heading, IconButton, Text } from '@radix-ui/themes';
 
 export type ProductTourStep = {
@@ -192,6 +192,18 @@ export function ProductTour({
 
   return createPortal((
     <>
+      <IconButton
+        type="button"
+        variant="ghost"
+        color="gray"
+        size="2"
+        className="mv-tour-dismiss"
+        aria-label="Skip walkthrough"
+        title="Skip walkthrough"
+        onClick={onFinished}
+      >
+        <Cross1Icon width={14} height={14} />
+      </IconButton>
       <div
         ref={cardRef}
         className="mv-product-tour mv-onboarding-card"

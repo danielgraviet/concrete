@@ -110,6 +110,8 @@ import { QuizHistoryStore } from './quiz';
 import { buildPdfContext, cleanPdfPages, parsePageRange } from './quiz/pdfContext';
 import { AUTO_QUIZ_ANALYSIS_SYSTEM, parseAutoQuizCounts, type AutoQuizCounts } from './quiz/autoComposition';
 import { settingsStore } from './settings';
+import { buildOpenAnswerRubric } from './quiz/openAnswerRubric';
+import { getRecentOpenAnswerSamples } from './quiz/rubricCalibration';
 import { BrandLogo } from './branding/BrandLogo';
 import { getSandboxStatus } from './sandbox';
 import { verifyCodeQuestions } from './quiz/verifyCode';
@@ -498,6 +500,7 @@ export default function App() {
   }, [files, root, quizSourceScan]);
 
   const quizHistory = useMemo(() => new QuizHistoryStore(root ?? ''), [root]);
+  const rubricCalibrationSamples = getRecentOpenAnswerSamples(quizHistory.getAll(), 10);
   const review = useReviewSystem(root, quizHistory);
   const reviewIndex = review.index;
   const searchIndex = useMemo(() => new SearchIndex(), [root]);
@@ -836,7 +839,7 @@ export default function App() {
       const result = root
         ? await VaultService.importObsidian(root)
         : await vault.openDefault();
-      if (!result) return;
+      if (!result) return false;
       setContents({});
       setActiveFolder('');
       const first = result.files.find((file) => !isHiddenVaultFile(file)) ?? '';
@@ -844,15 +847,17 @@ export default function App() {
       setOpenTabs(first ? [first] : []);
       setPreviewTab(null);
       setOnboardingStep(1);
+      return true;
     } catch (error) {
       window.alert(error instanceof Error ? error.message : 'Could not import the Obsidian vault.');
+      return false;
     }
   };
 
   const importNotionExport = async () => {
     try {
       const result = await VaultService.importNotion(root);
-      if (!result) return;
+      if (!result) return false;
       setContents({});
       setActiveFolder('');
       const first = result.files.find((file) => !isHiddenVaultFile(file)) ?? '';
@@ -870,8 +875,10 @@ export default function App() {
         + `${summary.preservedFiles.length} other files preserved, `
         + `${summary.skippedFiles.length} existing files skipped.${warningText}`,
       );
+      return true;
     } catch (error) {
       window.alert(error instanceof Error ? error.message : 'Could not import the Notion export.');
+      return false;
     }
   };
 
@@ -1135,6 +1142,10 @@ export default function App() {
       const sandboxProviderId = settingsStore.get().sandboxProviderId;
       const sandboxReady =
         quizSettings.codeCount > 0 && (await getSandboxStatus(sandboxProviderId)).available;
+      const openAnswerRubric = buildOpenAnswerRubric(
+        quizSettings.gradingStyle,
+        quizSettings.customRubric,
+      );
 
       const generated = await aiClient.generateQuiz({
         topic: titled.replace(/^Quiz\s+/, ''),
@@ -1147,7 +1158,7 @@ export default function App() {
         openCount: quizSettings.openCount,
         codeCount: quizSettings.codeCount + (sandboxReady ? 1 : 0),
         difficulty: quizSettings.difficulty,
-        customRubric: quizSettings.customRubric.trim() || undefined,
+        customRubric: openAnswerRubric,
         autoComposition: result.mode === 'auto',
       });
       const verification = await verifyCodeQuestions(generated, sandboxProviderId);
@@ -1162,9 +1173,7 @@ export default function App() {
         return true;
       });
       doc.source = primary;
-      if (quizSettings.customRubric.trim()) {
-        doc.rubric = quizSettings.customRubric.trim();
-      }
+      doc.rubric = openAnswerRubric;
 
       let createdPath = relative;
       if (canUseDiskVault(root)) {
@@ -2404,8 +2413,18 @@ export default function App() {
           <SettingsPanel
             store={settingsStore}
             vaultRoot={root}
-            onImportObsidian={() => { void importObsidianVault().then(() => setOverlay(null)); }}
-            onImportNotion={() => { void importNotionExport().then(() => setOverlay(null)); }}
+            rubricCalibrationSampleCount={rubricCalibrationSamples.length}
+            onEvaluateRubric={(rubric) => aiClient.gradeQuiz({
+              quiz: {
+                title: 'Rubric calibration',
+                rubric,
+                questions: rubricCalibrationSamples.map((sample) => sample.question),
+              },
+              responses: rubricCalibrationSamples.map((sample) => sample.response),
+              rubric,
+            })}
+            onImportObsidian={() => { void importObsidianVault().then((imported) => { if (imported) setOverlay(null); }); }}
+            onImportNotion={() => { void importNotionExport().then((imported) => { if (imported) setOverlay(null); }); }}
             onReplayOnboarding={() => {
               setOverlay(null);
               setOnboardingStep(0);

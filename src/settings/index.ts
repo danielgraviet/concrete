@@ -5,6 +5,7 @@ export type {
   BrandLogoId,
   QuizDifficulty,
   QuizGenerationSettings,
+  OpenAnswerGradingStyle,
   ThemePackId,
 } from './types';
 export {
@@ -15,6 +16,7 @@ export {
   isAppearance,
   isAgentProviderId,
   isQuizDifficulty,
+  isOpenAnswerGradingStyle,
   resolveAgentProviderId,
   resolveQuizSettings,
   resolveThemePack,
