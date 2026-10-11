@@ -11,6 +11,8 @@ export type QuestionAttempt = {
   /** What was asked and answered, so past attempts can be reviewed. Missing on older attempts. */
   prompt?: string;
   answer?: string;
+  /** Reference answer for open questions, used to evaluate grading calibration. */
+  referenceAnswer?: string;
   feedback?: string;
   correctAnswer?: string;
   missing?: string[];
@@ -55,6 +57,7 @@ export function buildQuizAttempt(
         type: question?.type,
         ...(question?.type === 'code' ? { kind: question.kind } : {}),
         ...(question ? { prompt: promptText(question), answer: answerText(question, responses[q.questionId]) } : {}),
+        ...(question?.type === 'open' ? { referenceAnswer: question.answer } : {}),
         feedback: q.feedback,
         ...(q.correctAnswer ? { correctAnswer: q.correctAnswer } : {}),
         ...(q.missing?.length ? { missing: q.missing } : {}),

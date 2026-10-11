@@ -6,6 +6,7 @@ import type {
   AgentProviderId,
   AppSettings,
   QuizDifficulty,
+  OpenAnswerGradingStyle,
   ThemePackId,
 } from './types';
 import { THEME_PACKS } from './themePacks';
@@ -16,6 +17,8 @@ import { CLAUDE_MODEL_OPTIONS } from '../ai/claudeModels';
 import { isChatBackendId, type ChatBackendId } from '../ai/ChatModelProvider';
 import { getSandboxStatus, onSandboxProgress, prepareSandboxImage, type SandboxStatus } from '../sandbox';
 import { DaytonaKeyField } from './DaytonaKeyField';
+import { RubricDashboard } from './RubricDashboard';
+import type { GradeReport } from '../quiz/types';
 
 // Charts load only when the AI Activity tab is opened.
 const TelemetryView = lazy(() =>
@@ -28,6 +31,8 @@ type Props = {
   onImportObsidian?: () => void;
   onImportNotion?: () => void;
   onReplayOnboarding?: () => void;
+  onEvaluateRubric?: (rubric: string) => Promise<GradeReport>;
+  rubricCalibrationSampleCount: number;
   providerOptions?: { id: string; label: string }[];
   onClose?: () => void;
 };
@@ -62,6 +67,8 @@ export function SettingsPanel({
   onImportObsidian,
   onImportNotion,
   onReplayOnboarding,
+  onEvaluateRubric,
+  rubricCalibrationSampleCount,
   providerOptions = [
     { id: 'openrouter', label: 'OpenRouter' },
     { id: 'claude', label: 'Claude Code' },
@@ -81,6 +88,7 @@ export function SettingsPanel({
   const [settingUp, setSettingUp] = useState<string | null>(null);
   const [setupMessage, setSetupMessage] = useState<string | null>(null);
   const [section, setSection] = useState<SettingsSection>('appearance');
+  const [rubricDashboard, setRubricDashboard] = useState(false);
 
   useEffect(() => store.subscribe(setSettings), [store]);
 
@@ -154,7 +162,10 @@ export function SettingsPanel({
               role="tab"
               aria-selected={section === id}
               className={section === id ? 'selected' : ''}
-              onClick={() => setSection(id)}
+              onClick={() => {
+                setSection(id);
+                setRubricDashboard(false);
+              }}
             >
               {label}
             </button>
@@ -166,6 +177,18 @@ export function SettingsPanel({
       </aside>
 
       <main className={`mv-settings-content${section === 'activity' ? ' wide' : ''}`}>
+      {rubricDashboard ? (
+        <RubricDashboard
+          style={settings.quiz.gradingStyle}
+          customGuidance={settings.quiz.customRubric}
+          sampleCount={rubricCalibrationSampleCount}
+          onEvaluateRubric={onEvaluateRubric}
+          onBack={() => setRubricDashboard(false)}
+          onStyleChange={(gradingStyle: OpenAnswerGradingStyle) => store.setQuizSettings({ gradingStyle })}
+          onGuidanceChange={(customRubric) => store.setQuizSettings({ customRubric })}
+        />
+      ) : (
+        <>
       {section === 'activity' ? (
         <Suspense fallback={<Text size="2" color="gray">Loading activity…</Text>}>
           <TelemetryView />
@@ -198,37 +221,6 @@ export function SettingsPanel({
                 <span className="mv-theme-pack-meta">
                   <strong>{pack.label}</strong>
                   <small>{pack.description}</small>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        <Text size="2" weight="medium" className="mv-branding-title">
-          Logo
-        </Text>
-        <Text size="1" color="gray">
-          Choose a mark to preview in the app’s primary rail. Your selection is saved locally.
-        </Text>
-        <div className="mv-brand-logo-options">
-          {BRAND_LOGOS.map((logo) => {
-            const selected = settings.brandLogo === logo.id;
-            return (
-              <button
-                key={logo.id}
-                type="button"
-                className={`mv-brand-logo-option${selected ? ' selected' : ''}`}
-                aria-pressed={selected}
-                onClick={() => store.setBrandLogo(logo.id)}
-              >
-                <span className="mv-brand-logo-sample">
-                  <BrandLogo logo={logo.id} />
-                </span>
-                <span className="mv-brand-logo-meta">
-                  <strong>{logo.label}</strong>
-                  <small>{logo.description}</small>
-                </span>
-                <span className="mv-brand-rail-preview" aria-hidden="true">
-                  <BrandLogo logo={logo.id} />
                 </span>
               </button>
             );
@@ -407,16 +399,17 @@ export function SettingsPanel({
         </Select.Root>
 
         <Text size="2" weight="medium">
-          Open-answer grading rubric
+          Open-answer grading
         </Text>
-        <TextField.Root
-          value={settings.quiz.customRubric}
-          placeholder="e.g. Prefer precise definitions; deduct for vague answers"
-          onChange={(e) => store.setQuizSettings({ customRubric: e.target.value })}
-        />
         <Text size="1" color="gray">
-          Written into quiz frontmatter when set. Leave blank for a generated rubric.
+          {settings.quiz.gradingStyle === 'balanced'
+            ? 'Balanced grading is active.'
+            : `${settings.quiz.gradingStyle === 'supportive' ? 'Supportive' : 'Rigorous'} grading is active.`}{' '}
+          Adjust strictness or add your own preferences.
         </Text>
+        <Button type="button" variant="soft" onClick={() => setRubricDashboard(true)}>
+          Customize grading rubric
+        </Button>
 
         <Text size="2" weight="medium">
           Code execution
@@ -668,6 +661,8 @@ export function SettingsPanel({
           Replay the required getting started walkthrough.
         </Text>
       </Flex>
+        </>
+      )}
 
       </main>
     </div>

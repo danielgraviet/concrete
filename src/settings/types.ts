@@ -14,6 +14,7 @@ export type Appearance = 'dark' | 'light';
 export type AgentProviderId = 'off' | 'codex' | 'claude';
 
 export type QuizDifficulty = 'easy' | 'medium' | 'hard';
+export type OpenAnswerGradingStyle = 'supportive' | 'balanced' | 'rigorous';
 
 export const BRAND_LOGOS = [
   { id: 'triple-c', label: 'Triple C', description: 'Compact geometric mark' },
@@ -33,7 +34,9 @@ export type QuizGenerationSettings = {
   openCount: number;
   codeCount: number;
   difficulty: QuizDifficulty;
-  /** Optional frontmatter / grading rubric override. */
+  /** Grading strictness used to build the open-answer rubric for new quizzes. */
+  gradingStyle: OpenAnswerGradingStyle;
+  /** Optional user guidance appended to the generated open-answer rubric. */
   customRubric: string;
 };
 
@@ -70,9 +73,12 @@ export const DEFAULT_QUIZ_SETTINGS: QuizGenerationSettings = {
   openCount: 1,
   codeCount: 1,
   difficulty: 'medium',
-  customRubric:
-    'Score correctness and conceptual understanding. Give partial credit for mostly correct answers, and require the key ideas from the reference answer. Be concise and explain what is missing.',
+  gradingStyle: 'balanced',
+  customRubric: '',
 };
+
+const LEGACY_DEFAULT_QUIZ_RUBRIC =
+  'Score correctness and conceptual understanding. Give partial credit for mostly correct answers, and require the key ideas from the reference answer. Be concise and explain what is missing.';
 
 export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = {
   retention: 0.9,
@@ -106,6 +112,10 @@ export function isQuizDifficulty(value: unknown): value is QuizDifficulty {
   return value === 'easy' || value === 'medium' || value === 'hard';
 }
 
+export function isOpenAnswerGradingStyle(value: unknown): value is OpenAnswerGradingStyle {
+  return value === 'supportive' || value === 'balanced' || value === 'rigorous';
+}
+
 function clampQuizCount(value: unknown, fallback: number): number {
   const n = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(n)) return fallback;
@@ -123,10 +133,12 @@ export function resolveQuizSettings(value: unknown): QuizGenerationSettings {
     difficulty: isQuizDifficulty(raw.difficulty)
       ? raw.difficulty
       : DEFAULT_QUIZ_SETTINGS.difficulty,
-    customRubric:
-      typeof raw.customRubric === 'string'
-        ? raw.customRubric.slice(0, 500)
-        : DEFAULT_QUIZ_SETTINGS.customRubric,
+    gradingStyle: isOpenAnswerGradingStyle(raw.gradingStyle)
+      ? raw.gradingStyle
+      : DEFAULT_QUIZ_SETTINGS.gradingStyle,
+    customRubric: typeof raw.customRubric === 'string'
+      ? (raw.customRubric === LEGACY_DEFAULT_QUIZ_RUBRIC ? '' : raw.customRubric.slice(0, 2000))
+      : DEFAULT_QUIZ_SETTINGS.customRubric,
   };
   // Keep at least one question type enabled.
   if (next.mcqCount + next.clozeCount + next.openCount + next.codeCount === 0) {
