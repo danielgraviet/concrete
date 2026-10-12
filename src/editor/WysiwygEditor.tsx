@@ -42,6 +42,7 @@ import {
 import { arrowPlugin } from './arrow';
 import { emDashPlugin } from './emDash/emDashPlugin';
 import { cardShortcutsPlugin } from './cards/cardShortcutsPlugin';
+import { tabIndentPlugin } from './tabIndent/tabIndentPlugin';
 
 export type WysiwygEditorProps = {
   /** Stable id for the open document — remounts/syncs when it changes. */
@@ -134,6 +135,7 @@ export function createDefaultWysiwygPlugins(): NonNullable<MDXEditorProps['plugi
     quoteExitPlugin(),
     inlineCodeExitPlugin(),
     cardShortcutsPlugin(),
+    tabIndentPlugin(),
   ];
 }
 
@@ -160,6 +162,7 @@ export function createLiteWysiwygPlugins(): NonNullable<MDXEditorProps['plugins'
     inlineCodeExitPlugin(),
     emDashPlugin(),
     cardShortcutsPlugin(),
+    tabIndentPlugin(),
   ];
 }
 
