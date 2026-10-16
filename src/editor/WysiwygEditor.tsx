@@ -22,6 +22,7 @@ import { keymap } from '@codemirror/view';
 import { classHighlighter } from '@lezer/highlight';
 import {
   forwardRef,
+  useEffect,
   useImperativeHandle,
   useLayoutEffect,
   useMemo,
@@ -249,6 +250,7 @@ export const WysiwygEditor = forwardRef<WysiwygEditorHandle, WysiwygEditorProps>
     ref,
   ) {
     const editorRef = useRef<MDXEditorMethods>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
     const markdownRef = useRef(markdown);
     markdownRef.current = markdown;
 
@@ -279,6 +281,57 @@ export const WysiwygEditor = forwardRef<WysiwygEditorHandle, WysiwygEditorProps>
       },
       getSelectionMarkdown: () => editorRef.current?.getSelectionMarkdown() ?? '',
     }));
+
+    useEffect(() => {
+      const container = containerRef.current;
+      if (!container) return;
+
+      const refreshFoldedContent = () => {
+        const content = container.querySelector<HTMLElement>(
+          '.mdxeditor-contenteditable-wrapper [contenteditable="true"]',
+        );
+        if (!content) return;
+        let foldedLevel: number | null = null;
+        for (const block of Array.from(content.children) as HTMLElement[]) {
+          const heading = /^H([1-3])$/.exec(block.tagName);
+          if (foldedLevel !== null) {
+            const endsFold = heading && Number(heading[1]) === foldedLevel;
+            block.classList.toggle('mv-heading-fold-hidden', !endsFold);
+            if (!endsFold) continue;
+            foldedLevel = null;
+          } else {
+            block.classList.remove('mv-heading-fold-hidden');
+          }
+
+          if (!heading) {
+            continue;
+          }
+          const level = Number(heading[1]);
+          if (block.dataset.collapsed === 'true') foldedLevel = level;
+        }
+      };
+
+      const onClick = (event: MouseEvent) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        const heading = target.closest<HTMLElement>('h1, h2, h3');
+        const content = container.querySelector<HTMLElement>(
+          '.mdxeditor-contenteditable-wrapper [contenteditable="true"]',
+        );
+        if (!heading || !content?.contains(heading)) return;
+        heading.dataset.collapsed = heading.dataset.collapsed === 'true' ? 'false' : 'true';
+        refreshFoldedContent();
+      };
+
+      container.addEventListener('click', onClick, true);
+      const observer = new MutationObserver(refreshFoldedContent);
+      observer.observe(container, { childList: true, subtree: true });
+      refreshFoldedContent();
+      return () => {
+        container.removeEventListener('click', onClick, true);
+        observer.disconnect();
+      };
+    }, [documentId]);
 
     useLayoutEffect(() => {
       if (!documentId) return;
@@ -321,6 +374,7 @@ export const WysiwygEditor = forwardRef<WysiwygEditorHandle, WysiwygEditorProps>
 
     return (
       <div
+        ref={containerRef}
         onPasteCapture={(event) => {
           const imageDataUrl = extractPastedImageDataUrl(event.clipboardData);
           if (imageDataUrl) {
