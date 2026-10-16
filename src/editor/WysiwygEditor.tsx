@@ -93,6 +93,47 @@ type ImagePluginHandlers = {
   imagePreviewHandler?: (src: string) => Promise<string>;
 };
 
+/** Detect ordered-list items in plain text copied from chat and document apps. */
+function containsOrderedList(text: string): boolean {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  let itemCount = 0;
+  let previousWasItem = false;
+  for (const line of lines) {
+    if (/^\s{0,3}\d+[.)]\s+\S/.test(line)) {
+      itemCount += 1;
+      previousWasItem = true;
+    } else if (line.trim() === '' && previousWasItem) {
+      // Chat apps often separate each list item with a blank line.
+      continue;
+    } else {
+      previousWasItem = false;
+    }
+  }
+  return itemCount >= 2;
+}
+
+/** Retain a copied heading or bold title when the ordered-list path uses plain text. */
+function preservePastedTitleFormatting(text: string, html: string): string {
+  if (!html || typeof DOMParser === 'undefined') return text;
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const title = [...doc.body.querySelectorAll('h1, h2, h3, h4, h5, h6, p')].find((element) =>
+    /^H[1-6]$/.test(element.tagName) ||
+    (element.tagName === 'P' && element.querySelector('strong, b')),
+  );
+  if (!title) return text;
+  const titleText = title.textContent?.trim();
+  if (!titleText) return text;
+  const lines = text.split(/\r?\n/);
+  const titleLine = lines.findIndex((line) => line.trim() === titleText);
+  if (titleLine < 0) return text;
+  const headingMatch = /^H([1-6])$/.exec(title.tagName);
+  const formatted = headingMatch
+    ? `${'#'.repeat(Number(headingMatch[1]))} ${titleText}`
+    : `**${titleText}**`;
+  lines[titleLine] = formatted;
+  return lines.join('\n');
+}
+
 /** Default plugins matching the current App.tsx WYSIWYG setup. */
 export function createDefaultWysiwygPlugins(
   imageHandlers?: ImagePluginHandlers,
@@ -291,9 +332,21 @@ export const WysiwygEditor = forwardRef<WysiwygEditorHandle, WysiwygEditorProps>
             return;
           }
           const text = event.clipboardData.getData('text/plain');
+          // Rich clipboard HTML from chat apps can be flattened by the editor's
+          // paste conversion. Reinsert ordered Markdown directly so it stays an
+          // ordered list instead of becoming bullets.
+          if (containsOrderedList(text)) {
+            event.preventDefault();
+            event.stopPropagation();
+            const html = event.clipboardData.getData('text/html');
+            const formattedText = preservePastedTitleFormatting(text, html);
+            editorRef.current?.insertMarkdown(normalizePastedMathMarkdown(formattedText));
+            return;
+          }
           // intercept LaTeX delimiters 
           if (!/\\\[|\\\(|\\\$[^\n]*?\\\$/.test(text)) return;
           event.preventDefault();
+          event.stopPropagation();
           editorRef.current?.insertMarkdown(normalizePastedMathMarkdown(text));
         }}
         onClickCapture={(event) => {

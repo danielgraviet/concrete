@@ -2,17 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { noteExportTitle, prepareNoteMarkdown } from './prepareNoteMarkdown';
 
 describe('prepareNoteMarkdown', () => {
-  it('strips frontmatter, wikilinks, cloze, and column fences', () => {
+  it('strips frontmatter, wikilinks, and cloze', () => {
     const markdown = [
       '---',
       'title: Hidden',
       '---',
       'See [[Projects|the project]] and [[Ideas]].',
       'The {{mitochondria}} makes ATP.',
-      ':::columns',
-      ':::column',
-      '- Local',
-      ':::',
       '```',
       'keep [[this]] and {{that}}',
       '```',
@@ -22,7 +18,6 @@ describe('prepareNoteMarkdown', () => {
     expect(prepared).toContain('the project');
     expect(prepared).toContain('Ideas');
     expect(prepared).toContain('**mitochondria**');
-    expect(prepared).not.toContain(':::');
     expect(prepared).toContain('keep [[this]] and {{that}}');
   });
 

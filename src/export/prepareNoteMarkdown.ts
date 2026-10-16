@@ -20,7 +20,6 @@ export function prepareNoteMarkdown(markdown: string): string {
       return line;
     }
     if (inFence) return line;
-    if (/^:::(?:columns|column)?\s*$/.test(line.trim())) return '';
     return line
       .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2')
       .replace(/\[\[([^\]]+)\]\]/g, '$1')
