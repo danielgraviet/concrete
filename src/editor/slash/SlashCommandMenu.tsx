@@ -33,6 +33,7 @@ import {
 import { $insertNodeToNearestRoot } from '@lexical/utils';
 import { handoffSlashToAi } from '../../ai/slashHandoff';
 import { insertCardSeparator, insertClozeBlank } from '../cards/cardShortcutsPlugin';
+import { computeDefaultImageWidth } from '../images';
 import {
   filterSlashCommands,
   isAmbiguousSlashPrefix,
@@ -109,6 +110,11 @@ function removeSlashTrigger(editor: LexicalEditor, replaceLength: number) {
   });
 }
 
+/** Falls back to the filename (minus extension) as alt text — no dialog needed. */
+function deriveAltText(fileName: string): string {
+  return fileName.replace(/\.[^./]+$/, '').replace(/[_-]+/g, ' ').trim();
+}
+
 /**
  * The block's CodeMirror mounts asynchronously, so `node.select()` right after
  * insertion is lost. Wait for its DOM and focus it directly.
@@ -130,7 +136,7 @@ function applySlashCommand(
   helpers: {
     insertThematicBreak: () => void;
     insertMarkdown: (md: string) => void;
-    insertImage: (params: { src: string; altText?: string }) => void;
+    pickImageFile: () => void;
     insertTable: (params: { rows?: number; columns?: number }) => void;
   },
 ) {
@@ -193,13 +199,13 @@ function applySlashCommand(
     case 'mathBlock':
       helpers.insertMarkdown('$$\nformula\n$$');
       break;
-    case 'image': {
-      const src = window.prompt('Image URL');
-      if (!src) break;
-      const altText = window.prompt('Alt text (optional)', '') ?? '';
-      helpers.insertImage({ src, altText });
+    case 'image':
+      // Goes straight to the native file picker — no intermediate dialog
+      // asking for a URL/alt text. A blocking `window.prompt()` here used to
+      // desync Lexical's DOM reconciliation and leave the editor unable to
+      // receive keystrokes; this avoids blocking calls entirely.
+      helpers.pickImageFile();
       break;
-    }
     case 'table':
       // Three rows includes the Markdown header row, leaving two body rows.
       helpers.insertTable({ rows: 3, columns: 3 });
@@ -230,10 +236,15 @@ export function SlashCommandMenu() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const applyingRef = useRef(false);
   const lastQueryRef = useRef<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const insertThematicBreak = usePublisher(insertThematicBreak$);
   const insertMarkdown = usePublisher(insertMarkdown$);
   const insertImage = usePublisher(insertImage$);
   const insertTable = usePublisher(insertTable$);
+
+  const pickImageFile = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
 
   const options = menu ? filterSlashCommands(menu.query) : [];
 
@@ -247,14 +258,14 @@ export function SlashCommandMenu() {
         applySlashCommand(editor, command.id, {
           insertThematicBreak: () => insertThematicBreak(),
           insertMarkdown,
-          insertImage,
+          pickImageFile,
           insertTable,
         });
         editor.focus();
         applyingRef.current = false;
       });
     },
-    [editor, insertImage, insertMarkdown, insertTable, insertThematicBreak],
+    [editor, insertMarkdown, insertTable, insertThematicBreak, pickImageFile],
   );
 
   const runAiHandoff = useCallback(
@@ -401,12 +412,28 @@ export function SlashCommandMenu() {
     };
   }, [editor, menu, options, runAiHandoff, runCommand, selectedIndex]);
 
-  if (!menu) return null;
+  const fileInput = (
+    <input
+      ref={fileInputRef}
+      type="file"
+      accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
+      style={{ display: 'none' }}
+      onChange={async (event) => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file) return;
+        const width = await computeDefaultImageWidth(file);
+        insertImage({ file, altText: deriveAltText(file.name), width });
+      }}
+    />
+  );
 
-  const freeform = isFreeformSlashQuery(menu.query);
-  const showAskAi = freeform || (menu.query.trim().length > 0 && options.length === 0);
-  if (options.length === 0 && !showAskAi && menu.query.trim().length > 0) return null;
+  const freeform = menu ? isFreeformSlashQuery(menu.query) : false;
+  const showAskAi = menu ? freeform || (menu.query.trim().length > 0 && options.length === 0) : false;
   // Bare `/` still shows the format list (options === all commands).
+  if (!menu || (options.length === 0 && !showAskAi && menu.query.trim().length > 0)) {
+    return fileInput;
+  }
 
   const maxLeft = Math.max(8, window.innerWidth - 300);
   const left = Math.min(menu.left, maxLeft);
@@ -415,56 +442,61 @@ export function SlashCommandMenu() {
       ? Math.max(8, menu.top - 328)
       : menu.top;
 
-  return createPortal(
-    <div
-      className="slash-menu"
-      role="listbox"
-      aria-label="Formatting commands"
-      style={{ position: 'fixed', left, top, zIndex: 1000 }}
-    >
-      {options.length > 0 ? (
-        <>
-          <div className="slash-heading">BASIC BLOCKS</div>
-          {options.map((command, index) => (
-            <button
-              type="button"
-              key={command.id}
-              role="option"
-              aria-selected={selectedIndex === index}
-              className={selectedIndex === index ? 'selected' : undefined}
-              onMouseEnter={() => setSelectedIndex(index)}
-              onMouseDown={(event) => {
-                event.preventDefault();
-                runCommand(command, menu.replaceLength);
-              }}
-            >
-              <span className="command-symbol">{command.symbol}</span>
-              <span>{command.title}</span>
-              <small>{command.aliases[0] ? `/${command.aliases[0]}` : command.hint}</small>
-            </button>
-          ))}
-        </>
-      ) : null}
-      {showAskAi ? (
-        <>
-          <div className="slash-heading">TUTOR</div>
-          <button
-            type="button"
-            role="option"
-            aria-selected
-            className="selected"
-            onMouseDown={(event) => {
-              event.preventDefault();
-              runAiHandoff(menu.query, menu.replaceLength);
-            }}
-          >
-            <span className="command-symbol">?</span>
-            <span>Ask tutor</span>
-            <small>Enter</small>
-          </button>
-        </>
-      ) : null}
-    </div>,
-    document.querySelector('.radix-themes') ?? document.body,
+  return (
+    <>
+      {fileInput}
+      {createPortal(
+        <div
+          className="slash-menu"
+          role="listbox"
+          aria-label="Formatting commands"
+          style={{ position: 'fixed', left, top, zIndex: 1000 }}
+        >
+          {options.length > 0 ? (
+            <>
+              <div className="slash-heading">BASIC BLOCKS</div>
+              {options.map((command, index) => (
+                <button
+                  type="button"
+                  key={command.id}
+                  role="option"
+                  aria-selected={selectedIndex === index}
+                  className={selectedIndex === index ? 'selected' : undefined}
+                  onMouseEnter={() => setSelectedIndex(index)}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    runCommand(command, menu.replaceLength);
+                  }}
+                >
+                  <span className="command-symbol">{command.symbol}</span>
+                  <span>{command.title}</span>
+                  <small>{command.aliases[0] ? `/${command.aliases[0]}` : command.hint}</small>
+                </button>
+              ))}
+            </>
+          ) : null}
+          {showAskAi ? (
+            <>
+              <div className="slash-heading">TUTOR</div>
+              <button
+                type="button"
+                role="option"
+                aria-selected
+                className="selected"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  runAiHandoff(menu.query, menu.replaceLength);
+                }}
+              >
+                <span className="command-symbol">?</span>
+                <span>Ask tutor</span>
+                <small>Enter</small>
+              </button>
+            </>
+          ) : null}
+        </div>,
+        document.querySelector('.radix-themes') ?? document.body,
+      )}
+    </>
   );
 }
