@@ -1930,6 +1930,130 @@ div[class*="selectContainer"] [class*="selectItem"][data-state="checked"]{
   color:var(--mv-code-text)!important;
 }
 
+/* The delete/settings overlay on an inserted image — only while it's selected (left-clicked), not always-on. */
+.wysiwyg [class*="imageWrapper"] [class*="editImageToolbar"]{
+  display:none!important;
+}
+.wysiwyg [class*="imageWrapper"]:has(img[class*="focusedImage"]) [class*="editImageToolbar"]{
+  display:flex!important;
+}
+
+/*
+ * Image insert/edit dialog (Radix, rendered into .mdxeditor-popup-container).
+ * MDXEditor's own stylesheet only defines its light-theme vars on `:root`
+ * (the dark variants need a `.dark-theme` class this app never applies), so
+ * without this it renders as a washed-out white box with low-contrast text
+ * regardless of the active theme pack.
+ */
+.mdxeditor-popup-container [class*="dialogOverlay"]{
+  background:#000!important;
+  opacity:.6!important;
+  z-index:10055!important;
+}
+.mdxeditor-popup-container [class*="dialogContent"]{
+  /* mdxeditor's own rule is a horizontal flex row (built for tiny popovers
+     like the link dialog) — override to a normal vertical modal layout. */
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:stretch!important;
+  background:var(--mv-surface)!important;
+  border:1px solid var(--mv-border)!important;
+  border-radius:10px!important;
+  box-shadow:0 20px 48px #0008!important;
+  color:var(--mv-text)!important;
+  z-index:10060!important;
+  width:360px!important;
+  max-width:calc(100vw - 32px)!important;
+  max-height:80vh!important;
+  overflow:auto!important;
+}
+/* The image dialog's title is Radix's unstyled default <h2> — mdxeditor
+   never gives it a class, so it falls back to the browser's h2 UA styles. */
+.mdxeditor-popup-container [class*="dialogContent"] h2{
+  color:var(--mv-text)!important;
+  font-size:14px!important;
+  font-weight:600!important;
+  margin:0!important;
+  padding:14px 14px 0 14px!important;
+}
+.mdxeditor-popup-container [class*="dialogTitle"]{
+  color:var(--mv-text)!important;
+  font-size:14px!important;
+  font-weight:600!important;
+  padding:12px 14px 0 14px!important;
+}
+.mdxeditor-popup-container [class*="dialogCloseButton"]{
+  color:var(--mv-muted)!important;
+}
+.mdxeditor-popup-container [class*="dialogCloseButton"]:hover{
+  color:var(--mv-text)!important;
+}
+.mdxeditor-popup-container [class*="multiFieldForm"]{
+  padding:14px!important;
+  gap:12px!important;
+}
+.mdxeditor-popup-container [class*="formField"] label{
+  color:var(--mv-muted)!important;
+  font-size:11px!important;
+  text-transform:uppercase!important;
+  letter-spacing:.04em!important;
+}
+.mdxeditor-popup-container [class*="textInput"],
+.mdxeditor-popup-container [class*="downshiftInputWrapper"]{
+  background:var(--mv-bg)!important;
+  color:var(--mv-text)!important;
+  border:1px solid var(--mv-border)!important;
+  border-radius:6px!important;
+}
+.mdxeditor-popup-container input[type="file"]{
+  color:var(--mv-text)!important;
+}
+.mdxeditor-popup-container [class*="downshiftInput"]{
+  color:var(--mv-text)!important;
+  background:transparent!important;
+}
+.mdxeditor-popup-container [class*="downshiftInput"]::placeholder{
+  color:var(--mv-muted)!important;
+}
+.mdxeditor-popup-container [class*="downshiftAutocompleteContainer"] ul{
+  background:var(--mv-surface)!important;
+  border:1px solid var(--mv-border)!important;
+  color:var(--mv-text)!important;
+}
+.mdxeditor-popup-container [class*="downshiftAutocompleteContainer"] ul li[data-highlighted="true"]{
+  background:var(--mv-surface-2)!important;
+}
+.mdxeditor-popup-container [class*="imageDimensionsContainer"] label,
+.mdxeditor-popup-container [class*="imageDimensionsContainer"] input{
+  color:var(--mv-text)!important;
+}
+.mdxeditor-popup-container [class*="primaryButton"],
+.mdxeditor-popup-container [class*="secondaryButton"]{
+  background:var(--mv-surface-2)!important;
+  border:1px solid var(--mv-border)!important;
+  color:var(--mv-text)!important;
+  border-radius:6px!important;
+}
+.mdxeditor-popup-container [class*="primaryButton"]{
+  border-color:var(--mv-accent)!important;
+  color:var(--mv-accent)!important;
+  font-weight:600!important;
+}
+.mdxeditor-popup-container [class*="primaryButton"]:hover,
+.mdxeditor-popup-container [class*="secondaryButton"]:hover{
+  background:var(--mv-border)!important;
+}
+/*
+ * New images never open this dialog (/image goes straight to the file
+ * picker), so the only place it still appears is "edit an inserted image".
+ * Replacing the src there isn't a supported flow — delete and re-insert
+ * instead — so the file-upload and URL rows just add clutter; keep Alt/Title.
+ */
+.mdxeditor-popup-container form[class*="multiFieldForm"] > div[class*="formField"]:has(input[type="file"]),
+.mdxeditor-popup-container form[class*="multiFieldForm"] > div[class*="formField"]:has([class*="downshiftContainer"]){
+  display:none!important;
+}
+
 .wysiwyg [class*="codeMirrorWrapper"] .cm-editor{
   background:transparent;
   color:#e8e8e8;

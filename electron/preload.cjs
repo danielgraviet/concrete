@@ -31,6 +31,8 @@ contextBridge.exposeInMainWorld('vault', {
   takePdfExport: () => ipcRenderer.invoke('vault:takePdfExport'),
   pdfExportReady: () => ipcRenderer.send('vault:pdfExportReady'),
   readImageDataUrl: (root, notePath, src) => ipcRenderer.invoke('vault:readImageDataUrl', root, notePath, src),
+  saveImage: (root, notePath, bytes, mime, suggestedName) =>
+    ipcRenderer.invoke('vault:saveImage', root, notePath, bytes, mime, suggestedName),
   onWatch: (callback) => {
     if (typeof callback !== 'function') return () => {};
     const listener = (_event, payload) => callback(payload);

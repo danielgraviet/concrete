@@ -573,7 +573,7 @@ async function startWatch(root) {
     ignoreInitial: true,
     usePolling: false,
     ignored: [
-      /(^|[/\\])(\.git|node_modules|\.obsidian|\.trash|\.vault|agent-trajectories|dist|release|build|\.cache|\.turbo|\.next|coverage)([/\\]|$)/,
+      /(^|[/\\])(\.git|node_modules|\.obsidian|\.trash|\.vault|\.attachments|agent-trajectories|dist|release|build|\.cache|\.turbo|\.next|coverage)([/\\]|$)/,
       /\.(?:DS_Store|log|tmp|swp|map)$/i,
     ],
     awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 },
@@ -903,6 +903,46 @@ const IMAGE_MIME = {
   '.webp': 'image/webp',
   '.svg': 'image/svg+xml',
 };
+const IMAGE_EXT_BY_MIME = {
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/gif': '.gif',
+  'image/webp': '.webp',
+  'image/svg+xml': '.svg',
+};
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+
+function sanitizeImageStem(name) {
+  const stem = path.basename(String(name || ''), path.extname(String(name || '')));
+  const cleaned = stem.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+  return cleaned || 'image';
+}
+
+/** Pasted/dropped/picked images land in `.attachments/` beside the note that references them. */
+ipcMain.handle('vault:saveImage', async (_event, root, notePath, bytes, mime, suggestedName) => {
+  const data = bytes instanceof Uint8Array ? bytes : null;
+  if (!data) throw new Error('Invalid image data');
+  if (data.length > MAX_IMAGE_BYTES) throw new Error('Image is larger than 8 MB.');
+  const extFromName = path.extname(String(suggestedName || '')).toLowerCase();
+  const ext = IMAGE_EXT_BY_MIME[mime] || (IMAGE_MIME[extFromName] ? extFromName : null);
+  if (!ext) throw new Error('Unsupported image type.');
+  const noteDir = path.posix.dirname(String(notePath || '').split(path.sep).join('/'));
+  const attachmentsRel = noteDir && noteDir !== '.' ? `${noteDir}/.attachments` : '.attachments';
+  const { resolved: attachmentsDir } = resolveWithinRoot(root, attachmentsRel);
+  await fs.mkdir(attachmentsDir, { recursive: true });
+  const stem = sanitizeImageStem(suggestedName);
+  for (let n = 1; ; n += 1) {
+    const name = n === 1 ? `${stem}${ext}` : `${stem}-${n}${ext}`;
+    const resolved = path.join(attachmentsDir, name);
+    try {
+      await fs.writeFile(resolved, Buffer.from(data), { flag: 'wx' });
+      return `.attachments/${name}`;
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+    }
+  }
+});
+
 let pdfExportJob = null;
 let pdfExportBusy = false;
 

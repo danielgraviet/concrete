@@ -2096,6 +2096,7 @@ export default function App() {
                 ref={editorRef}
                 className="wysiwyg"
                 documentId={selected}
+                vaultRoot={root ?? undefined}
                 contentRevision={editorRevision}
                 markdown={controller.content}
                 onChange={(value) => {

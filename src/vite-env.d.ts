@@ -166,6 +166,14 @@ interface Window {
     pdfExportReady?: () => void;
     /** Local image beside a note, as a data URL. Empty when it cannot be read. */
     readImageDataUrl?: (root: string, notePath: string, src: string) => Promise<string>;
+    /** Saves pasted/dropped/picked image bytes into `.attachments/` beside the note; returns the note-relative src to embed. */
+    saveImage?: (
+      root: string,
+      notePath: string,
+      bytes: Uint8Array,
+      mime: string,
+      suggestedName?: string,
+    ) => Promise<string>;
   };
   /** Code execution bridge — the runner (Docker, hosted, …) lives in Electron main. */
   sandbox?: {

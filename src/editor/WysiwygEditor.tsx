@@ -29,6 +29,12 @@ import {
   type ReactNode,
 } from 'react';
 import type { EditorCommandHandler } from './types';
+import {
+  buildImageMarkdownFromDataUrl,
+  createImageHandlers,
+  extractPastedImageDataUrl,
+  type ImageEditingContext,
+} from './images';
 import { RUN_CODE_EVENT, runnableCodeBlockDescriptor } from './RunnableCodeBlock';
 import { quoteExitPlugin } from './quote';
 import { inlineCodeExitPlugin } from './inlineCode';
@@ -47,6 +53,8 @@ import { tabIndentPlugin } from './tabIndent/tabIndentPlugin';
 export type WysiwygEditorProps = {
   /** Stable id for the open document — remounts/syncs when it changes. */
   documentId?: string;
+  /** Vault root, needed to save pasted/dropped/picked images beside the note. */
+  vaultRoot?: string;
   /**
    * Bump when markdown was changed outside the editor (agent / disk reload)
    * so MDXEditor picks up the new source without remounting.
@@ -80,8 +88,15 @@ export type WysiwygEditorHandle = {
   getSelectionMarkdown: () => string;
 };
 
+type ImagePluginHandlers = {
+  imageUploadHandler?: (file: File) => Promise<string>;
+  imagePreviewHandler?: (src: string) => Promise<string>;
+};
+
 /** Default plugins matching the current App.tsx WYSIWYG setup. */
-export function createDefaultWysiwygPlugins(): NonNullable<MDXEditorProps['plugins']> {
+export function createDefaultWysiwygPlugins(
+  imageHandlers?: ImagePluginHandlers,
+): NonNullable<MDXEditorProps['plugins']> {
   return [
     headingsPlugin(),
     listsPlugin(),
@@ -125,7 +140,7 @@ export function createDefaultWysiwygPlugins(): NonNullable<MDXEditorProps['plugi
         '': 'Raw Text',
       },
     }),
-    imagePlugin(),
+    imagePlugin(imageHandlers),
     tablePlugin(),
     markdownShortcutPlugin(),
     mathPlugin(),
@@ -178,6 +193,7 @@ export const WysiwygEditor = forwardRef<WysiwygEditorHandle, WysiwygEditorProps>
   function WysiwygEditor(
     {
       documentId,
+      vaultRoot,
       contentRevision = 0,
       markdown,
       onChange,
@@ -194,6 +210,15 @@ export const WysiwygEditor = forwardRef<WysiwygEditorHandle, WysiwygEditorProps>
     const editorRef = useRef<MDXEditorMethods>(null);
     const markdownRef = useRef(markdown);
     markdownRef.current = markdown;
+
+    // Read at upload/preview time so note switches never use a stale path —
+    // the plugin list itself isn't rebuilt when vaultRoot/documentId change.
+    const imageContextRef = useRef<ImageEditingContext>({ vaultRoot, notePath: documentId });
+    imageContextRef.current = { vaultRoot, notePath: documentId };
+    const imageHandlers = useMemo(
+      () => createImageHandlers(() => imageContextRef.current),
+      [],
+    );
 
     useImperativeHandle(ref, () => ({
       focus: () => editorRef.current?.focus(),
@@ -242,9 +267,9 @@ export const WysiwygEditor = forwardRef<WysiwygEditorHandle, WysiwygEditorProps>
       }
       const base = useLitePlugins
         ? createLiteWysiwygPlugins()
-        : createDefaultWysiwygPlugins();
+        : createDefaultWysiwygPlugins(imageHandlers);
       return extraPlugins ? [...base, ...extraPlugins] : base;
-    }, [pluginsOverride, extraPlugins, useLitePlugins]);
+    }, [pluginsOverride, extraPlugins, useLitePlugins, imageHandlers]);
 
     const initialMarkdown = useMemo(
       () => normalizeMathMarkdown(markdown),
@@ -256,10 +281,17 @@ export const WysiwygEditor = forwardRef<WysiwygEditorHandle, WysiwygEditorProps>
     return (
       <div
         onPasteCapture={(event) => {
+          const imageDataUrl = extractPastedImageDataUrl(event.clipboardData);
+          if (imageDataUrl) {
+            event.preventDefault();
+            event.stopPropagation();
+            buildImageMarkdownFromDataUrl(imageDataUrl, imageHandlers.imageUploadHandler)
+              .then((markdown) => editorRef.current?.insertMarkdown(markdown))
+              .catch((error) => console.error('[image] pasted data URI failed', error));
+            return;
+          }
           const text = event.clipboardData.getData('text/plain');
-          // Let the editor retain rich HTML paste behavior for ordinary text.
-          // Intercept LaTeX delimiters so they pass through the same math
-          // normalization used when a note is loaded.
+          // intercept LaTeX delimiters 
           if (!/\\\[|\\\(|\\\$[^\n]*?\\\$/.test(text)) return;
           event.preventDefault();
           editorRef.current?.insertMarkdown(normalizePastedMathMarkdown(text));
