@@ -12,12 +12,6 @@ export type ImageEditingContext = {
   notePath?: string;
 };
 
-/**
- * One upload/preview pair, shared by paste, drag-drop, and the image dialog's
- * file picker (all three route through MDXEditor's imagePlugin handlers).
- * `getContext` is read at call time so it stays correct across note switches
- * without needing to rebuild the MDXEditor plugin list.
- */
 export function createImageHandlers(getContext: () => ImageEditingContext) {
   const imageUploadHandler = async (file: File): Promise<string> => {
     const { vaultRoot, notePath } = getContext();
@@ -27,9 +21,7 @@ export function createImageHandlers(getContext: () => ImageEditingContext) {
     if (file.size > MAX_IMAGE_BYTES) {
       throw new Error('Image is larger than 8 MB.');
     }
-    // A Blob built from a `data:...;charset=utf-8,...` URI (how ChatGPT/Claude
-    // web expose a copied inline-SVG diagram) keeps the charset on `.type` —
-    // strip it before matching/forwarding the bare mime type.
+    // blob built from a `data:...;charset=utf-8,...` so copy paste from LLMs works
     const mime = file.type.split(';')[0].trim().toLowerCase();
     if (mime && !ALLOWED_IMAGE_MIME.has(mime)) {
       throw new Error(`Unsupported image type: ${mime}`);
@@ -49,14 +41,9 @@ export function createImageHandlers(getContext: () => ImageEditingContext) {
   return { imageUploadHandler, imagePreviewHandler };
 }
 
-/** Inserted images default to this width (px) instead of their native size — still fully resizable larger. */
 export const DEFAULT_IMAGE_WIDTH = 420;
 
-/**
- * Natural width for a not-yet-uploaded image file, so a freshly inserted
- * image can default to a sensible size instead of rendering at native
- * (often huge) resolution. Never upscales a smaller image.
- */
+// make default images small, user can enlarge.
 export function computeDefaultImageWidth(file: File): Promise<number> {
   if (file.type.startsWith('image/svg+xml')) return Promise.resolve(DEFAULT_IMAGE_WIDTH);
   const url = URL.createObjectURL(file);
@@ -78,19 +65,6 @@ function isImageDataUrl(text: string): boolean {
   return /^data:image\//i.test(text.trim());
 }
 
-/**
- * ChatGPT/Claude web render a generated diagram as an `<img src="data:image/...">`
- * rather than a hosted URL, so there's no real bitmap for the browser to put
- * on the clipboard as an `image/*` item — only the HTML fragment (and often a
- * plain-text fallback that's just the raw data URI). MDXEditor's image paste
- * handling only watches for `image/*` clipboard items, so it never sees this;
- * worse, Lexical's own default HTML-paste conversion will happily create an
- * `ImageNode` straight from that `<img src="data:...">` tag — full native
- * size, never saved to disk, de facto invisible (any further edit/reload
- * round-trip chokes on a multi-KB `src`). We pull the URI out of either
- * clipboard representation ourselves and ingest it through the normal
- * upload pipeline instead.
- */
 export function extractPastedImageDataUrl(clipboardData: DataTransfer): string | null {
   const plain = clipboardData.getData('text/plain');
   if (isImageDataUrl(plain)) return plain.trim();
@@ -100,7 +74,6 @@ export function extractPastedImageDataUrl(clipboardData: DataTransfer): string |
   return null;
 }
 
-/** Turns a pasted `data:image/...` URI into markdown ready for `insertMarkdown`. */
 export async function buildImageMarkdownFromDataUrl(
   dataUrl: string,
   imageUploadHandler: (file: File) => Promise<string>,

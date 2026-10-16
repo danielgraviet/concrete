@@ -283,13 +283,6 @@ export const WysiwygEditor = forwardRef<WysiwygEditorHandle, WysiwygEditorProps>
         onPasteCapture={(event) => {
           const imageDataUrl = extractPastedImageDataUrl(event.clipboardData);
           if (imageDataUrl) {
-            // `preventDefault` alone only blocks the browser's native paste
-            // action — Lexical's own paste handling is a separate bubble-phase
-            // listener on the contentEditable and still runs otherwise,
-            // converting the same `<img src="data:...">` straight into an
-            // ImageNode itself (full native size, never saved to disk).
-            // `stopPropagation` here, during the capture phase, keeps the
-            // event from ever reaching it.
             event.preventDefault();
             event.stopPropagation();
             buildImageMarkdownFromDataUrl(imageDataUrl, imageHandlers.imageUploadHandler)
@@ -298,9 +291,7 @@ export const WysiwygEditor = forwardRef<WysiwygEditorHandle, WysiwygEditorProps>
             return;
           }
           const text = event.clipboardData.getData('text/plain');
-          // Let the editor retain rich HTML paste behavior for ordinary text.
-          // Intercept LaTeX delimiters so they pass through the same math
-          // normalization used when a note is loaded.
+          // intercept LaTeX delimiters 
           if (!/\\\[|\\\(|\\\$[^\n]*?\\\$/.test(text)) return;
           event.preventDefault();
           editorRef.current?.insertMarkdown(normalizePastedMathMarkdown(text));

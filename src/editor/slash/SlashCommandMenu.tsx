@@ -200,10 +200,6 @@ function applySlashCommand(
       helpers.insertMarkdown('$$\nformula\n$$');
       break;
     case 'image':
-      // Goes straight to the native file picker — no intermediate dialog
-      // asking for a URL/alt text. A blocking `window.prompt()` here used to
-      // desync Lexical's DOM reconciliation and leave the editor unable to
-      // receive keystrokes; this avoids blocking calls entirely.
       helpers.pickImageFile();
       break;
     case 'table':
