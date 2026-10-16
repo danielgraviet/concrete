@@ -149,6 +149,8 @@ export type GenerateQuizRequest = {
   types?: QuestionType[];
   /** Auto mode asks the model to preserve and adapt questions found in the source. */
   autoComposition?: boolean;
+  /** How to use explicit questions present in the selected source. */
+  sourceIntent?: 'generate' | 'recreate' | 'similar';
   mcqCount?: number;
   clozeCount?: number;
   openCount?: number;
