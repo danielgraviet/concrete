@@ -1482,6 +1482,25 @@ body{
   user-select:text;
   -webkit-user-select:text;
 }
+.wysiwyg .mdxeditor-root-contenteditable .mv-heading-fold-hidden{display:none!important}
+.wysiwyg .mdxeditor-root-contenteditable h1,
+.wysiwyg .mdxeditor-root-contenteditable h2,
+.wysiwyg .mdxeditor-root-contenteditable h3{position:relative}
+.wysiwyg .mdxeditor-root-contenteditable h1::before,
+.wysiwyg .mdxeditor-root-contenteditable h2::before,
+.wysiwyg .mdxeditor-root-contenteditable h3::before{content:'▾';position:absolute;left:-.85em;top:.05em;color:var(--mv-text,#111);font-size:.75em;opacity:0;transition:opacity .12s ease;pointer-events:none}
+.wysiwyg .mdxeditor-root-contenteditable h1:hover::before,
+.wysiwyg .mdxeditor-root-contenteditable h2:hover::before,
+.wysiwyg .mdxeditor-root-contenteditable h3:hover::before{opacity:.7}
+.wysiwyg .mdxeditor-root-contenteditable h1[data-collapsed="true"]::before,
+.wysiwyg .mdxeditor-root-contenteditable h2[data-collapsed="true"]::before,
+.wysiwyg .mdxeditor-root-contenteditable h3[data-collapsed="true"]::before{content:'▸'}
+.theme-pack-concrete .wysiwyg .mdxeditor-root-contenteditable h1::before,
+.theme-pack-concrete .wysiwyg .mdxeditor-root-contenteditable h2::before,
+.theme-pack-concrete .wysiwyg .mdxeditor-root-contenteditable h3::before,
+.theme-pack-default .wysiwyg .mdxeditor-root-contenteditable h1::before,
+.theme-pack-default .wysiwyg .mdxeditor-root-contenteditable h2::before,
+.theme-pack-default .wysiwyg .mdxeditor-root-contenteditable h3::before{color:#000;font-size:.9em}
 .wysiwyg .mdxeditor-contenteditable-wrapper,
 .wysiwyg .mdxeditor-rich-text-editor,
 .wysiwyg .mdxeditor-diff-source-wrapper{height:auto!important;min-height:0;overflow:visible!important}
