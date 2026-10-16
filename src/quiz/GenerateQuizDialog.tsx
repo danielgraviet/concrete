@@ -14,9 +14,10 @@ import {
 import { ClipboardIcon } from '@radix-ui/react-icons';
 import { isQuizPath, quizFileTitle } from './paths';
 import { parsePageRange } from './pdfContext';
+import { notePathKey } from './QuizFromNotePrompt';
 import { isPdfFileName, noteTitle } from '../vault/fileTree';
 import type { QuizDifficulty, QuizGenerationSettings } from '../settings';
-import type { AutoQuizCounts } from './autoComposition';
+import type { AutoQuizAnalysis, AutoQuizCounts, ExistingSourceQuiz } from './autoComposition';
 
 export type GenerateQuizDialogResult = {
   title: string;
@@ -25,13 +26,16 @@ export type GenerateQuizDialogResult = {
   pageRanges: Record<string, string>;
   /** Per-run generation settings (seeded from Settings, not saved back). */
   settings: QuizGenerationSettings;
-  mode: 'manual' | 'auto';
+  sourceIntent: 'generate' | 'recreate' | 'similar';
+  sourceQuizContext?: string;
 };
 
 type Props = {
   files: string[];
   /** PDFs in the vault; selectable as sources alongside notes. */
   pdfFiles: string[];
+  existingSourceQuizzes: ReadonlyMap<string, ExistingSourceQuiz>;
+  quizSourceIndexReady: boolean;
   /** Currently open note — preselected when it is not a quiz. */
   defaultSourcePath: string;
   folderHint?: string;
@@ -40,7 +44,7 @@ type Props = {
   busy?: boolean;
   onCancel: () => void;
   onConfirm: (result: GenerateQuizDialogResult) => void;
-  onAnalyzeAuto: (sources: string[], pageRanges: Record<string, string>) => Promise<AutoQuizCounts>;
+  onAnalyzeAuto: (sources: string[], pageRanges: Record<string, string>) => Promise<AutoQuizAnalysis>;
 };
 
 function defaultTitleFromSources(paths: string[]): string {
@@ -65,6 +69,8 @@ function pageRangeError(input: string): string | null {
 export function GenerateQuizDialog({
   files,
   pdfFiles,
+  existingSourceQuizzes,
+  quizSourceIndexReady,
   defaultSourcePath,
   folderHint,
   defaultSettings,
@@ -80,14 +86,14 @@ export function GenerateQuizDialog({
       // Clicked note first, then notes in its folder, then everything else; A–Z within each group.
       const rank = (path: string) =>
         path === defaultSourcePath ? 0 : currentDir !== null && dirOf(path) === currentDir ? 1 : 2;
-      return [...files.filter((path) => !isQuizPath(path)), ...pdfFiles]
+      return [...files, ...pdfFiles]
         .sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
     },
     [files, pdfFiles, defaultSourcePath],
   );
 
   const initialSources = useMemo(() => {
-    if (defaultSourcePath && !isQuizPath(defaultSourcePath)) {
+    if (defaultSourcePath) {
       return [defaultSourcePath];
     }
     return noteFiles[0] ? [noteFiles[0]] : [];
@@ -108,15 +114,19 @@ export function GenerateQuizDialog({
     return result;
   });
   const [difficulty, setDifficulty] = useState<QuizDifficulty>(defaultSettings.difficulty);
-  const [mode, setMode] = useState<'manual' | 'auto'>('auto');
+  const [sourceIntent, setSourceIntent] = useState<'generate' | 'recreate' | 'similar'>(() =>
+    defaultSourcePath && isQuizPath(defaultSourcePath) ? 'similar' : 'generate',
+  );
   const [analyzing, setAnalyzing] = useState(() => initialSources.length > 0);
   const [analysisPending, setAnalysisPending] = useState(false);
-  const [analysisError, setAnalysisError] = useState('');
-  const [autoAnalyzed, setAutoAnalyzed] = useState(false);
-  const [countsTouched, setCountsTouched] = useState(false);
-  const [analysisAttempt, setAnalysisAttempt] = useState(0);
   const [pageRanges, setPageRanges] = useState<Record<string, string>>({});
   const totalQuestions = counts.mcqCount + counts.clozeCount + counts.openCount + counts.codeCount;
+  const relatedQuizzes = [...new Map(
+    selected
+      .map((path) => existingSourceQuizzes.get(notePathKey(path)))
+      .filter((quiz): quiz is ExistingSourceQuiz => Boolean(quiz))
+      .map((quiz) => [notePathKey(quiz.quizPath), quiz] as const),
+  ).values()];
   const rangeInvalid = selected.some((path) => isPdfFileName(path) && pageRangeError(pageRanges[path] ?? ''));
   const analyzeRef = useRef(onAnalyzeAuto);
   analyzeRef.current = onAnalyzeAuto;
@@ -139,8 +149,7 @@ export function GenerateQuizDialog({
     !rangesSettling &&
     selected.length > 0 &&
     totalQuestions > 0 &&
-    !rangeInvalid &&
-    (mode !== 'auto' || autoAnalyzed || countsTouched);
+    !rangeInvalid;
 
   useEffect(() => {
     if (!rangesSettling) return undefined;
@@ -149,22 +158,37 @@ export function GenerateQuizDialog({
   }, [rangeKey, rangesSettling]);
 
   useEffect(() => {
-    if (mode !== 'auto') {
-      setAnalyzing(false);
+    if (selected.length > 0 && !quizSourceIndexReady) {
+      setAnalyzing(true);
       setAnalysisPending(false);
       return;
     }
     if (selected.length === 0 || rangeInvalid || rangesSettling) {
       setAnalyzing(false);
       setAnalysisPending(rangesSettling && selected.length > 0 && !rangeInvalid);
-      if (selected.length === 0 || rangeInvalid) setAutoAnalyzed(false);
+      return;
+    }
+
+    if (relatedQuizzes.length > 0) {
+      const combined: AutoQuizCounts = { mcqCount: 0, clozeCount: 0, openCount: 0, codeCount: 0 };
+      for (const quiz of relatedQuizzes) {
+        for (const key of Object.keys(combined) as (keyof AutoQuizCounts)[]) {
+          combined[key] += quiz.counts[key];
+        }
+      }
+      let remaining = 50;
+      for (const key of ['mcqCount', 'clozeCount', 'openCount', 'codeCount'] as const) {
+        combined[key] = Math.min(combined[key], remaining);
+        remaining -= combined[key];
+      }
+      setCounts(combined);
+      setSourceIntent('similar');
+      setAnalyzing(false);
+      setAnalysisPending(false);
       return;
     }
 
     let cancelled = false;
-    setAnalysisError('');
-    setAutoAnalyzed(false);
-    setCountsTouched(false);
     setAnalysisPending(false);
     setAnalyzing(true);
     const ranges = Object.fromEntries(
@@ -175,13 +199,13 @@ export function GenerateQuizDialog({
         .current(selected, ranges)
         .then((detected) => {
           if (cancelled) return;
-          setCounts(detected);
-          setAutoAnalyzed(true);
+          const { sourceIntent: detectedIntent, ...detectedCounts } = detected;
+          setCounts(detectedCounts);
+          setSourceIntent(detectedIntent);
         })
         .catch((error: unknown) => {
           if (cancelled) return;
-          setAnalysisError(error instanceof Error ? error.message : String(error));
-          setAutoAnalyzed(false);
+          console.error('Quiz composition estimate failed', error);
         })
         .finally(() => {
           if (!cancelled) setAnalyzing(false);
@@ -192,7 +216,7 @@ export function GenerateQuizDialog({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [mode, selectionKey, settledRangeKey, rangeInvalid, rangesSettling, analysisAttempt, selected, pageRanges]);
+  }, [selectionKey, settledRangeKey, rangeInvalid, rangesSettling, selected, pageRanges, quizSourceIndexReady, existingSourceQuizzes]);
 
   const setCount = (key: keyof typeof counts, raw: number) => {
     const otherCount = Object.entries(counts).reduce(
@@ -200,7 +224,6 @@ export function GenerateQuizDialog({
       0,
     );
     const n = Number.isFinite(raw) ? Math.max(0, Math.min(50 - otherCount, Math.round(raw))) : 0;
-    setCountsTouched(true);
     setCounts((current) => ({ ...current, [key]: n }));
   };
 
@@ -232,7 +255,11 @@ export function GenerateQuizDialog({
         selected.filter(isPdfFileName).map((path) => [path, pageRanges[path] ?? '']),
       ),
       settings: { ...defaultSettings, ...counts, difficulty },
-      mode,
+      sourceIntent,
+      sourceQuizContext: relatedQuizzes
+        .filter((quiz) => !selected.some((path) => notePathKey(path) === notePathKey(quiz.quizPath)))
+        .map((quiz) => `### Existing quiz: ${quiz.quizPath}\n\n${quiz.markdown}`)
+        .join('\n\n-----\n\n'),
     });
   };
 
@@ -245,7 +272,7 @@ export function GenerateQuizDialog({
             <Box>
               <Heading size="4">Generate quiz</Heading>
               <Text size="2" color="gray">
-                Ground questions in selected notes or PDFs
+                Use notes or PDFs to make a quiz, recreate an existing one, or create similar practice
                 {folderHint ? ` · saves under ${folderHint}` : ''}.
               </Text>
             </Box>
@@ -314,7 +341,7 @@ export function GenerateQuizDialog({
                           <Flex direction="column" gap="1" flexGrow="1">
                             <Text size="2">{noteTitle(path)}</Text>
                             <Text size="1" color="gray">
-                              {isPdf ? 'PDF · ' : ''}
+                              {isPdf ? 'PDF · ' : isQuizPath(path) ? 'Existing quiz · ' : ''}
                               {path}
                               {isDefault ? ' · current' : ''}
                             </Text>
@@ -347,44 +374,27 @@ export function GenerateQuizDialog({
             )}
           </Flex>
 
+          <Flex direction="column" gap="2">
+            <Text size="2" weight="medium">Question style</Text>
+            <SegmentedControl.Root
+              value={sourceIntent}
+              disabled={busy || analyzing}
+              onValueChange={(value) => setSourceIntent(value as typeof sourceIntent)}
+            >
+              <SegmentedControl.Item value="generate">New from source</SegmentedControl.Item>
+              <SegmentedControl.Item value="recreate">Recreate this quiz</SegmentedControl.Item>
+              <SegmentedControl.Item value="similar">Similar practice</SegmentedControl.Item>
+            </SegmentedControl.Root>
+            <Text size="1" color="gray">
+              {sourceIntent === 'recreate'
+                ? 'Preserve the source questions and answer key, formatted as a Concrete quiz.'
+                : sourceIntent === 'similar'
+                  ? 'Write new questions that practice the same skills and match the source difficulty.'
+                  : 'Generate useful questions from the selected material.'}
+            </Text>
+          </Flex>
+
           <Flex direction="column" gap="2" className="generate-quiz-settings">
-            <Flex direction="column" gap="2">
-              <Text size="2" weight="medium">Question counts</Text>
-              <SegmentedControl.Root
-                value={mode}
-                disabled={busy || analyzing}
-                onValueChange={(value) => {
-                  setMode(value as 'manual' | 'auto');
-                  setAnalysisError('');
-                  if (value === 'manual') setAutoAnalyzed(false);
-                }}
-              >
-                <SegmentedControl.Item value="manual">Manual</SegmentedControl.Item>
-                <SegmentedControl.Item value="auto">Auto from source</SegmentedControl.Item>
-              </SegmentedControl.Root>
-              {mode === 'auto' && (
-                <Flex direction="column" gap="2">
-                  <Text size="1" color={analysisError ? 'red' : autoAnalyzed && !analyzing && !analysisPending && !rangesSettling ? 'green' : 'gray'}>
-                    {analysisError
-                      ? analysisError
-                      : analyzing || analysisPending || rangesSettling
-                        ? 'Choosing question counts from the selected sources…'
-                        : autoAnalyzed
-                          ? 'Counts are ready. Change any of them below, then generate.'
-                          : 'Select a source to choose question counts.'}
-                  </Text>
-                  {analysisError && (
-                    <Button
-                      variant="soft"
-                      disabled={selected.length === 0 || rangeInvalid || busy || analyzing}
-                      onClick={() => setAnalysisAttempt((attempt) => attempt + 1)}
-                    >
-                      Try again
-                    </Button>
-                  )}
-                </Flex>
-              )}
-            </Flex>
             <Flex justify="between" align="center">
               <Text size="2" weight="medium">
                 Questions
@@ -426,11 +436,6 @@ export function GenerateQuizDialog({
               <SegmentedControl.Item value="medium">Medium</SegmentedControl.Item>
               <SegmentedControl.Item value="hard">Hard</SegmentedControl.Item>
             </SegmentedControl.Root>
-            <Text size="1" color="gray">
-              {mode === 'auto'
-                ? 'Counts come from the selected sources. Changes here apply to this quiz only.'
-                : 'Starts from your Settings defaults. Changes here apply to this quiz only.'}
-            </Text>
           </Flex>
 
           <Flex gap="3" justify="end" className="generate-quiz-actions">

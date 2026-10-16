@@ -5,16 +5,26 @@ export type AutoQuizCounts = Pick<
   'mcqCount' | 'clozeCount' | 'openCount' | 'codeCount'
 >;
 
-export const AUTO_QUIZ_ANALYSIS_SYSTEM = `You analyze study material to plan a quiz. Return only one JSON object with integer fields mcqCount, clozeCount, openCount, and codeCount. Do not include markdown or explanation. Count explicit questions by their best-fitting type when the material is an exam or question set. When it is notes rather than an existing quiz, estimate a useful number and mix based on the amount and variety of content. Favor multiple-choice and open-ended questions; use cloze only for concise, unambiguous facts and code only when the source substantially teaches or tests code. If there is no suitable material for a type, return zero. Keep the total at or below 50. Do not create more questions than can be supported by the source.`;
+export type AutoQuizAnalysis = AutoQuizCounts & {
+  sourceIntent: 'generate' | 'recreate' | 'similar';
+};
 
-export function parseAutoQuizCounts(raw: string): AutoQuizCounts {
+export type ExistingSourceQuiz = {
+  quizPath: string;
+  markdown: string;
+  counts: AutoQuizCounts;
+};
+
+export const AUTO_QUIZ_ANALYSIS_SYSTEM = `Quickly estimate a useful quiz composition from the provided material. Return only one JSON object with integer fields mcqCount, clozeCount, openCount, codeCount, and a sourceIntent string. sourceIntent must be exactly one of: "generate", "recreate", or "similar". Choose "recreate" when the source contains an explicit class quiz, test, or exam that should be transferred into the app. Choose "similar" when the source is already a Concrete quiz (its file path begins with "Quiz ") so the user can practice with new questions. Choose "generate" for ordinary study notes. Count explicit questions by their best-fitting type for quizzes and exams. For notes, make a quick useful guess based on the material. Favor multiple-choice and open-ended questions; use cloze only for concise facts and code only when the source substantially teaches or tests code. Keep total counts at or below 50; rough guesses are fine.`;
+
+export function parseAutoQuizCounts(raw: string): AutoQuizAnalysis {
   const match = /\{[\s\S]*\}/.exec(raw);
-  if (!match) throw new Error('The AI did not return a usable question count. Try again or enter counts manually.');
+  if (!match) throw new Error('The AI did not return a usable quiz estimate. Try again.');
   let parsed: Record<string, unknown>;
   try {
     parsed = JSON.parse(match[0]) as Record<string, unknown>;
   } catch {
-    throw new Error('The AI returned invalid question counts. Try again or enter counts manually.');
+    throw new Error('The AI returned an invalid quiz estimate. Try again.');
   }
   const keys = ['mcqCount', 'clozeCount', 'openCount', 'codeCount'] as const;
   const counts = Object.fromEntries(keys.map((key) => {
@@ -26,6 +36,7 @@ export function parseAutoQuizCounts(raw: string): AutoQuizCounts {
     counts[key] = Math.min(counts[key], remaining);
     remaining -= counts[key];
   }
-  if (remaining === 50) throw new Error('No suitable questions were found in the selected sources. Try different pages or enter counts manually.');
-  return counts;
+  const intent = parsed.sourceIntent;
+  const sourceIntent = intent === 'recreate' || intent === 'similar' ? intent : 'generate';
+  return { ...counts, sourceIntent };
 }

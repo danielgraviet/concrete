@@ -100,6 +100,7 @@ import {
   isQuizPath,
   nextQuizTitle,
   quizDocumentToMarkdown,
+  parseQuizMarkdown,
   QuizShell,
   type GenerateQuizDialogResult,
   ProgressPanel,
@@ -108,7 +109,7 @@ import {
 import { notePathKey, QuizFromNotePrompt, quizSourceFromMarkdown } from './quiz/QuizFromNotePrompt';
 import { QuizHistoryStore } from './quiz';
 import { buildPdfContext, cleanPdfPages, parsePageRange } from './quiz/pdfContext';
-import { AUTO_QUIZ_ANALYSIS_SYSTEM, parseAutoQuizCounts, type AutoQuizCounts } from './quiz/autoComposition';
+import { AUTO_QUIZ_ANALYSIS_SYSTEM, parseAutoQuizCounts, type AutoQuizAnalysis, type AutoQuizCounts, type ExistingSourceQuiz } from './quiz/autoComposition';
 import { settingsStore } from './settings';
 import { buildOpenAnswerRubric } from './quiz/openAnswerRubric';
 import { getRecentOpenAnswerSamples } from './quiz/rubricCalibration';
@@ -327,6 +328,8 @@ export default function App() {
   }, [gradingJobs]);
   const quizJobRef = useRef(0);
   const [quizzedSources, setQuizzedSources] = useState<ReadonlySet<string>>(() => new Set());
+  const [existingQuizSources, setExistingQuizSources] = useState<ReadonlyMap<string, ExistingSourceQuiz>>(() => new Map());
+  const [quizSourceIndexReady, setQuizSourceIndexReady] = useState(false);
   const [quizSourceScan, setQuizSourceScan] = useState(0);
   const [agentProviderId, setAgentProviderId] = useState<AgentProviderId>(
     () => settingsStore.get().agentProviderId,
@@ -475,10 +478,12 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
+    setQuizSourceIndexReady(false);
     const quizPaths = files.filter((path) => isQuizPath(path));
     void (async () => {
       const sources = new Set<string>();
-      await Promise.all(
+      const sourceQuizzes = new Map<string, ExistingSourceQuiz>();
+      const loadedQuizzes = await Promise.all(
         quizPaths.map(async (path) => {
           try {
             const cached = noteCacheRef.current.get(path);
@@ -486,13 +491,28 @@ export default function App() {
               cached ??
               (canUseDiskVault(root) ? await vault.read(path) : (demoContent[path] ?? ''));
             const source = quizSourceFromMarkdown(body);
-            if (source) sources.add(source);
+            return source ? { path, body, source } : null;
           } catch {
             // A quiz that cannot be read leaves its note eligible again.
+            return null;
           }
         }),
       );
-      if (!cancelled) setQuizzedSources(sources);
+      for (const quiz of loadedQuizzes) {
+        if (!quiz) continue;
+        sources.add(quiz.source);
+        const parsed = parseQuizMarkdown(quiz.body);
+        const counts: AutoQuizCounts = { mcqCount: 0, clozeCount: 0, openCount: 0, codeCount: 0 };
+        for (const question of parsed.questions) counts[`${question.type}Count` as keyof AutoQuizCounts] += 1;
+        const entry = { quizPath: quiz.path, markdown: quiz.body, counts };
+        if (!sourceQuizzes.has(quiz.source)) sourceQuizzes.set(quiz.source, entry);
+        sourceQuizzes.set(notePathKey(quiz.path), entry);
+      }
+      if (!cancelled) {
+        setQuizzedSources(sources);
+        setExistingQuizSources(sourceQuizzes);
+        setQuizSourceIndexReady(true);
+      }
     })();
     return () => {
       cancelled = true;
@@ -1062,7 +1082,7 @@ export default function App() {
     return buildPdfContext(cleanPdfPages(pages), wanted, budget);
   };
 
-  const analyzeQuizSources = async (sourcePaths: string[], pageRanges: Record<string, string>): Promise<AutoQuizCounts> => {
+  const analyzeQuizSources = async (sourcePaths: string[], pageRanges: Record<string, string>): Promise<AutoQuizAnalysis> => {
     const perSource = Math.floor(QUIZ_CONTEXT_CHARS / sourcePaths.length) - 200;
     const chunks: string[] = [];
     for (const path of sourcePaths) {
@@ -1073,7 +1093,7 @@ export default function App() {
       system: AUTO_QUIZ_ANALYSIS_SYSTEM,
       messages: [{
         role: 'user',
-        content: `Analyze the selected source material and estimate its quiz composition. Return JSON only.\n\n${chunks.join('\n\n-----\n\n')}`,
+        content: `Quickly estimate question counts and choose the most likely quiz style for the selected source. Return JSON only with mcqCount, clozeCount, openCount, codeCount, and sourceIntent.\n\n${chunks.join('\n\n-----\n\n')}`,
       }],
       // Reasoning models otherwise spend a small budget thinking and return
       // finish_reason=length with an empty completion.
@@ -1099,7 +1119,7 @@ export default function App() {
     if (quizJob.status === 'running') return;
     if (controller.isDirty) await controller.persistence.flush();
 
-    const sourcePaths = result.sourcePaths.filter((path) => !isQuizPath(path));
+    const sourcePaths = result.sourcePaths;
     if (sourcePaths.length === 0) {
       window.alert('Select at least one source note.');
       return;
@@ -1135,7 +1155,9 @@ export default function App() {
         const body = await loadSourceText(path, result.pageRanges[path] ?? '', perSource);
         chunks.push(`### File: ${path}\n\n${body.trim()}`);
       }
-      const noteContext = chunks.join('\n\n-----\n\n');
+      const noteContext = [result.sourceQuizContext, chunks.join('\n\n-----\n\n')]
+        .filter(Boolean)
+        .join('\n\n-----\n\n');
 
       // Code questions are checked by running them, and some fail that check.
       // Ask for one spare when a runner is available so the requested count holds.
@@ -1159,7 +1181,8 @@ export default function App() {
         codeCount: quizSettings.codeCount + (sandboxReady ? 1 : 0),
         difficulty: quizSettings.difficulty,
         customRubric: openAnswerRubric,
-        autoComposition: result.mode === 'auto',
+        autoComposition: true,
+        sourceIntent: result.sourceIntent,
       });
       const verification = await verifyCodeQuestions(generated, sandboxProviderId);
       const doc = verification.doc;
@@ -2238,6 +2261,8 @@ export default function App() {
           <GenerateQuizDialog
             files={files}
             pdfFiles={pdfFiles}
+            existingSourceQuizzes={existingQuizSources}
+            quizSourceIndexReady={quizSourceIndexReady}
             defaultSourcePath={selected}
             folderHint={
               selected && !isQuizPath(selected)

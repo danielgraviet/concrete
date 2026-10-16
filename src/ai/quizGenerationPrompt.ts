@@ -76,6 +76,9 @@ Hard rules:
 9. Title must start with "Quiz ".
 10. Match the requested difficulty (easy = recall, medium = application, hard = transfer / edge cases).
 11. Draw topics from the provided note context when present. Do not invent unrelated topics.
+12. If the requested source intent is "recreate", preserve explicit source question wording, order, meaning, and answer key. Convert them into the required quiz format without adding practice questions. This fidelity instruction overrides the general accuracy rule for source content: do not silently change the supplied answer key.
+13. If the requested source intent is "similar", create new questions that test the same concepts and skills as the source questions. Do not reuse their wording, examples, numbers, or answers.
+14. In "recreate" mode, source fidelity takes precedence over the STANDALONE, ACCURACY, MCQ OPTION, and CLOZE rules below. Keep source wording and options, and preserve the supplied answer key while converting the question into the quiz schema.
 
 STANDALONE RULES (the student sees only the question and its options, never the note):
 - Never mention the source: no "the note", "the notes", "the text", "the passage", "the author", "the reading", "according to", "as described", "in this section", "the example above", "the list", "step 3".
@@ -85,7 +88,7 @@ STANDALONE RULES (the student sees only the question and its options, never the 
 - If the note uses a made-up example (variables, names, numbers), restate that example inside the question rather than referring to it.
 - Self-check: would someone who understands the subject, but has never seen this note, know exactly what is being asked? If not, rewrite the question.
 
-ACCURACY RULES (notes are written by students and can contain mistakes):
+ACCURACY RULES (notes are written by students and can contain mistakes; except in recreate mode, where source fidelity takes precedence):
 - Use the note to choose WHAT to ask, not as proof of what is true. Check every fact against well-established knowledge of the subject.
 - If the note states something incorrect or outdated, do not repeat the error. Either ask about the correct version or skip that point. Never mark a wrong statement as the correct answer.
 - When a cloze, open, or code item corrects something the note got wrong, say so briefly in its "### Answer" or "### Why" section (for example, "Common mix-up: ..."), so the student can learn from it. Never add extra sections to mcq items.
@@ -138,6 +141,7 @@ export function buildQuizGenerationUserPrompt(input: {
   sources?: string[];
   types?: string[];
   autoComposition?: boolean;
+  sourceIntent?: 'generate' | 'recreate' | 'similar';
   mcqCount?: number;
   clozeCount?: number;
   openCount?: number;
@@ -180,8 +184,14 @@ export function buildQuizGenerationUserPrompt(input: {
     'Each question must make sense on its own, without the note, and every answer must be factually correct.',
   ];
 
-  if (input.autoComposition) {
-    parts.push('The composition was detected from the source. When it contains an existing exam or question set, preserve its questions and correct answers as closely as possible while converting them to this quiz format. Do not add questions unsupported by the source. For study notes without explicit questions, create suitable questions from the material.');
+  if (input.autoComposition && input.sourceIntent === 'generate') {
+    parts.push('The composition was detected from the source. For study notes, create suitable questions from the material. If the source has explicit questions, the selected source intent determines whether to recreate them or make similar practice.');
+  }
+
+  if (input.sourceIntent === 'recreate') {
+    parts.push('SOURCE INTENT: Recreate this quiz. Preserve every explicit source question and its order as closely as possible, including its correct answer. Convert only what is necessary to represent it in the required Concrete quiz format. Do not invent, omit, or replace questions.');
+  } else if (input.sourceIntent === 'similar') {
+    parts.push('SOURCE INTENT: Create similar practice. Treat explicit source questions as examples of the skills, concepts, and difficulty to practice. Write new questions; do not copy their stems, options, examples, numbers, or answer patterns.');
   }
 
   if (hasCounts) {
