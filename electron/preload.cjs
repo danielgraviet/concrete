@@ -120,3 +120,7 @@ contextBridge.exposeInMainWorld('systemClipboard', {
 contextBridge.exposeInMainWorld('perf', {
   mark: (label) => ipcRenderer.invoke('perf:mark', label),
 });
+
+contextBridge.exposeInMainWorld('integrations', {
+  checkExcalidrawMcp: () => ipcRenderer.invoke('mcp:excalidrawStatus'),
+});

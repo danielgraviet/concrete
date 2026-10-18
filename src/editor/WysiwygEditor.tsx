@@ -37,6 +37,7 @@ import {
   type ImageEditingContext,
 } from './images';
 import { RUN_CODE_EVENT, runnableCodeBlockDescriptor } from './RunnableCodeBlock';
+import { excalidrawCodeBlockDescriptor } from '../integrations/excalidraw/ExcalidrawCodeBlock';
 import { quoteExitPlugin } from './quote';
 import { inlineCodeExitPlugin } from './inlineCode';
 import { slashMenuPlugin } from './slash';
@@ -147,7 +148,7 @@ export function createDefaultWysiwygPlugins(
     linkPlugin(),
     codeBlockPlugin({
       defaultCodeBlockLanguage: 'python',
-      codeBlockEditorDescriptors: [runnableCodeBlockDescriptor],
+      codeBlockEditorDescriptors: [excalidrawCodeBlockDescriptor, runnableCodeBlockDescriptor],
     }),
     codeMirrorPlugin({
       // Stable `tok-*` classes so token colors follow the active theme via CSS.

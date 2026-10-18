@@ -61,6 +61,8 @@ export type AppSettings = {
   claudeModelId: string;
   /** BYO coding agent: off | codex | claude */
   agentProviderId: AgentProviderId;
+  /** Attach the official Excalidraw MCP server to agent runs. */
+  excalidrawMcpEnabled: boolean;
   /** Where code runs: a registered sandbox runner id ('docker', 'daytona', 'off', …). */
   sandboxProviderId: string;
   quiz: QuizGenerationSettings;
@@ -95,6 +97,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   openRouterModelId: 'deepseek/deepseek-v4-flash-0731',
   claudeModelId: 'sonnet',
   agentProviderId: 'off',
+  excalidrawMcpEnabled: false,
   sandboxProviderId: 'docker',
   quiz: { ...DEFAULT_QUIZ_SETTINGS },
   review: { ...DEFAULT_REVIEW_SETTINGS },

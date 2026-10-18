@@ -1919,7 +1919,7 @@ export default function App() {
               </Flex>
             </div>
             <FileTreeView
-              files={pdfFiles.length > 0 ? [...files, ...pdfFiles] : files}
+              files={[...files, ...pdfFiles]}
               folders={vault.folders}
               selected={selected}
               activeFolder={activeFolder}

@@ -266,6 +266,21 @@ ipcMain.handle('clipboard:writeText', (_event, text) => {
   return true;
 });
 
+ipcMain.handle('mcp:excalidrawStatus', async () => {
+  try {
+    const integration = await import(pathToFileURL(path.join(__dirname, 'integrations', 'excalidrawMcp.mjs')).href);
+    return await integration.checkExcalidrawMcp();
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return {
+      available: false,
+      url: 'https://mcp.excalidraw.com',
+      tools: [],
+      message: `Excalidraw MCP could not start: ${detail}`,
+    };
+  }
+});
+
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 /** Cheap OpenAI model kept for ai:ping smoke tests. */
 const PING_OPENROUTER_MODEL = 'openai/gpt-4o-mini';
@@ -508,7 +523,7 @@ async function importObsidianVault(sourceRoot, destinationRoot, markerName = OBS
 }
 
 /**
- * Recursively list markdown notes, exported PDFs, and folders (including empty folders).
+ * Recursively list markdown notes, exported PDFs, and folders.
  * @returns {{ files: string[], pdfFiles: string[], folders: string[] }}
  */
 async function listVaultEntries(root) {
@@ -533,14 +548,11 @@ async function listVaultEntries(root) {
         continue;
       }
       if (!entry.isFile()) continue;
-      const ext = entry.name.toLowerCase().endsWith('.md')
-        ? '.md'
-        : entry.name.toLowerCase().endsWith('.pdf')
-          ? '.pdf'
-          : null;
-      if (!ext) continue;
+      const ext = path.extname(entry.name).toLowerCase();
+      if (!['.md', '.pdf'].includes(ext)) continue;
       const rel = relBase ? `${relBase}/${entry.name}` : entry.name;
-      (ext === '.md' ? files : pdfFiles).push(rel);
+      if (ext === '.md') files.push(rel);
+      else if (ext === '.pdf') pdfFiles.push(rel);
       if (files.length > MAX_VAULT_FILES) {
         throw new Error(`Vault contains more than ${MAX_VAULT_FILES.toLocaleString()} Markdown files and cannot be opened.`);
       }
@@ -1232,12 +1244,20 @@ ipcMain.handle('ai:agentRun', async (event, payload) => {
     costSource: costSourceFor(providerId),
   });
   try {
+    let excalidrawMcp = null;
+    if (payload?.excalidrawMcpEnabled === true) {
+      const integration = await import(pathToFileURL(path.join(__dirname, 'integrations', 'excalidrawMcp.mjs')).href);
+      const status = await integration.checkExcalidrawMcp();
+      if (!status.available) throw new Error(status.message || 'Excalidraw MCP is unavailable.');
+      excalidrawMcp = { url: integration.EXCALIDRAW_MCP_URL };
+    }
     const result = await agent.runAgentTurn(
     {
       ...(payload ?? {}),
       // Keep Tutor AI provider credentials separate from BYO agent auth.
       apiKey: providerId === 'codex' ? undefined : configuredApiKey(providerId),
       concreteMcp: buildConcreteMcpConfig(),
+      excalidrawMcp,
     },
     (progress) => {
       void trajectory.record('ui.progress', progress);
