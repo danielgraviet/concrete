@@ -251,6 +251,14 @@ interface Window {
   perf?: {
     mark: (label: string) => Promise<boolean>;
   };
+  integrations?: {
+    checkExcalidrawMcp: () => Promise<{
+      available: boolean;
+      url: string;
+      tools: string[];
+      message?: string;
+    }>;
+  };
 }
 
 interface AiAgentStatus {
@@ -272,6 +280,7 @@ interface AiAgentRunRequest {
   /** Tutor model the agent's generate_quiz tool should use. */
   aiBackend?: AiChatBackend;
   aiModel?: string;
+  excalidrawMcpEnabled?: boolean;
 }
 
 interface AiAgentRunResult {

@@ -8,6 +8,7 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { toCodexMcpServer } from '../integrations/excalidrawMcp.mjs';
 import { promisify } from 'node:util';
 import { Codex } from '@openai/codex-sdk';
 import runtimePaths from '../runtimePaths.cjs';
@@ -233,6 +234,9 @@ export async function runAgentTurn(input, onProgress, onEvent) {
     Array.isArray(input.concreteMcp.args)
       ? input.concreteMcp
       : null;
+  const excalidrawMcp = input.excalidrawMcp && typeof input.excalidrawMcp.url === 'string'
+    ? input.excalidrawMcp
+    : null;
 
   if (!vaultRoot) throw new Error('No vault open');
   if (!prompt) throw new Error('Prompt is empty');
@@ -260,12 +264,15 @@ export async function runAgentTurn(input, onProgress, onEvent) {
       ...(input.apiKey ? { apiKey: input.apiKey } : {}),
     };
 
-    if (concreteMcp) {
+    if (concreteMcp || excalidrawMcp) {
       // With approval_policy=never, Codex cannot prompt for MCP calls and
       // denies them unless the server pre-approves tools.
       codexOptions.config = {
         mcp_servers: {
-          concrete: {
+          ...(excalidrawMcp ? {
+            excalidraw: toCodexMcpServer(excalidrawMcp.url),
+          } : {}),
+          ...(concreteMcp ? { concrete: {
             command: concreteMcp.command,
             args: concreteMcp.args,
             ...(concreteMcp.env ? { env: concreteMcp.env } : {}),
@@ -276,7 +283,7 @@ export async function runAgentTurn(input, onProgress, onEvent) {
               generate_quiz: { approval_mode: 'approve' },
               export_note_pdf: { approval_mode: 'approve' },
             },
-          },
+          } } : {}),
         },
       };
     }
@@ -319,6 +326,11 @@ export async function runAgentTurn(input, onProgress, onEvent) {
           'Do not hand-edit settings files or invent quiz frontmatter when these tools apply.',
         ]
       : [];
+    if (excalidrawMcp) {
+      toolHints.push(
+        'Excalidraw diagrams: when the user says @excalidraw or asks for a diagram, call mcp__excalidraw__read_me then mcp__excalidraw__create_view. Also write a matching editable scene into the preferred Markdown note as a fenced `excalidraw` block containing valid Excalidraw JSON (type, version, source, elements, appState, files); create_view renders a preview and does not save the note block. If revising, update the existing block in place. Never create a separate .excalidraw file.',
+      );
+    }
 
     const fullPrompt = [
       'You are editing a local Markdown vault for the Concrete notes app.',

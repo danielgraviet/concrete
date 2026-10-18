@@ -6,6 +6,7 @@ import {
   Cross2Icon,
   CursorTextIcon,
   FileTextIcon,
+  LayersIcon,
   PaperPlaneIcon,
   Pencil2Icon,
   QuoteIcon,
@@ -17,6 +18,7 @@ import { ChatModelProvider } from '../ChatModelProvider';
 import { buildStudyChatSystemPrompt } from '../systemPrompt';
 import { ensureKatexCss } from '../../editor/math/ensureKatexCss';
 import type { AgentProviderId } from '../../settings/types';
+import { settingsStore } from '../../settings/SettingsStore';
 import { ChatMarkdown } from './ChatMarkdown';
 import { ChatSessionList } from './ChatSessionList';
 import { asBlockquote, chatHistory } from './history';
@@ -53,6 +55,23 @@ type Props = {
 
 function newId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function compactAgentProgress(kind: string | undefined, text: string): string | null {
+  if (kind === 'progress') return text;
+  if (kind === 'error') return text;
+  if (kind === 'tool') {
+    if (/excalidraw\.create_view/i.test(text)) return 'Creating diagram preview…';
+    if (/excalidraw/i.test(text)) return 'Using Excalidraw…';
+    if (/concrete/i.test(text)) return 'Using app tools…';
+    return null;
+  }
+  if (kind === 'file') return 'Updated note';
+  if (kind !== 'status') return null;
+  if (/^editing\s/i.test(text)) return 'Preparing note…';
+  if (/preparing file edits/i.test(text)) return 'Updating note…';
+  if (/excalidraw mcp connected/i.test(text)) return 'Excalidraw MCP ready';
+  return null;
 }
 
 function noteTitle(path: string): string {
@@ -227,6 +246,7 @@ export function StudyChatPane({
       const prompt = raw.trim();
       if (!prompt || busy) return;
       const path = notePath;
+      const useExcalidrawMcp = settingsStore.get().excalidrawMcpEnabled || /(?:^|\s)@excalidraw\b/i.test(prompt);
       const sessionId = sessions.ensureActive();
       const push = (...items: Omit<StudyChatMessage, 'id' | 'mode'>[]) =>
         updateThread(sessionId, (list) => [
@@ -246,6 +266,7 @@ export function StudyChatPane({
       const userMsg = { role: 'user' as const, text: prompt, ...(path ? { notePath: path } : {}) };
       if (blocked || !vaultRoot) {
         push(userMsg, { role: 'assistant', text: blocked ?? '' });
+        setMode('chat');
         persist(sessionId);
         return;
       }
@@ -253,28 +274,26 @@ export function StudyChatPane({
       push(userMsg);
       setBusy(true);
       const appendLog = (text: string, kind = 'status') => {
-        const trimmed = text.trim();
-        if (!trimmed) return;
+        const summary = compactAgentProgress(kind, text.trim());
+        if (!summary) return;
         updateThread(sessionId, (list) => {
           const last = list[list.length - 1];
-          // Collapse repeated status lines (e.g. many "Thinking…").
-          if (last?.role === 'log' && last.kind === kind && kind === 'status' && last.text === trimmed) {
-            return list;
-          }
-          return [...list, { id: newId(), role: 'log', mode: 'agent', kind, text: trimmed }];
+          if (last?.role === 'log' && last.mode === 'agent' && last.text === summary) return list;
+          return [...list, { id: newId(), role: 'log', mode: 'agent', kind: 'progress', text: summary }];
         });
       };
+      appendLog(path ? 'Preparing note…' : 'Starting agent…', 'progress');
       const stopProgress = window.ai?.onAgentProgress?.((event) => appendLog(event.text, event.kind));
 
       try {
         await onBeforeAgentRun?.();
-        appendLog(path ? `Starting on ${path}…` : `Starting ${agentLabel}…`);
         const tutor = client.getProvider();
         const result = await window.ai!.agentRun({
           vaultRoot,
           notePath: path || null,
           prompt,
           agentProviderId: agentProviderId === 'claude' ? 'claude' : 'codex',
+          excalidrawMcpEnabled: useExcalidrawMcp,
           // The agent's generate_quiz tool writes quizzes with the tutor's model.
           ...(tutor instanceof ChatModelProvider ? { aiBackend: tutor.id, aiModel: tutor.model } : {}),
         });
@@ -293,6 +312,7 @@ export function StudyChatPane({
       } finally {
         stopProgress?.();
         setBusy(false);
+        setMode('chat');
         persist(sessionId);
       }
     },
@@ -312,7 +332,10 @@ export function StudyChatPane({
     ],
   );
 
-  const send = (raw: string) => (mode === 'agent' ? sendAgent(raw) : sendChat(raw));
+  const send = (raw: string) =>
+    mode === 'agent' || /(?:^|\s)@(agent|excalidraw)\b/i.test(raw)
+      ? sendAgent(raw)
+      : sendChat(raw);
 
   const seedRef = useRef<string | null>(null);
   useEffect(() => {
@@ -354,6 +377,27 @@ export function StudyChatPane({
   };
 
   const insertDisabledReason = canInsert ? undefined : 'Open a Markdown note to insert';
+  const mentionMatch = /(?:^|\s)@([\w-]*)$/.exec(input);
+  const mentionQuery = mentionMatch?.[1]?.toLowerCase() ?? null;
+  const mentionSuggestions = mentionQuery === null ? [] : [
+    ...('excalidraw'.startsWith(mentionQuery) ? [{ key: 'excalidraw', title: 'Excalidraw', detail: 'Create or edit a diagram in this Markdown note', badge: 'MCP' }] : []),
+    ...('agent'.startsWith(mentionQuery) ? [{ key: 'agent', title: 'Agent', detail: 'Ask the agent to edit files or use app tools', badge: 'Agent' }] : []),
+  ];
+  const usesExcalidraw = /(?:^|\s)@excalidraw\b/i.test(input);
+
+  const selectMention = (mention: 'agent' | 'excalidraw') => {
+    if (!mentionMatch) return;
+    const start = input.length - mentionMatch[0].length;
+    const nextInput = `${input.slice(0, start)}${mentionMatch[0].startsWith(' ') ? ' ' : ''}@${mention} `;
+    setInput(nextInput);
+    setMode('agent');
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(nextInput.length, nextInput.length);
+    });
+  };
   // Mark where the conversation moved to another note.
   const noteChanges = new Set<string>();
   let lastNote: string | undefined;
@@ -366,28 +410,6 @@ export function StudyChatPane({
   return (
     <section className="study-chat" aria-label="Study chat">
       <header className="study-chat-head">
-        <div className="study-chat-mode" role="tablist" aria-label="Chat mode">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'chat'}
-            className={mode === 'chat' ? 'active' : ''}
-            onClick={() => setMode('chat')}
-            disabled={busy}
-          >
-            Chat
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'agent'}
-            className={mode === 'agent' ? 'active' : ''}
-            onClick={() => setMode('agent')}
-            disabled={busy}
-          >
-            Agent
-          </button>
-        </div>
         <span className="study-chat-model" title={client.getProvider().label}>
           {client.getProvider().label}
         </span>
@@ -445,11 +467,8 @@ export function StudyChatPane({
         ) : (
           messages.map((msg) => {
             if (msg.role === 'log') {
-              return (
-                <div key={msg.id} className={`study-chat-log log-${msg.kind || 'status'}`}>
-                  {msg.text}
-                </div>
-              );
+              const progress = msg.mode === 'agent' ? compactAgentProgress(msg.kind, msg.text) : null;
+              return progress ? <div key={msg.id} className="study-chat-log log-progress">{progress}</div> : null;
             }
             if (msg.role === 'user') {
               return (
@@ -555,6 +574,33 @@ export function StudyChatPane({
           void send(input);
         }}
       >
+        {mentionSuggestions.length > 0 ? (
+          <div className="study-chat-mention-menu" role="listbox" aria-label="Agent tools">
+            {mentionSuggestions.map((suggestion) => (
+              <button
+                key={suggestion.key}
+                type="button"
+                role="option"
+                aria-selected="true"
+                className="study-chat-mention-option"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => selectMention(suggestion.key as 'agent' | 'excalidraw')}
+              >
+                <span className="study-chat-mention-icon"><LayersIcon /></span>
+                <span className="study-chat-mention-copy">
+                  <strong>{suggestion.title}</strong>
+                  <small>{suggestion.detail}</small>
+                </span>
+                <span className="study-chat-mention-badge">{suggestion.badge}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {usesExcalidraw ? (
+          <div className="study-chat-tool-indicator" role="status">
+            <LayersIcon /> <span>Excalidraw MCP will be used for this request</span>
+          </div>
+        ) : null}
         {mode === 'chat' && (notePath || quote) ? (
           <div className="study-chat-chips">
             {notePath ? (
@@ -585,21 +631,25 @@ export function StudyChatPane({
             ref={inputRef}
             rows={1}
             value={input}
-            onChange={(event) => setInput(event.target.value)}
+            onChange={(event) => {
+              const nextInput = event.target.value;
+              setInput(nextInput);
+              setMode(/(?:^|\s)@(agent|excalidraw)\b/i.test(nextInput) ? 'agent' : 'chat');
+            }}
             onKeyDown={(event) => {
+              if (mentionSuggestions.length > 0 && (event.key === 'Enter' || event.key === 'Tab')) {
+                event.preventDefault();
+                selectMention(mentionSuggestions[0].key as 'agent' | 'excalidraw');
+                return;
+              }
               if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
                 void send(input);
               }
             }}
-            placeholder={
-              mode === 'agent'
-                ? `Ask ${agentLabel} to edit this note…`
-                : quote
-                  ? 'Ask about the excerpt…'
-                  : 'Ask a question…'
-            }
-            aria-label={mode === 'agent' ? 'Message agent' : 'Message study chat'}
+            placeholder={quote ? 'Ask about the excerpt…' : 'Ask a question or type @ for tools…'}
+            aria-label="Message chat or agent"
+            disabled={busy}
           />
           {busy ? (
             <button type="button" className="study-chat-send stop" onClick={stop} title="Stop" aria-label="Stop">

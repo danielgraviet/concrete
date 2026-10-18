@@ -10,6 +10,7 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { toClaudeMcpServer } from '../integrations/excalidrawMcp.mjs';
 import { promisify } from 'node:util';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import runtimePaths from '../runtimePaths.cjs';
@@ -141,6 +142,9 @@ function toolStartProgress(name, input) {
   if (name === 'Edit' || name === 'Write') {
     return { kind: 'status', text: 'Preparing file edits…' };
   }
+  if (typeof name === 'string' && name.startsWith('mcp__excalidraw__')) {
+    return { kind: 'tool', text: `Calling excalidraw.${name.slice('mcp__excalidraw__'.length)}…` };
+  }
   if (typeof name === 'string' && name.startsWith(MCP_TOOL_PREFIX)) {
     return { kind: 'tool', text: `Calling concrete.${name.slice(MCP_TOOL_PREFIX.length)}…` };
   }
@@ -222,6 +226,9 @@ export async function runAgentTurn(input, onProgress, onEvent) {
     Array.isArray(input.concreteMcp.args)
       ? input.concreteMcp
       : null;
+  const excalidrawMcp = input.excalidrawMcp && typeof input.excalidrawMcp.url === 'string'
+    ? input.excalidrawMcp
+    : null;
 
   if (!vaultRoot) throw new Error('No vault open');
   if (!prompt) throw new Error('Prompt is empty');
@@ -242,14 +249,17 @@ export async function runAgentTurn(input, onProgress, onEvent) {
   };
 
   try {
-    const mcpServers = concreteMcp
+    const mcpServers = concreteMcp || excalidrawMcp
       ? {
+          ...(excalidrawMcp ? { excalidraw: toClaudeMcpServer(excalidrawMcp.url) } : {}),
+          ...(concreteMcp ? {
           concrete: {
             type: 'stdio',
             command: concreteMcp.command,
             args: concreteMcp.args,
             ...(concreteMcp.env ? { env: concreteMcp.env } : {}),
           },
+          } : {}),
         }
       : undefined;
 
@@ -261,6 +271,11 @@ export async function runAgentTurn(input, onProgress, onEvent) {
           '- mcp__concrete__export_note_pdf({ note_path: string })',
         ]
       : [];
+    if (excalidrawMcp) {
+      toolHints.push(
+        'Excalidraw diagrams: when the user says @excalidraw or asks for a diagram, call mcp__excalidraw__read_me then mcp__excalidraw__create_view. Also write a matching editable scene into the preferred Markdown note as a fenced `excalidraw` block containing valid Excalidraw JSON (type, version, source, elements, appState, files); create_view renders a preview and does not save the note block. If revising, update the existing block in place. Never create a separate .excalidraw file.',
+      );
+    }
 
     const fullPrompt = [
       'You are editing a local Markdown vault for the Concrete notes app.',
@@ -279,6 +294,9 @@ export async function runAgentTurn(input, onProgress, onEvent) {
     });
     if (concreteMcp) {
       emit({ kind: 'status', text: 'Concrete tools configured (MCP)' });
+    }
+    if (excalidrawMcp) {
+      emit({ kind: 'status', text: 'Excalidraw MCP connected' });
     }
 
     const stream = query({

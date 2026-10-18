@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { Button, Flex, Heading, Link, Select, Text, TextField } from '@radix-ui/themes';
+import { Button, Checkbox, Flex, Heading, Link, Select, Text, TextField } from '@radix-ui/themes';
 import { ArrowLeftIcon } from '@radix-ui/react-icons';
 import type { SettingsStore } from './SettingsStore';
 import type {
@@ -80,6 +80,8 @@ export function SettingsPanel({
 }: Props) {
   const [settings, setSettings] = useState<AppSettings>(() => store.get());
   const [agentStatus, setAgentStatus] = useState<string | null>(null);
+  const [excalidrawStatus, setExcalidrawStatus] = useState<string | null>(null);
+  const [checkingExcalidraw, setCheckingExcalidraw] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [keyStatus, setKeyStatus] = useState<string | null>(null);
   const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
@@ -626,6 +628,39 @@ export function SettingsPanel({
             {agentStatus}
           </Text>
         ) : null}
+        <Flex align="center" gap="2">
+          <Checkbox
+            checked={settings.excalidrawMcpEnabled}
+            onCheckedChange={(checked) => store.setExcalidrawMcpEnabled(checked === true)}
+            aria-label="Enable Excalidraw MCP for agent runs"
+          />
+          <Text size="2">Enable Excalidraw MCP for agent runs</Text>
+        </Flex>
+        <Text size="1" color="gray">
+          Connects the agent to https://mcp.excalidraw.com. Ask “use @excalidraw” to create or revise an editable diagram embedded in the open Markdown note.
+        </Text>
+        <Button
+          type="button"
+          variant="soft"
+          loading={checkingExcalidraw}
+          onClick={async () => {
+            setCheckingExcalidraw(true);
+            setExcalidrawStatus(null);
+            try {
+              const status = await window.integrations?.checkExcalidrawMcp();
+              setExcalidrawStatus(status?.available
+                ? `Connected. ${status.tools.length} tools available.`
+                : status?.message ?? 'MCP status bridge unavailable. Restart Concrete and try again.');
+            } catch (error) {
+              setExcalidrawStatus(error instanceof Error ? error.message : 'Could not check Excalidraw MCP.');
+            } finally {
+              setCheckingExcalidraw(false);
+            }
+          }}
+        >
+          Check Excalidraw connection
+        </Button>
+        {excalidrawStatus ? <Text size="1" color={excalidrawStatus.startsWith('Connected') ? 'green' : 'red'}>{excalidrawStatus}</Text> : null}
       </Flex>
 
       <Flex direction="column" gap="2" className={`mv-settings-group ${section === 'vault' ? 'active' : ''}`}>

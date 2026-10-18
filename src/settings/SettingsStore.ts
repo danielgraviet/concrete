@@ -41,6 +41,9 @@ function readStorage(): AppSettings {
       openRouterModelId: resolveOpenRouterModelId(parsed.openRouterModelId),
       claudeModelId: resolveClaudeModelId(parsed.claudeModelId),
       agentProviderId: resolveAgentProviderId(parsed.agentProviderId),
+      excalidrawMcpEnabled: typeof parsed.excalidrawMcpEnabled === 'boolean'
+        ? parsed.excalidrawMcpEnabled
+        : DEFAULT_SETTINGS.excalidrawMcpEnabled,
       sandboxProviderId:
         typeof parsed.sandboxProviderId === 'string' && parsed.sandboxProviderId
           ? parsed.sandboxProviderId
@@ -137,6 +140,12 @@ export class SettingsStore {
       ...this.settings,
       agentProviderId: resolveAgentProviderId(agentProviderId),
     };
+    this.persist();
+    return this.get();
+  }
+
+  setExcalidrawMcpEnabled(enabled: boolean): AppSettings {
+    this.settings = { ...this.settings, excalidrawMcpEnabled: Boolean(enabled) };
     this.persist();
     return this.get();
   }

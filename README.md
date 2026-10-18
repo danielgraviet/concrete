@@ -15,6 +15,7 @@
 [![GitHub issues](https://img.shields.io/github/issues/danielgraviet/concrete?style=flat-square)](https://github.com/danielgraviet/concrete/issues)
 [![Last commit](https://img.shields.io/github/last-commit/danielgraviet/concrete?style=flat-square)](https://github.com/danielgraviet/concrete/commits/main)
 [![macOS](https://img.shields.io/badge/platform-macOS-000000?style=flat-square&logo=apple&logoColor=white)](https://www.apple.com/macos/)
+[![Windows beta](https://img.shields.io/badge/platform-Windows%20beta-0078D6?style=flat-square&logo=windows&logoColor=white)](https://github.com/danielgraviet/concrete/releases)
 [![Linux beta](https://img.shields.io/badge/platform-Linux%20beta-FCC624?style=flat-square&logo=linux&logoColor=black)](https://github.com/danielgraviet/concrete/releases)
 
 **Concrete is a local-first Markdown workspace for learning STEM subjects.** Write and organize notes as ordinary Markdown files, use AI to work with the material, and turn notes into active practice with generated quizzes.
@@ -54,6 +55,7 @@ After a quiz, see the score, skill breakdown, and recent activity.
 - **Tutor mode** — ask about the open note and get explanations grounded in the material you are studying.
 - **Agent workflows** — connect a Codex or Claude agent that can inspect and edit vault files, generate learning materials, change themes, and report live progress.
 - **Runnable code** — execute supported Python and other snippets in an isolated sandbox while studying. Outputs are shown in the editor and are not saved automatically.
+- **Diagrams** — create and edit Excalidraw diagrams embedded in Markdown notes. Ask the agent to “use @excalidraw” to create or revise one. See [MCP integration setup](docs/mcp-integrations.md).
 - **Learning progress** — review quiz history, skill trends, streaks, and activity over time.
 - **Local activity capture** — agent trajectories are stored as JSONL in `~/Documents/Concrete/agent-trajectories/` for later analysis and potential RL fine-tuning. They are not included in the Markdown vault view.
 
@@ -65,7 +67,7 @@ Most note-taking tools stop at storage, and most AI tools are disconnected from 
 
 ### Requirements
 
-- macOS or 64-bit Linux (Ubuntu/Debian officially supported; other distributions can use the AppImage)
+- macOS, 64-bit Windows 10/11, or 64-bit Linux (Ubuntu/Debian officially supported; other distributions can use the AppImage)
 - Node.js 20 or newer
 - For live quiz generation, tutoring, and agent workflows, one of:
   - the Claude Code CLI, logged in (Claude Pro/Max) or with an Anthropic API key,
@@ -132,6 +134,14 @@ cd concrete && npm run dev
 
 </details>
 
+### Windows install (beta)
+
+1. Go to the [releases page](https://github.com/danielgraviet/concrete/releases/latest) and download **`Concrete-Setup-x.x.x.exe`**.
+2. Run the downloaded file. Windows SmartScreen will likely show "Windows protected your PC" because the installer isn't code-signed yet — click **More info**, then **Run anyway**.
+3. Concrete installs for your user account only (no admin password needed) and launches automatically.
+
+Concrete creates its default vault in `Documents\Concrete`. Run the same `.exe` again later to update to a newer version.
+
 ### Linux install (beta)
 
 The quickest user install needs only `curl`—no Node.js, npm, Git, or sudo:
@@ -167,6 +177,7 @@ Open or create a Markdown vault, then use the quiz controls from a note to gener
 ```bash
 npm run build
 npm run pack:mac
+npm run pack:win
 npm run pack:linux
 ```
 
