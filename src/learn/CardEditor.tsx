@@ -10,6 +10,7 @@ type Props = {
   /** Set for cards from a quiz file: the question is edited instead of the card text. */
   question: QuizQuestion | null;
   onSave: (edit: CardEdit) => Promise<string | null>;
+  onDelete: () => Promise<string | null>;
   onCancel: () => void;
 };
 
@@ -115,17 +116,26 @@ function toEdit(card: ReviewCard, question: QuizQuestion | null, values: Record<
 }
 
 /** Edit a card's text in place during review; saving rewrites its note or quiz and keeps its history. */
-export function CardEditor({ card, question, onSave, onCancel }: Props) {
+export function CardEditor({ card, question, onSave, onDelete, onCancel }: Props) {
   const [fields] = useState(() => initialFields(card, question));
   const [values, setValues] = useState(() => Object.fromEntries(fields.map((f) => [f.key, f.value])));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const save = async () => {
     if (saving) return;
     setSaving(true);
     const failure = await onSave(toEdit(card, question, values));
     setSaving(false);
+    setError(failure);
+  };
+
+  const remove = async () => {
+    if (saving || deleting) return;
+    setDeleting(true);
+    const failure = await onDelete();
+    setDeleting(false);
     setError(failure);
   };
 
@@ -167,7 +177,10 @@ export function CardEditor({ card, question, onSave, onCancel }: Props) {
         <Button size="1" variant="soft" color="gray" onClick={onCancel}>
           Cancel <kbd>Esc</kbd>
         </Button>
-        <Button size="1" highContrast disabled={saving} onClick={() => void save()}>
+        <Button size="1" variant="soft" color="red" disabled={saving || deleting} onClick={() => void remove()}>
+          Delete card
+        </Button>
+        <Button size="1" highContrast disabled={saving || deleting} onClick={() => void save()}>
           Save <kbd>{shortcut('↵')}</kbd>
         </Button>
       </div>

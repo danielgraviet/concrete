@@ -17,7 +17,7 @@ export { NoteCardsPanel } from './NoteCardsPanel';
 export { CreateCardsPanel } from './CreateCardsPanel';
 export { QuizReviewToggle } from './QuizReviewToggle';
 export { appendCardLines } from './appendCardLines';
-export { applyCardEdit, canEditCard, quizQuestionForCard } from './editCard';
+export { applyCardEdit, applyCardDelete, canEditCard, quizQuestionForCard } from './editCard';
 export type { CardEdit } from './editCard';
 export {
   cardBlocksFromModel,

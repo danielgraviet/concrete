@@ -189,4 +189,12 @@ export class ReviewSession {
   refresh(cards: ReviewCard[]): void {
     for (const card of cards) if (this.cards.has(card.id)) this.cards.set(card.id, card);
   }
+
+  /** Remove a deleted card from the active session. */
+  remove(id: string): void {
+    this.cards.delete(id);
+    this.main = this.main.filter((other) => other !== id);
+    this.learning = this.learning.filter((other) => other !== id);
+    this.history = this.history.filter((other) => other !== id);
+  }
 }

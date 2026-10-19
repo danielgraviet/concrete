@@ -73,6 +73,7 @@ import {
 import { MetaService } from './meta';
 import {
   appendCardLines,
+  applyCardDelete,
   applyCardEdit,
   CreateCardsPanel,
   deckFilter,
@@ -83,6 +84,7 @@ import {
   ReviewSidebar,
   ReviewView,
   useReviewSystem,
+  ALL_DECK,
   cardsFromNote,
   type CardEdit,
   type Deck,
@@ -1320,6 +1322,35 @@ export default function App() {
     return null;
   };
 
+  const deleteCard = async (card: ReviewCard): Promise<string | null> => {
+    const path = card.source.path;
+    const isOpen = path === selected && editorPathRef.current === path;
+    if (controller.isDirty) await controller.persistence.flush();
+    let markdown: string;
+    try {
+      markdown = isOpen ? controller.content : canUseDiskVault(root) ? await VaultService.read(root, path) : await loadNoteBody(path);
+    } catch {
+      return 'Could not read the note.';
+    }
+    const result = applyCardDelete(markdown, card);
+    if (!result.ok) return result.error;
+    if (canUseDiskVault(root)) {
+      try {
+        await VaultService.write(root, path, result.markdown);
+      } catch (error) {
+        return error instanceof Error ? error.message : 'Could not delete the card.';
+      }
+    }
+    setContents((prev) => ({ ...prev, [path]: result.markdown }));
+    if (isOpen) {
+      controller.loadContent(result.markdown);
+      controller.markSaved();
+      setEditorRevision((n) => n + 1);
+    }
+    reviewIndex.update(path, result.markdown);
+    return null;
+  };
+
   /** Study Chat → note: at the caret (live editor) or appended to the end. */
   const insertFromChat = (markdown: string, target: ChatInsertTarget) => {
     const path = selected;
@@ -1749,7 +1780,10 @@ export default function App() {
           aria-label={`Review${reviewDueCount ? ` (${reviewDueCount} waiting)` : ''}`}
           title="Review flashcards"
           aria-pressed={rail === 'review' && layout.sidebarOpen && !layout.focusMode}
-          onClick={() => selectRail('review')}
+          onClick={() => {
+            selectRail('review');
+            void startReview(ALL_DECK);
+          }}
         >
           <LayersIcon width={18} height={18} />
           {reviewDueCount > 0 ? (
@@ -2094,6 +2128,7 @@ export default function App() {
               onExit={() => setReviewRun(null)}
               onOpenSource={openCardSource}
               onEditCard={editCard}
+              onDeleteCard={deleteCard}
               quizQuestionFor={(card) => {
                 const markdown = reviewIndex.note(card.source.path)?.quizMarkdown;
                 return markdown ? (quizQuestionForCard(markdown, card)?.question ?? null) : null;
