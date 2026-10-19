@@ -18,6 +18,8 @@ export type CardEditResult =
   | { ok: true; markdown: string; card: ReviewCard; migrations: Migration[] }
   | { ok: false; error: string };
 
+export type CardDeleteResult = { ok: true; markdown: string } | { ok: false; error: string };
+
 const PREFIX_RE = /^\s*(?:>\s?)*(?:#{1,6}\s+|(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?)?/;
 
 /** Every review card can be edited in place (note MCQ via `?mcq`, quiz MCQ via the question). */
@@ -55,6 +57,26 @@ function quizSectionEnd(lines: string[], start: number): number {
     }
   }
   return lines.length;
+}
+
+/** Remove one card from its note or quiz source. */
+export function applyCardDelete(markdown: string, card: ReviewCard): CardDeleteResult {
+  const newline = markdown.includes('\r\n') ? '\r\n' : '\n';
+  const lines = markdown.split(/\r?\n/);
+  if (card.source.origin === 'quiz') {
+    if (!quizQuestionForCard(markdown, card)) {
+      return { ok: false, error: 'The quiz changed since this card was loaded. Open it to delete the question.' };
+    }
+    const end = quizSectionEnd(lines, card.source.line);
+    let start = card.source.line;
+    let finish = end;
+    if (finish < lines.length && lines[finish] === '') finish += 1;
+    return { ok: true, markdown: [...lines.slice(0, start), ...lines.slice(finish)].join(newline) };
+  }
+
+  const span = parseNoteCardSpans(markdown).find((candidate) => spanMatches(candidate, card));
+  if (!span) return { ok: false, error: 'The note changed since this card was loaded. Open it to delete the card.' };
+  return { ok: true, markdown: [...lines.slice(0, span.line), ...lines.slice(span.end)].join(newline) };
 }
 
 function sameQuestion(a: QuizQuestion, b: QuizQuestion): boolean {

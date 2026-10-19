@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, IconButton } from '@radix-ui/themes';
-import { Cross1Icon, ExternalLinkIcon, Pencil1Icon, ResetIcon } from '@radix-ui/react-icons';
+import { CheckIcon, CopyIcon, Cross1Icon, ExternalLinkIcon, Pencil1Icon, ResetIcon } from '@radix-ui/react-icons';
 import type { QuizQuestion } from '../quiz/types';
 import { noteTitle } from '../vault/fileTree';
 import { CardEditor } from './CardEditor';
 import { CardFace, mcqOptions as shuffledMcqOptions, suggestedRating, type FaceState } from './CardFace';
+import { clozeDisplaySegments } from './parseNoteCards';
 import { canEditCard, type CardEdit } from './editCard';
 import type { ReviewSession } from './ReviewSession';
 import { formatInterval, type Scheduler } from './scheduler';
@@ -24,6 +25,7 @@ type Props = {
   onOpenSource: (card: ReviewCard) => void;
   /** Rewrite a card in its note. Resolves to an error message, or null once saved. */
   onEditCard: (card: ReviewCard, edit: CardEdit) => Promise<string | null>;
+  onDeleteCard: (card: ReviewCard) => Promise<string | null>;
   /** The quiz question behind a quiz card, for editing it. */
   quizQuestionFor: (card: ReviewCard) => QuizQuestion | null;
 };
@@ -37,6 +39,19 @@ function isTyping(target: EventTarget | null): boolean {
   return el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA' || Boolean(el?.isContentEditable);
 }
 
+function cardCopyText(card: ReviewCard): string {
+  if (card.kind === 'basic') return `${card.front}\n\n${card.back}`;
+  if (card.kind === 'cloze') {
+    return clozeDisplaySegments(card.text, card.group)
+      .map((segment) => segment.type === 'text' ? segment.value : segment.answer)
+      .join('');
+  }
+  return [
+    card.question.prompt,
+    ...card.question.options.map((option) => `${option.correct ? '[x]' : '[ ]'} ${option.text}`),
+  ].join('\n');
+}
+
 /** Full-width review: one card, reveal, rate. Everything is reachable from the keyboard. */
 export function ReviewView({
   session,
@@ -47,6 +62,7 @@ export function ReviewView({
   onExit,
   onOpenSource,
   onEditCard,
+  onDeleteCard,
   quizQuestionFor,
 }: Props) {
   const [now, setNow] = useState(() => Date.now());
@@ -54,6 +70,7 @@ export function ReviewView({
   const [, setTick] = useState(0);
   /** Open editor; `question` is set when the card comes from a quiz. */
   const [editing, setEditing] = useState<{ question: QuizQuestion | null } | null>(null);
+  const [copied, setCopied] = useState(false);
   const card = session.current(now);
   const editable = card ? canEditCard(card) : false;
   const counts = session.counts();
@@ -140,6 +157,29 @@ export function ReviewView({
     },
     [card, onEditCard],
   );
+
+  const deleteCard = useCallback(async () => {
+    if (!card) return null;
+    const error = await onDeleteCard(card);
+    if (error) return error;
+    session.remove(card.id);
+    setEditing(null);
+    setFace(freshFace());
+    setNow(Date.now());
+    setTick((n) => n + 1);
+    return null;
+  }, [card, onDeleteCard, session]);
+
+  const copyCard = useCallback(async () => {
+    if (!card) return;
+    try {
+      await navigator.clipboard.writeText(cardCopyText(card));
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch {
+      setCopied(false);
+    }
+  }, [card]);
 
   const mcqOptions = useMemo(() => (card?.kind === 'mcq' ? shuffledMcqOptions(card, face.seed) : []), [card, face.seed]);
 
@@ -246,6 +286,9 @@ export function ReviewView({
               </button>
               <span className="srs-card-meta-right">
                 <span className="srs-kind">{card.kind === 'mcq' ? 'multiple choice' : card.kind}</span>
+                <button type="button" className="srs-edit" aria-label={copied ? 'Copied card text' : 'Copy card text'} title={copied ? 'Copied' : 'Copy card text'} onClick={() => void copyCard()}>
+                  {copied ? <CheckIcon width={13} height={13} /> : <CopyIcon width={13} height={13} />}
+                </button>
                 {editable && !editing ? (
                   <button type="button" className="srs-edit" aria-label="Edit card (E)" title="Edit card (E)" onClick={startEdit}>
                     <Pencil1Icon width={13} height={13} />
@@ -254,7 +297,7 @@ export function ReviewView({
               </span>
             </div>
             {editing ? (
-              <CardEditor card={card} question={editing.question} onSave={saveEdit} onCancel={() => setEditing(null)} />
+              <CardEditor card={card} question={editing.question} onSave={saveEdit} onDelete={deleteCard} onCancel={() => setEditing(null)} />
             ) : (
               <CardFace
                 card={card}
