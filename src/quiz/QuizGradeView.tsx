@@ -27,9 +27,14 @@ type Props = {
   client: AiClient;
   onRetake: () => void;
   onEdit?: () => void;
+  hasDeferredAiGrade?: boolean;
+  canSubmitAiGrade?: boolean;
+  onSubmitAiGrade?: () => Promise<void>;
 };
 
-export function QuizGradeView({ report, quiz, responses, sessionSeed, client, onRetake, onEdit }: Props) {
+export function QuizGradeView({ report, quiz, responses, sessionSeed, client, onRetake, onEdit, hasDeferredAiGrade = false, canSubmitAiGrade = false, onSubmitAiGrade }: Props) {
+  const [submittingAiGrade, setSubmittingAiGrade] = useState(false);
+  const [aiGradeError, setAiGradeError] = useState<string | null>(null);
   const scoreSummaryRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -127,6 +132,25 @@ export function QuizGradeView({ report, quiz, responses, sessionSeed, client, on
           </li>
         ))}
       </ul>
+      {hasDeferredAiGrade ? (
+        <div className="quiz-grade-summary">
+          <div>
+            <strong>Written and code answers saved</strong>
+            <p className="quiz-muted">They are stored with this attempt. Reconnect to the internet and submit them when you want AI feedback.</p>
+            {aiGradeError ? <p className="quiz-error">{aiGradeError}</p> : null}
+            {canSubmitAiGrade ? (
+              <button type="button" className="quiz-btn primary" disabled={submittingAiGrade} onClick={() => {
+                if (!onSubmitAiGrade) return;
+                setSubmittingAiGrade(true);
+                setAiGradeError(null);
+                void onSubmitAiGrade().catch((error: unknown) => setAiGradeError(error instanceof Error ? error.message : 'AI grading failed')).finally(() => setSubmittingAiGrade(false));
+              }}>
+                {submittingAiGrade ? 'Submitting…' : 'Submit saved answers for AI grading'}
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
       <div className="quiz-actions">
         <button type="button" className="quiz-btn primary" onClick={onRetake}>
           Retake

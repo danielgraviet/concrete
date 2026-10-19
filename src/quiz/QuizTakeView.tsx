@@ -2,7 +2,8 @@ import type { AiClient } from '../ai/AiClient';
 import { QuizGradeView } from './QuizGradeView';
 import { QuizQuestionCard } from './QuizQuestionCard';
 import { useQuizTake } from './useQuizTake';
-import type { QuizHistoryStore } from './history';
+import { buildQuizAttempt, type QuizHistoryStore } from './history';
+import { quizGradingJobs, withCorrectAnswers } from './gradingJobs';
 import { ProgressPanel } from './ProgressPanel';
 import { QuizAttempts } from './QuizAttempts';
 import { QuizCelebration } from './QuizCelebration';
@@ -14,9 +15,10 @@ type Props = {
   client: AiClient;
   onEdit: () => void;
   historyStore?: QuizHistoryStore;
+  offlineMode?: boolean;
 };
 
-export function QuizTakeView({ markdown, documentPath, client, onEdit, historyStore }: Props) {
+export function QuizTakeView({ markdown, documentPath, client, onEdit, historyStore, offlineMode = false }: Props) {
   const {
     quiz,
     presented,
@@ -31,7 +33,17 @@ export function QuizTakeView({ markdown, documentPath, client, onEdit, historySt
     reshuffle,
     submit,
     retake,
-  } = useQuizTake(markdown, documentPath, client, historyStore);
+  } = useQuizTake(markdown, documentPath, client, historyStore, offlineMode);
+
+  const submitDeferredForAi = async (attemptId: string) => {
+    const attempt = history.forQuiz(documentPath).find((item) => item.id === attemptId && item.pendingAiGrade);
+    if (!attempt?.pendingAiGrade) return;
+    const { quiz: savedQuiz, responses: savedResponses } = attempt.pendingAiGrade;
+    const fullReport = withCorrectAnswers(await client.gradeQuiz({ quiz: savedQuiz, responses: Object.values(savedResponses), rubric: savedQuiz.rubric }), savedQuiz);
+    history.replace(buildQuizAttempt(savedQuiz, fullReport, documentPath, attempt.startedAt, Date.now(), sessionSeed, savedResponses));
+    quizGradingJobs.updateReport(documentPath, attemptId, fullReport);
+  };
+  const canSubmitAiGrade = !offlineMode && !['mock', 'local-echo'].includes(client.getProvider().id);
 
   const celebration = quizNumber ? (
     <QuizCelebration quizNumber={quizNumber} seed={sessionSeed} />
@@ -40,9 +52,11 @@ export function QuizTakeView({ markdown, documentPath, client, onEdit, historySt
   if (phase === 'graded' && report) {
     return (
       <>
-        <QuizGradeView report={report} quiz={quiz} responses={responses} sessionSeed={sessionSeed} client={client} onRetake={retake} onEdit={onEdit} />
+        <QuizGradeView report={report} quiz={quiz} responses={responses} sessionSeed={sessionSeed} client={client} onRetake={retake} onEdit={onEdit}
+          hasDeferredAiGrade={history.forQuiz(documentPath).some((item) => item.id === sessionSeed && item.pendingAiGrade)}
+          canSubmitAiGrade={canSubmitAiGrade} onSubmitAiGrade={() => submitDeferredForAi(sessionSeed)} />
         <div className="quiz-grade-attempts">
-          <QuizAttempts store={history} quizPath={documentPath} currentId={sessionSeed} />
+          <QuizAttempts store={history} quizPath={documentPath} currentId={sessionSeed} canSubmitAiGrade={canSubmitAiGrade} onSubmitAiGrade={submitDeferredForAi} />
         </div>
         {historyStore ? <ProgressPanel store={historyStore} folder={folderOf(documentPath)} /> : null}
       </>
@@ -68,7 +82,7 @@ export function QuizTakeView({ markdown, documentPath, client, onEdit, historySt
         </div>
       </header>
 
-      <QuizAttempts store={history} quizPath={documentPath} />
+      <QuizAttempts store={history} quizPath={documentPath} canSubmitAiGrade={canSubmitAiGrade} onSubmitAiGrade={submitDeferredForAi} />
 
       <div className="quiz-questions">
         {presented.map((question, index) => (

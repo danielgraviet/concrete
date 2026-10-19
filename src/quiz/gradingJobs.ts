@@ -1,6 +1,7 @@
 import type { AiClient } from '../ai/AiClient';
 import { buildQuizAttempt, type QuizHistoryStore } from './history';
 import type { GradeReport, QuizDocument, QuizResponse } from './types';
+import { gradeQuizOffline } from './offlineGrading';
 
 /**
  * Grading runs here, outside the quiz view, so it keeps going (and gets saved)
@@ -30,10 +31,11 @@ type StartOptions = {
   startedAt: number;
   client: AiClient;
   history: QuizHistoryStore;
+  offlineMode?: boolean;
 };
 
 /** Add the reference answer to any question that was not fully correct. */
-function withCorrectAnswers(report: GradeReport, quiz: QuizDocument): GradeReport {
+export function withCorrectAnswers(report: GradeReport, quiz: QuizDocument): GradeReport {
   return {
     ...report,
     perQuestion: report.perQuestion.map((item) => {
@@ -63,7 +65,7 @@ class QuizGradingJobs {
     return () => this.listeners.delete(listener);
   };
 
-  start({ path, quiz, responses, sessionSeed, startedAt, client, history }: StartOptions): void {
+  start({ path, quiz, responses, sessionSeed, startedAt, client, history, offlineMode = false }: StartOptions): void {
     if (this.jobs.get(path)?.status === 'grading') return;
     this.set({
       path, title: quiz.title, sessionSeed, startedAt, responses,
@@ -72,9 +74,15 @@ class QuizGradingJobs {
     });
     void (async () => {
       try {
-        const raw = await client.gradeQuiz({ quiz, responses: Object.values(responses), rubric: quiz.rubric });
+        const raw = offlineMode
+          ? gradeQuizOffline(quiz, responses)
+          : await client.gradeQuiz({ quiz, responses: Object.values(responses), rubric: quiz.rubric });
         const report = withCorrectAnswers(raw, quiz);
-        history.add(buildQuizAttempt(quiz, report, path, startedAt, Date.now(), sessionSeed, responses));
+        const hasDeferred = offlineMode && quiz.questions.some((question) => question.type === 'open' || question.type === 'code');
+        history.add(buildQuizAttempt(
+          quiz, report, path, startedAt, Date.now(), sessionSeed, responses,
+          hasDeferred ? { quiz, responses } : undefined,
+        ));
         this.finish(path, sessionSeed, { status: 'graded', report });
       } catch (err) {
         this.finish(path, sessionSeed, { status: 'error', error: err instanceof Error ? err.message : 'Grading failed' });
@@ -94,6 +102,11 @@ class QuizGradingJobs {
 
   clear(path: string): void {
     if (this.jobs.delete(path)) this.emit();
+  }
+
+  updateReport(path: string, sessionSeed: string, report: GradeReport): void {
+    const job = this.jobs.get(path);
+    if (job?.sessionSeed === sessionSeed) this.set({ ...job, status: 'graded', report, error: undefined });
   }
 
   private finish(path: string, sessionSeed: string, result: Pick<QuizGradingJob, 'status' | 'report' | 'error'>): void {

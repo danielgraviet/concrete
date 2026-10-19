@@ -31,6 +31,8 @@ export type QuizAttempt = {
   questionCount: number;
   perQuestion: QuestionAttempt[];
   stubbed: boolean;
+  /** Quiz material and answers saved for an explicit later AI grading request. */
+  pendingAiGrade?: { quiz: QuizDocument; responses: Record<string, QuizResponse> };
 };
 
 export type QuizHistoryFile = { version: 1; attempts: QuizAttempt[] };
@@ -43,6 +45,7 @@ export function buildQuizAttempt(
   completedAt: number,
   id: string,
   responses: Record<string, QuizResponse> = {},
+  pendingAiGrade?: QuizAttempt['pendingAiGrade'],
 ): QuizAttempt {
   return {
     id, quizPath, quizTitle: quiz.title,
@@ -64,6 +67,7 @@ export function buildQuizAttempt(
       };
     }),
     stubbed: report.stubbed,
+    ...(pendingAiGrade ? { pendingAiGrade } : {}),
   };
 }
 
@@ -106,6 +110,14 @@ export class QuizHistoryStore {
   add(attempt: QuizAttempt): void {
     if (this.attempts.some((item) => item.id === attempt.id)) return;
     this.attempts.push(attempt);
+    this.persist();
+    for (const listener of this.listeners) listener();
+  }
+
+  replace(attempt: QuizAttempt): void {
+    const index = this.attempts.findIndex((item) => item.id === attempt.id);
+    if (index < 0) this.attempts.push(attempt);
+    else this.attempts[index] = attempt;
     this.persist();
     for (const listener of this.listeners) listener();
   }

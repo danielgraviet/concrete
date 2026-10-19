@@ -115,7 +115,6 @@ import { AUTO_QUIZ_ANALYSIS_SYSTEM, parseAutoQuizCounts, type AutoQuizAnalysis, 
 import { settingsStore } from './settings';
 import { buildOpenAnswerRubric } from './quiz/openAnswerRubric';
 import { getRecentOpenAnswerSamples } from './quiz/rubricCalibration';
-import { BrandLogo } from './branding/BrandLogo';
 import { getSandboxStatus } from './sandbox';
 import { verifyCodeQuestions } from './quiz/verifyCode';
 import type { AgentProviderId, AppSettings } from './settings';
@@ -336,8 +335,20 @@ export default function App() {
   const [agentProviderId, setAgentProviderId] = useState<AgentProviderId>(
     () => settingsStore.get().agentProviderId,
   );
-  const [brandLogo, setBrandLogo] = useState(() => settingsStore.get().brandLogo);
+  const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
   const [editorRevision, setEditorRevision] = useState(0);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    setIsOnline(typeof navigator === 'undefined' || navigator.onLine);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const openAiChat = (seed?: string) => {
     if (seed?.trim()) setAiSeedPrompt(seed.trim());
@@ -531,11 +542,9 @@ export default function App() {
   useEffect(() => {
     const settings = settingsStore.hydrate();
     setAgentProviderId(settings.agentProviderId);
-    setBrandLogo(settings.brandLogo);
     aiClient.setProvider(resolveAiProvider(settings));
     const unsub = settingsStore.subscribe((next) => {
       setAgentProviderId(next.agentProviderId);
-      setBrandLogo(next.brandLogo);
       aiClient.setProvider(resolveAiProvider(next));
     });
 
@@ -1727,9 +1736,6 @@ export default function App() {
   return (
     <div className={shellClass}>
       <aside className="rail" aria-label="Primary">
-        <div className="brand-rail-mark" title="Concrete">
-          <BrandLogo logo={brandLogo} />
-        </div>
         <IconButton
           type="button"
           className={
@@ -1804,38 +1810,6 @@ export default function App() {
           onClick={createQuiz}
         >
           <ClipboardIcon width={18} height={18} />
-        </IconButton>
-        <div className="rail-spacer" />
-        <IconButton
-          type="button"
-          className={layout.focusMode ? 'rail-button active' : 'rail-button'}
-          size="2"
-          variant="ghost"
-          color="gray"
-          highContrast
-          aria-label={layout.focusMode ? 'Exit focus mode' : 'Focus mode'}
-          title={layout.focusMode ? 'Exit focus mode (Esc)' : `Focus mode (${shortcutWithShift('F')})`}
-          aria-pressed={layout.focusMode}
-          onClick={toggleFocusMode}
-        >
-          {layout.focusMode ? (
-            <ExitFullScreenIcon width={18} height={18} />
-          ) : (
-            <EnterFullScreenIcon width={18} height={18} />
-          )}
-        </IconButton>
-        <IconButton
-          type="button"
-          className="rail-button"
-          size="2"
-          variant="ghost"
-          color="gray"
-          highContrast
-          aria-label="Settings"
-          title="Settings"
-          onClick={() => setOverlay('settings')}
-        >
-          <GearIcon width={18} height={18} />
         </IconButton>
       </aside>
 
@@ -2033,6 +2007,18 @@ export default function App() {
             >
               {layout.focusMode ? <ExitFullScreenIcon width={16} height={16} /> : <EnterFullScreenIcon width={16} height={16} />}
             </IconButton>
+            <IconButton
+              type="button"
+              size="2"
+              variant="ghost"
+              color="gray"
+              highContrast
+              aria-label="Settings"
+              title="Settings"
+              onClick={() => setOverlay('settings')}
+            >
+              <GearIcon width={16} height={16} />
+            </IconButton>
             {!layout.focusMode && (
               <IconButton
                 type="button"
@@ -2140,6 +2126,7 @@ export default function App() {
             <QuizShell
               documentPath={selected}
               historyStore={quizHistory}
+              offlineMode={!isOnline}
               markdown={controller.content}
               client={aiClient}
               onChange={(value) => {
@@ -2234,6 +2221,7 @@ export default function App() {
           <span>{controller.content.length} characters</span>
           <span>•</span>
           <span>{root ? 'Saved to disk' : 'In-memory demo'}</span>
+          {!isOnline ? <span className="airplane-mode-status" role="status" aria-label="Airplane mode: offline"><span aria-hidden="true">✈</span> Airplane mode</span> : null}
           <span className="status-spacer" />
           {layout.focusMode ? <span>Focus mode · Esc to exit</span> : <span>{saved ? 'Saved' : 'Editing'}</span>}
         </footer>
