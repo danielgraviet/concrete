@@ -1,8 +1,5 @@
-import { Cross1Icon, ClipboardIcon, FileTextIcon, LayersIcon } from '@radix-ui/react-icons';
+import { Cross1Icon, LayersIcon } from '@radix-ui/react-icons';
 import { ContextMenu } from '@radix-ui/themes';
-import { isPdfFileName } from './fileTree';
-import { PdfFileIcon } from './PdfFileIcon';
-import { isQuizPath } from '../quiz';
 import { askText } from './askText';
 
 const MAX_TAB_TITLE_CHARS = 32;
@@ -84,13 +81,6 @@ export function OpenTabsBar({
                 onClick={() => onSelect(path)}
                 onDoubleClick={() => onPin(path)}
               >
-                {isQuizPath(path) ? (
-                  <ClipboardIcon width={14} height={14} />
-                ) : isPdfFileName(path) ? (
-                  <PdfFileIcon />
-                ) : (
-                  <FileTextIcon width={14} height={14} />
-                )}
                 <span className="tab-title">{tabTitleFor(path)}</span>
                 {dirty ? <span className="dirty">•</span> : null}
                 {tabs.length > 1 ? (

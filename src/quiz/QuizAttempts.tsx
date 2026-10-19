@@ -7,6 +7,8 @@ type Props = {
   quizPath: string;
   /** Id of the attempt on screen right now, labelled "This attempt". */
   currentId?: string;
+  canSubmitAiGrade?: boolean;
+  onSubmitAiGrade?: (attemptId: string) => Promise<void>;
 };
 
 const dateFormat = new Intl.DateTimeFormat(undefined, {
@@ -23,7 +25,7 @@ function gradeClass(score: number, maxScore: number): string {
 }
 
 /** Earlier attempts at this quiz: score per attempt, then answers and feedback on demand. */
-export function QuizAttempts({ store, quizPath, currentId }: Props) {
+export function QuizAttempts({ store, quizPath, currentId, canSubmitAiGrade = false, onSubmitAiGrade }: Props) {
   const [, refresh] = useState(0);
   useEffect(() => store.subscribe(() => refresh((n) => n + 1)), [store]);
 
@@ -48,6 +50,8 @@ export function QuizAttempts({ store, quizPath, currentId }: Props) {
             attempt={attempt}
             number={attempts.length - index}
             isCurrent={attempt.id === currentId}
+            canSubmitAiGrade={canSubmitAiGrade}
+            onSubmitAiGrade={onSubmitAiGrade}
           />
         ))}
       </ol>
@@ -55,7 +59,15 @@ export function QuizAttempts({ store, quizPath, currentId }: Props) {
   );
 }
 
-function AttemptRow({ attempt, number, isCurrent }: { attempt: QuizAttempt; number: number; isCurrent: boolean }) {
+function AttemptRow({ attempt, number, isCurrent, canSubmitAiGrade, onSubmitAiGrade }: {
+  attempt: QuizAttempt;
+  number: number;
+  isCurrent: boolean;
+  canSubmitAiGrade: boolean;
+  onSubmitAiGrade?: (attemptId: string) => Promise<void>;
+}) {
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const hasDetails = attempt.perQuestion.some((q) => q.prompt !== undefined);
   return (
     <li>
@@ -71,6 +83,19 @@ function AttemptRow({ attempt, number, isCurrent }: { attempt: QuizAttempt; numb
             <small> {formatScore(attempt.score)}/{attempt.maxScore}</small>
           </span>
         </summary>
+        {attempt.pendingAiGrade ? (
+          <div className="quiz-attempt-field">
+            <span>AI grading pending</span>
+            {canSubmitAiGrade && onSubmitAiGrade ? (
+              <button type="button" className="quiz-btn" disabled={submitting} onClick={() => {
+                setSubmitting(true);
+                setError(null);
+                void onSubmitAiGrade(attempt.id).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'AI grading failed')).finally(() => setSubmitting(false));
+              }}>{submitting ? 'Submitting…' : 'Submit saved answers for AI grading'}</button>
+            ) : <p className="quiz-muted">Reconnect to the internet and select a live AI provider to submit these saved answers.</p>}
+            {error ? <p className="quiz-error">{error}</p> : null}
+          </div>
+        ) : null}
         {hasDetails ? (
           <ol className="quiz-attempt-questions">
             {attempt.perQuestion.map((q, index) => (

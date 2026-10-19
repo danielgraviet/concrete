@@ -58,7 +58,7 @@ function initialState(path: string, vaultRoot: string): State {
   return freshState(path, vaultRoot);
 }
 
-export function useQuizTake(markdown: string, documentPath: string, client: AiClient, historyStore?: QuizHistoryStore) {
+export function useQuizTake(markdown: string, documentPath: string, client: AiClient, historyStore?: QuizHistoryStore, offlineMode = false) {
   const quiz: QuizDocument = useMemo(() => parseQuizMarkdown(markdown), [markdown]);
 
   const defaultHistory = useMemo(() => new QuizHistoryStore(), []);
@@ -134,8 +134,9 @@ export function useQuizTake(markdown: string, documentPath: string, client: AiCl
       startedAt: state.startedAt,
       client,
       history,
+      offlineMode,
     });
-  }, [client, documentPath, history, quiz, state.responses, state.sessionSeed, state.startedAt, vaultRoot]);
+  }, [client, documentPath, history, offlineMode, quiz, state.responses, state.sessionSeed, state.startedAt, vaultRoot]);
 
   const retake = useCallback(() => {
     quizGradingJobs.clear(documentPath);

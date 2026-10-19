@@ -13,9 +13,10 @@ type Props = {
   onChange: (markdown: string) => void;
   onBlur?: () => void;
   historyStore?: QuizHistoryStore;
+  offlineMode?: boolean;
 };
 
-export function QuizShell({ documentPath, markdown, client, onChange, onBlur, historyStore }: Props) {
+export function QuizShell({ documentPath, markdown, client, onChange, onBlur, historyStore, offlineMode = false }: Props) {
   const [mode, setMode] = useState<Mode>('take');
   const [boundPath, setBoundPath] = useState(documentPath);
 
@@ -44,6 +45,7 @@ export function QuizShell({ documentPath, markdown, client, onChange, onBlur, hi
       client={client}
       onEdit={() => setMode('edit')}
       historyStore={historyStore}
+      offlineMode={offlineMode}
     />
   );
 }
