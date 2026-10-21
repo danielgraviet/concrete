@@ -2095,7 +2095,8 @@ div[class*="selectContainer"] [class*="selectItem"][data-state="checked"]{
 
 /* Quiz files */
 .file-row > svg{flex:0 0 14px;width:14px;height:14px}
-.file-row-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-row-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pinned-note-icon{flex:0 0 14px;width:14px;height:14px;color:var(--mv-accent,#a3a3a3)}
 .file-row.quiz-file .quiz-file-icon{color:var(--mv-accent,#a3a3a3)}
 
 /* PDFs: red tint so they read differently from notes in the tree and tabs */

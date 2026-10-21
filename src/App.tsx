@@ -176,6 +176,16 @@ function loadStudyChatLayout(): { open: boolean; width: number } {
   }
 }
 const NEW_QUIZZES_KEY = 'mv:new-quizzes';
+const pinnedNotesStorageKey = (vaultRoot: string) => `mv:pinned-notes:${vaultRoot || 'demo'}`;
+
+function readPinnedNotes(vaultRoot: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(pinnedNotesStorageKey(vaultRoot)) ?? '[]');
+    return Array.isArray(parsed) ? parsed.filter((path): path is string => typeof path === 'string') : [];
+  } catch {
+    return [];
+  }
+}
 
 function readNewQuizzes(): string[] {
   try {
@@ -258,6 +268,7 @@ export default function App() {
   const [seededReviewCards, setSeededReviewCards] = useState(false);
   const [walkthroughNoteCreated, setWalkthroughNoteCreated] = useState(false);
   const [activeFolder, setActiveFolder] = useState('');
+  const [pinnedNotes, setPinnedNotes] = useState<{ vault: string; paths: string[] }>({ vault: '', paths: [] });
   const [treeFocus, setTreeFocus] = useState<{
     kind: TreeItemKind;
     path: string;
@@ -486,8 +497,54 @@ export default function App() {
   };
 
   const root = vault.root;
+  const pinVault = root ?? '';
   const files = vault.files;
   const pdfFiles = vault.pdfFiles;
+
+  useEffect(() => {
+    setPinnedNotes({ vault: pinVault, paths: readPinnedNotes(pinVault) });
+  }, [pinVault]);
+
+  const togglePinnedNote = (path: string) => {
+    const current = pinnedNotes.vault === pinVault ? pinnedNotes.paths : readPinnedNotes(pinVault);
+    const paths = current.includes(path)
+      ? current.filter((pinnedPath) => pinnedPath !== path)
+      : [...current, path];
+    setPinnedNotes({ vault: pinVault, paths });
+    try {
+      localStorage.setItem(pinnedNotesStorageKey(pinVault), JSON.stringify(paths));
+    } catch {
+      // Pinning remains available for this session when storage is unavailable.
+    }
+  };
+
+  const updatePinnedNotes = (update: (paths: string[]) => string[]) => {
+    const current = pinnedNotes.vault === pinVault ? pinnedNotes.paths : readPinnedNotes(pinVault);
+    const paths = update(current);
+    setPinnedNotes({ vault: pinVault, paths });
+    try {
+      localStorage.setItem(pinnedNotesStorageKey(pinVault), JSON.stringify(paths));
+    } catch {
+      // Pin state remains valid for this session when storage is unavailable.
+    }
+  };
+
+  const renamePinnedPath = (path: string, target: string, kind: TreeItemKind) => {
+    updatePinnedNotes((current) => current.map((pinnedPath) => {
+      if (kind === 'folder' && (pinnedPath === path || pinnedPath.startsWith(`${path}/`))) {
+        return `${target}${pinnedPath.slice(path.length)}`;
+      }
+      return kind === 'file' && pinnedPath === path ? target : pinnedPath;
+    }));
+  };
+
+  const removePinnedPath = (path: string, kind: TreeItemKind) => {
+    updatePinnedNotes((current) => current.filter((pinnedPath) =>
+      kind === 'folder'
+        ? pinnedPath !== path && !pinnedPath.startsWith(`${path}/`)
+        : pinnedPath !== path,
+    ));
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -1452,6 +1509,7 @@ export default function App() {
       if (canUseDiskVault(root)) {
         try {
           const renamed = await vault.rename(path, target);
+          renamePinnedPath(path, renamed, 'folder');
           setContents((prev) => {
             const copy: Record<string, string> = {};
             for (const [key, value] of Object.entries(prev)) {
@@ -1489,6 +1547,7 @@ export default function App() {
           })
           .sort((a, b) => a.localeCompare(b)),
       );
+      renamePinnedPath(path, target, 'folder');
       vault.setFiles((current) =>
         current
           .map((file) =>
@@ -1550,6 +1609,7 @@ export default function App() {
     if (canUseDiskVault(root)) {
       try {
         const renamed = await vault.rename(path, target);
+        renamePinnedPath(path, renamed, 'file');
         setContents((prev) => {
           const copy = { ...prev };
           copy[renamed] = copy[path] ?? controller.content;
@@ -1570,6 +1630,7 @@ export default function App() {
     vault.setFiles((current) =>
       current.map((f) => (f === path ? target : f)).sort(),
     );
+    renamePinnedPath(path, target, 'file');
     setContents((prev) => {
       const copy = { ...prev };
       copy[target] = copy[path] ?? controller.content;
@@ -1611,6 +1672,8 @@ export default function App() {
     } else {
       vault.setFiles((current) => current.filter((f) => f !== path));
     }
+
+    removePinnedPath(path, kind);
 
     setContents((prev) => {
       const copy = { ...prev };
@@ -1934,6 +1997,8 @@ export default function App() {
               filterPaths={filterPaths}
               newPaths={newQuizPaths}
               quizStatus={quizStatus}
+              pinnedPaths={pinnedNotes.vault === pinVault ? pinnedNotes.paths : []}
+              onTogglePin={togglePinnedNote}
               onSelectFile={select}
               onSelectFolder={(path) => {
                 setActiveFolder(path);

@@ -6,6 +6,7 @@ import {
   ClipboardIcon,
   FileTextIcon,
   ArchiveIcon,
+  PinTopIcon,
 } from '@radix-ui/react-icons';
 import { buildFileTree, isPdfFileName, isQuizFileName, noteTitle } from './fileTree';
 import { PdfFileIcon } from './PdfFileIcon';
@@ -20,6 +21,10 @@ const BADGE_LABELS: Record<TreeBadge, string> = { new: 'New', grading: 'Grading'
 
 /** Paths with a badge, until the user opens them. */
 const BadgesContext = createContext<ReadonlyMap<string, TreeBadge>>(new Map());
+const PinnedNotesContext = createContext<{
+  paths: ReadonlySet<string>;
+  toggle: (path: string) => void;
+}>({ paths: new Set(), toggle: () => undefined });
 
 type FileTreeViewProps = {
   files: string[];
@@ -34,6 +39,8 @@ type FileTreeViewProps = {
   newPaths?: string[];
   /** Quizzes grading in the background, or graded and not yet opened. */
   quizStatus?: Record<string, 'grading' | 'graded'>;
+  pinnedPaths?: string[];
+  onTogglePin?: (path: string) => void;
   onSelectFile: (path: string, options?: { preview?: boolean }) => void;
   onSelectFolder: (path: string) => void;
   onRename: (path: string, kind: TreeItemKind, nextName: string) => void | Promise<void>;
@@ -312,6 +319,8 @@ function TreeNode({
   const isRenaming = renaming?.kind === 'file' && renaming.path === node.path;
   const label = noteTitle(node.path);
   const badge = useContext(BadgesContext).get(node.path);
+  const pinnedNotes = useContext(PinnedNotesContext);
+  const isPinned = pinnedNotes.paths.has(node.path);
 
   return (
     <ContextMenu.Root>
@@ -354,6 +363,7 @@ function TreeNode({
               {label}
             </Text>
           )}
+          {isPinned ? <PinTopIcon className="pinned-note-icon" aria-label="Pinned to top" /> : null}
           {badge ? <span className={`new-badge ${badge}`}>{BADGE_LABELS[badge]}</span> : null}
         </button>
       </ContextMenu.Trigger>
@@ -379,6 +389,12 @@ function TreeNode({
         {!isPdf && onExportPdf ? (
           <ContextMenu.Item onSelect={() => void onExportPdf(node.path)}>
             Export as PDF
+          </ContextMenu.Item>
+        ) : null}
+        {/\.md$/i.test(node.name) ? (
+          <ContextMenu.Item onSelect={() => pinnedNotes.toggle(node.path)}>
+            <PinTopIcon width={14} height={14} />
+            {isPinned ? 'Unpin from top' : 'Pin to top'}
           </ContextMenu.Item>
         ) : null}
         <ContextMenu.Separator />
@@ -415,17 +431,20 @@ export function FileTreeView({
   filterPaths = null,
   newPaths,
   quizStatus,
+  pinnedPaths = [],
+  onTogglePin,
   onSelectFile,
   onSelectFolder,
   onRename,
   onDelete,
   onExportPdf,
 }: FileTreeViewProps) {
+  const pinnedPathSet = useMemo(() => new Set(pinnedPaths), [pinnedPaths]);
   const tree = useMemo(() => {
-    const full = buildFileTree(files, folders);
+    const full = buildFileTree(files, folders, pinnedPathSet);
     if (!filterPaths) return full;
     return filterTree(full, new Set(filterPaths));
-  }, [files, folders, filterPaths]);
+  }, [files, folders, filterPaths, pinnedPathSet]);
 
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [renaming, setRenaming] = useState<{ path: string; kind: TreeItemKind } | null>(
@@ -500,6 +519,7 @@ export function FileTreeView({
       }}
     >
       <BadgesContext.Provider value={badges}>
+        <PinnedNotesContext.Provider value={{ paths: pinnedPathSet, toggle: onTogglePin ?? (() => undefined) }}>
         {tree.children.map((child) => (
           <TreeNode
             key={`${child.type}:${child.path}`}
@@ -519,6 +539,7 @@ export function FileTreeView({
             onExportPdf={onExportPdf}
           />
         ))}
+        </PinnedNotesContext.Provider>
       </BadgesContext.Provider>
     </div>
   );
