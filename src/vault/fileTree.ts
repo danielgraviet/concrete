@@ -29,9 +29,10 @@ export function isHiddenVaultFile(name: string): boolean {
 }
 
 /** Sort rank: folders first, then notes, quizzes last. */
-function treeSortRank(node: VaultTreeNode): number {
+function treeSortRank(node: VaultTreeNode, pinnedPaths: ReadonlySet<string>): number {
   if (node.type === 'folder') return 0;
-  return isQuizFileName(node.name) ? 2 : 1;
+  if (/\.md$/i.test(node.name) && pinnedPaths.has(node.path)) return 1;
+  return isQuizFileName(node.name) ? 3 : 2;
 }
 
 /** Parent folder relative path, or `''` for vault root files. */
@@ -95,6 +96,7 @@ export function joinPdfPath(folder: string, name: string): string {
 export function buildFileTree(
   paths: string[],
   emptyFolders: string[] = [],
+  pinnedPaths: ReadonlySet<string> = new Set(),
 ): VaultFolderNode {
   const root: VaultFolderNode = {
     name: '',
@@ -143,7 +145,7 @@ export function buildFileTree(
 
   const sortNodes = (nodes: VaultTreeNode[]) => {
     nodes.sort((a, b) => {
-      const rankDiff = treeSortRank(a) - treeSortRank(b);
+      const rankDiff = treeSortRank(a, pinnedPaths) - treeSortRank(b, pinnedPaths);
       if (rankDiff !== 0) return rankDiff;
       return a.name.localeCompare(b.name);
     });
