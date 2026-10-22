@@ -1875,6 +1875,20 @@ export default function App() {
         >
           <ClipboardIcon width={18} height={18} />
         </IconButton>
+        <div className="rail-spacer" />
+        <IconButton
+          type="button"
+          className="rail-button"
+          size="2"
+          variant="ghost"
+          color="gray"
+          highContrast
+          aria-label="Settings"
+          title="Settings"
+          onClick={() => setOverlay('settings')}
+        >
+          <GearIcon width={18} height={18} />
+        </IconButton>
       </aside>
 
       <aside className="sidebar" aria-hidden={!layout.sidebarOpen || layout.focusMode}>
@@ -2072,18 +2086,6 @@ export default function App() {
               onClick={toggleFocusMode}
             >
               {layout.focusMode ? <ExitFullScreenIcon width={16} height={16} /> : <EnterFullScreenIcon width={16} height={16} />}
-            </IconButton>
-            <IconButton
-              type="button"
-              size="2"
-              variant="ghost"
-              color="gray"
-              highContrast
-              aria-label="Settings"
-              title="Settings"
-              onClick={() => setOverlay('settings')}
-            >
-              <GearIcon width={16} height={16} />
             </IconButton>
             {!layout.focusMode && (
               <IconButton
