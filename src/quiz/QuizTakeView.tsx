@@ -16,9 +16,11 @@ type Props = {
   onEdit: () => void;
   historyStore?: QuizHistoryStore;
   offlineMode?: boolean;
+  onAddQuestionToFlashcards?: (questionId: string) => boolean;
+  isQuestionInFlashcards?: (questionId: string) => boolean;
 };
 
-export function QuizTakeView({ markdown, documentPath, client, onEdit, historyStore, offlineMode = false }: Props) {
+export function QuizTakeView({ markdown, documentPath, client, onEdit, historyStore, offlineMode = false, onAddQuestionToFlashcards, isQuestionInFlashcards }: Props) {
   const {
     quiz,
     presented,
@@ -53,6 +55,7 @@ export function QuizTakeView({ markdown, documentPath, client, onEdit, historySt
     return (
       <>
         <QuizGradeView report={report} quiz={quiz} responses={responses} sessionSeed={sessionSeed} client={client} onRetake={retake} onEdit={onEdit}
+          onAddQuestionToFlashcards={onAddQuestionToFlashcards} isQuestionInFlashcards={isQuestionInFlashcards}
           hasDeferredAiGrade={history.forQuiz(documentPath).some((item) => item.id === sessionSeed && item.pendingAiGrade)}
           canSubmitAiGrade={canSubmitAiGrade} onSubmitAiGrade={() => submitDeferredForAi(sessionSeed)} />
         <div className="quiz-grade-attempts">

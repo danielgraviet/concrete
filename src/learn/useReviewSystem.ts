@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import type { QuizHistoryStore } from '../quiz/history';
 import { settingsStore } from '../settings';
-import { quizCardForQuestion } from './buildCards';
 import { CardIndex } from './CardIndex';
 import { queueCounts, type QueueCounts } from './ReviewSession';
 import { ReviewStateStore } from './ReviewStateStore';
@@ -27,7 +25,7 @@ export type ReviewSystem = {
  * Wires the card index (what cards exist) to the review store (their history)
  * for one vault, and keeps the two consistent as notes change.
  */
-export function useReviewSystem(root: string | null, quizHistory: QuizHistoryStore): ReviewSystem {
+export function useReviewSystem(root: string | null): ReviewSystem {
   const index = useMemo(() => new CardIndex(), [root]);
   const store = useMemo(() => new ReviewStateStore(root ?? ''), [root]);
   const [settings, setSettings] = useState<ReviewSettings>(() => settingsStore.get().review);
@@ -61,29 +59,6 @@ export function useReviewSystem(root: string | null, quizHistory: QuizHistorySto
     const timer = window.setTimeout(() => store.reconcile(index.all(), Date.now()), RECONCILE_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [index, store, indexVersion, store.isLoaded]);
-
-  // Questions missed in a graded quiz go into review.
-  useEffect(() => {
-    const sync = () => {
-      if (!index.complete || !store.isLoaded) return;
-      const since = store.quizSyncAt;
-      const attempts = quizHistory.getAll().filter((attempt) => attempt.completedAt > since && !attempt.stubbed);
-      if (attempts.length === 0) return;
-      const missed: ReviewCard[] = [];
-      for (const attempt of attempts) {
-        const note = index.note(attempt.quizPath);
-        if (!note?.quizMarkdown) continue;
-        for (const question of attempt.perQuestion) {
-          if (question.correct) continue;
-          const card = quizCardForQuestion(note.cards, note.quizMarkdown, question.questionId);
-          if (card) missed.push(card);
-        }
-      }
-      store.enroll(missed, Date.now(), Math.max(...attempts.map((attempt) => attempt.completedAt)));
-    };
-    sync();
-    return quizHistory.subscribe(sync);
-  }, [index, store, quizHistory, indexVersion, store.isLoaded]);
 
   const cards = useMemo(
     () => index.all().filter((card) => store.isActive(card)),

@@ -14,9 +14,11 @@ type Props = {
   onBlur?: () => void;
   historyStore?: QuizHistoryStore;
   offlineMode?: boolean;
+  onAddQuestionToFlashcards?: (questionId: string) => boolean;
+  isQuestionInFlashcards?: (questionId: string) => boolean;
 };
 
-export function QuizShell({ documentPath, markdown, client, onChange, onBlur, historyStore, offlineMode = false }: Props) {
+export function QuizShell({ documentPath, markdown, client, onChange, onBlur, historyStore, offlineMode = false, onAddQuestionToFlashcards, isQuestionInFlashcards }: Props) {
   const [mode, setMode] = useState<Mode>('take');
   const [boundPath, setBoundPath] = useState(documentPath);
 
@@ -46,6 +48,8 @@ export function QuizShell({ documentPath, markdown, client, onChange, onBlur, hi
       onEdit={() => setMode('edit')}
       historyStore={historyStore}
       offlineMode={offlineMode}
+      onAddQuestionToFlashcards={onAddQuestionToFlashcards}
+      isQuestionInFlashcards={isQuestionInFlashcards}
     />
   );
 }
