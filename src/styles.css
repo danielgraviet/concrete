@@ -2203,6 +2203,7 @@ div[class*="selectContainer"] [class*="selectItem"][data-state="checked"]{
   display:flex;justify-content:space-between;font-size:12px;color:#aaa;margin-bottom:6px;
 }
 .quiz-grade-list p{margin:0;color:#ccc;font-size:13px}
+.quiz-flashcard-action{display:flex;align-items:center;gap:10px;margin-top:12px;color:var(--mv-muted,#999);font-size:12px}
 
 
 /* Generate quiz dialog + CTA */

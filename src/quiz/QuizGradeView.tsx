@@ -30,11 +30,14 @@ type Props = {
   hasDeferredAiGrade?: boolean;
   canSubmitAiGrade?: boolean;
   onSubmitAiGrade?: () => Promise<void>;
+  onAddQuestionToFlashcards?: (questionId: string) => boolean;
+  isQuestionInFlashcards?: (questionId: string) => boolean;
 };
 
-export function QuizGradeView({ report, quiz, responses, sessionSeed, client, onRetake, onEdit, hasDeferredAiGrade = false, canSubmitAiGrade = false, onSubmitAiGrade }: Props) {
+export function QuizGradeView({ report, quiz, responses, sessionSeed, client, onRetake, onEdit, hasDeferredAiGrade = false, canSubmitAiGrade = false, onSubmitAiGrade, onAddQuestionToFlashcards, isQuestionInFlashcards }: Props) {
   const [submittingAiGrade, setSubmittingAiGrade] = useState(false);
   const [aiGradeError, setAiGradeError] = useState<string | null>(null);
+  const [addedQuestionIds, setAddedQuestionIds] = useState<Set<string>>(() => new Set());
   const scoreSummaryRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -107,6 +110,25 @@ export function QuizGradeView({ report, quiz, responses, sessionSeed, client, on
                     </li>
                   ))}
                 </ul>
+              </div>
+            ) : null}
+            {onAddQuestionToFlashcards ? (
+              <div className="quiz-flashcard-action">
+                <span>Add to flashcards?</span>
+                {addedQuestionIds.has(item.questionId) || isQuestionInFlashcards?.(item.questionId) ? (
+                  <span className="quiz-muted" role="status">Added to flashcards</span>
+                ) : (
+                  <button
+                    type="button"
+                    className="quiz-btn"
+                    onClick={() => {
+                      if (!onAddQuestionToFlashcards(item.questionId)) return;
+                      setAddedQuestionIds((current) => new Set(current).add(item.questionId));
+                    }}
+                  >
+                    Add
+                  </button>
+                )}
               </div>
             ) : null}
             {(() => {

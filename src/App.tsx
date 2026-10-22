@@ -86,6 +86,7 @@ import {
   useReviewSystem,
   ALL_DECK,
   cardsFromNote,
+  quizCardForQuestion,
   type CardEdit,
   type Deck,
   type ReviewCard,
@@ -592,8 +593,24 @@ export default function App() {
 
   const quizHistory = useMemo(() => new QuizHistoryStore(root ?? ''), [root]);
   const rubricCalibrationSamples = getRecentOpenAnswerSamples(quizHistory.getAll(), 10);
-  const review = useReviewSystem(root, quizHistory);
+  const review = useReviewSystem(root);
   const reviewIndex = review.index;
+  const quizQuestionCard = (path: string, questionId: string) => {
+    const note = reviewIndex.note(path);
+    return note?.quizMarkdown
+      ? quizCardForQuestion(note.cards, note.quizMarkdown, questionId)
+      : undefined;
+  };
+  const addQuizQuestionToFlashcards = (path: string, questionId: string) => {
+    const card = quizQuestionCard(path, questionId);
+    if (!card || !review.store.isLoaded) return false;
+    review.store.enroll([card], Date.now());
+    return true;
+  };
+  const isQuizQuestionInFlashcards = (path: string, questionId: string) => {
+    const card = quizQuestionCard(path, questionId);
+    return Boolean(card && review.store.isActive(card));
+  };
   const searchIndex = useMemo(() => new SearchIndex(), [root]);
   const chatSessions = useChatSessions(root, files);
 
@@ -2195,6 +2212,8 @@ export default function App() {
               documentPath={selected}
               historyStore={quizHistory}
               offlineMode={!isOnline}
+              onAddQuestionToFlashcards={(questionId) => addQuizQuestionToFlashcards(selected, questionId)}
+              isQuestionInFlashcards={(questionId) => isQuizQuestionInFlashcards(selected, questionId)}
               markdown={controller.content}
               client={aiClient}
               onChange={(value) => {

@@ -5,7 +5,7 @@ export { CardIndex } from './CardIndex';
 export { ReviewStateStore } from './ReviewStateStore';
 export { ReviewSession, queueCounts } from './ReviewSession';
 export { Scheduler, formatInterval } from './scheduler';
-export { cardsFromNote, cardsFromQuiz } from './buildCards';
+export { cardsFromNote, cardsFromQuiz, quizCardForQuestion } from './buildCards';
 export { parseNoteCards } from './parseNoteCards';
 export { ALL_DECK, deckFilter, deckKey, listDecks } from './decks';
 export type { Deck } from './decks';
