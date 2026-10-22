@@ -115,6 +115,7 @@ import { AUTO_QUIZ_ANALYSIS_SYSTEM, parseAutoQuizCounts, type AutoQuizAnalysis, 
 import { settingsStore } from './settings';
 import { buildOpenAnswerRubric } from './quiz/openAnswerRubric';
 import { getRecentOpenAnswerSamples } from './quiz/rubricCalibration';
+import { BrandLogo } from './branding/BrandLogo';
 import { getSandboxStatus } from './sandbox';
 import { verifyCodeQuestions } from './quiz/verifyCode';
 import type { AgentProviderId, AppSettings } from './settings';
