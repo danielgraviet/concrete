@@ -10,7 +10,6 @@ export type BlockType =
   | 'code'
   | 'thematicBreak'
   | 'wikilink'
-  | 'tag'
   | 'quizCard';
 
 export type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
@@ -26,7 +25,6 @@ export interface QuizCardData {
   notePath: string;
   front: string;
   back: string;
-  tags: string[];
   createdAt: number;
 }
 
@@ -63,15 +61,10 @@ export interface WikilinkProps {
   label?: string;
 }
 
-export interface TagProps {
-  name?: string;
-}
-
 export interface QuizCardProps {
   notePath?: string;
   front?: string;
   back?: string;
-  tags?: string[];
   createdAt?: number;
 }
 
@@ -83,7 +76,6 @@ export type BlockCreateProps =
   | QuoteProps
   | CodeProps
   | WikilinkProps
-  | TagProps
   | QuizCardProps
   | Record<string, never>;
 
@@ -91,7 +83,6 @@ export interface QuizCardSelection {
   notePath: string;
   front: string;
   back: string;
-  tags?: string[];
 }
 
 let idSeq = 0;

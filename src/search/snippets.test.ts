@@ -3,7 +3,7 @@ import { highlightSegments, lineSnippet } from './snippets';
 
 describe('lineSnippet', () => {
   it('returns the plain text of a line, counting lines after frontmatter', () => {
-    const md = '---\ntags: x\n---\n# Title\n\n- **Gradient** descent uses `lr`';
+    const md = '---\nprivate: x\n---\n# Title\n\n- **Gradient** descent uses `lr`';
     expect(lineSnippet(md, 2, ['gradient'])).toBe('Gradient descent uses lr');
     expect(lineSnippet(md, 0, [])).toBe('Title');
   });

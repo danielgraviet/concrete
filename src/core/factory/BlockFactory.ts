@@ -6,7 +6,6 @@ import {
   ParagraphBlock,
   QuizCardBlock,
   QuoteBlock,
-  TagBlock,
   ThematicBreakBlock,
   WikilinkBlock,
 } from '../composite/blocks';
@@ -23,7 +22,6 @@ import {
   type ParagraphProps,
   type QuizCardProps,
   type QuoteProps,
-  type TagProps,
   type WikilinkProps,
 } from '../types';
 
@@ -77,10 +75,6 @@ export class BlockFactory {
           p.label ?? '',
         );
       }
-      case 'tag': {
-        const p = props as TagProps;
-        return new TagBlock(createId('t'), p.name ?? '');
-      }
       case 'quizCard': {
         const p = props as QuizCardProps;
         return new QuizCardBlock(
@@ -88,7 +82,6 @@ export class BlockFactory {
           p.notePath ?? '',
           p.front ?? '',
           p.back ?? '',
-          p.tags ?? [],
           p.createdAt ?? Date.now(),
         );
       }

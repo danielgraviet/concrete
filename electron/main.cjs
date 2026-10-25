@@ -1689,7 +1689,7 @@ const STARTER_SEED = [
   },
   {
     path: 'Projects.md',
-    body: '# Projects\n\nA place for active work.\n\nSee also [[Welcome]].\n\n- [ ] Build the review queue\n- [ ] Add backlinks\n',
+    body: '# Projects\n\nA place for active work.\n\nSee also [[Welcome]].\n\n- [ ] Build the review queue\n',
   },
   {
     path: 'Ideas.md',

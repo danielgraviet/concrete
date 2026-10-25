@@ -63,37 +63,6 @@ function normalizeName(value) {
     .toLowerCase();
 }
 
-function splitList(value) {
-  if (value == null) return [];
-  const raw = String(value).trim();
-  if (!raw) return [];
-  if ((raw.startsWith('[') && raw.endsWith(']')) || (raw.startsWith('"') && raw.endsWith('"'))) {
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed.flatMap(splitList);
-      if (typeof parsed === 'string') return splitList(parsed);
-    } catch {}
-  }
-  return raw
-    .replace(/^\[|\]$/g, '')
-    .split(/[,;\n]+/)
-    .map((item) => item.trim().replace(/^['"]|['"]$/g, ''))
-    .filter(Boolean);
-}
-
-function normalizeTag(value) {
-  return String(value).trim().replace(/^#/, '').toLowerCase();
-}
-
-function uniqueTags(values) {
-  const seen = new Set();
-  return values.flatMap(splitList).map(normalizeTag).filter((tag) => {
-    if (!tag || seen.has(tag)) return false;
-    seen.add(tag);
-    return true;
-  });
-}
-
 function parseCsv(text) {
   const rows = [];
   let row = [];
@@ -168,45 +137,24 @@ function parsePropertyLines(content) {
   return properties;
 }
 
-function parseFrontmatterTags(content) {
-  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(content);
-  if (!match) return [];
-  const lines = match[1].split(/\r?\n/);
-  const tags = [];
-  for (let i = 0; i < lines.length; i += 1) {
-    const tagLine = /^\s*tags\s*:\s*(.*)$/i.exec(lines[i]);
-    if (!tagLine) continue;
-    if (tagLine[1].trim()) tags.push(...splitList(tagLine[1]));
-    for (let j = i + 1; j < lines.length; j += 1) {
-      const item = /^\s*-\s+(.+)$/.exec(lines[j]);
-      if (!item) break;
-      tags.push(...splitList(item[1]));
-    }
-  }
-  return tags;
-}
-
 function yamlScalar(value) {
   return JSON.stringify(String(value));
 }
 
-function mergeImportedFrontmatter(content, tags, properties) {
-  if (!tags.length && Object.keys(properties).length === 0) return content;
+function mergeImportedFrontmatter(content, properties) {
+  if (Object.keys(properties).length === 0) return content;
   const existing = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(content);
   const raw = existing ? existing[1] : '';
   const kept = raw ? raw.split(/\r?\n/) : [];
   const filtered = [];
   for (let i = 0; i < kept.length; i += 1) {
-    if (/^\s*(tags|notion_properties)\s*:/.test(kept[i])) {
+    if (/^\s*notion_properties\s*:/.test(kept[i])) {
       i += 1;
       while (i < kept.length && (/^\s*-\s+/.test(kept[i]) || /^\s{2,}\S/.test(kept[i]))) i += 1;
       i -= 1;
       continue;
     }
     filtered.push(kept[i]);
-  }
-  if (tags.length) {
-    filtered.push(`tags: [${tags.map(yamlScalar).join(', ')}]`);
   }
   if (Object.keys(properties).length) {
     filtered.push('notion_properties:');
@@ -220,19 +168,14 @@ function mergeImportedFrontmatter(content, tags, properties) {
 
 function pageMetadata(markdown, csvProperties = {}) {
   const propertyLines = parsePropertyLines(markdown);
-  const tags = uniqueTags([
-    ...parseFrontmatterTags(markdown),
-    ...Object.entries(propertyLines).filter(([key]) => /tag|label/i.test(key)).flatMap(([, value]) => splitList(value)),
-    ...Object.entries(csvProperties).filter(([key]) => /tag|label/i.test(key)).flatMap(([, value]) => splitList(value)),
-  ]);
   const properties = {};
   for (const [key, value] of Object.entries(propertyLines)) {
-    if (!/tag|label/i.test(key)) properties[key] = value;
+    properties[key] = value;
   }
   for (const [key, value] of Object.entries(csvProperties)) {
-    if (!/tag|label|^(name|title|page)$/i.test(key) && String(value).trim()) properties[key] = value;
+    if (!/^(name|title|page)$/i.test(key) && String(value).trim()) properties[key] = value;
   }
-  return { tags, properties };
+  return { properties };
 }
 
 async function walk(root) {
@@ -437,7 +380,7 @@ async function importNotionExport(sourcePath, destinationRoot, options = {}) {
       }
       const markdown = analysis.fileDetails.get(page.relative) ?? await readUtf8(page.absolute, page.relative);
       const metadata = pageMetadata(markdown, csvByPage.get(page.relative));
-      const converted = mergeImportedFrontmatter(markdown, metadata.tags, metadata.properties);
+      const converted = mergeImportedFrontmatter(markdown, metadata.properties);
       await fs.mkdir(path.dirname(target), { recursive: true });
       await fs.writeFile(target, converted, { flag: 'wx' });
       importedNotes.push(page.relative);

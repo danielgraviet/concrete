@@ -18,7 +18,6 @@ rubric: "<one-line grading rubric>"
 # Quiz <Title>
 
 ## Q1 · mcq
-
 <question stem>
 
 - [ ] <distractor>

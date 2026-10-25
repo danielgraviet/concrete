@@ -83,7 +83,7 @@ describe('ChatSessionStore', () => {
     expect(JSON.parse(files.get(SESSION_INDEX_FILE)!).sessions).toEqual([]);
   });
 
-  it('imports legacy per-note threads once, tagging messages with their note', async () => {
+  it('imports legacy per-note threads once, associating messages with their note', async () => {
     const files = new Map<string, string>([
       [legacyThreadFile('A.md'), JSON.stringify({ version: 1, path: 'A.md', updatedAt: 5, messages: [user('Old question'), reply('Old answer')] })],
       // Hash collision guard: a file whose stored path is another note is ignored.

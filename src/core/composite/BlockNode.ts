@@ -11,7 +11,6 @@ export interface BlockVisitor {
   visitCode(node: BlockNode): void;
   visitThematicBreak(node: BlockNode): void;
   visitWikilink(node: BlockNode): void;
-  visitTag(node: BlockNode): void;
   visitQuizCard(node: BlockNode): void;
 }
 
