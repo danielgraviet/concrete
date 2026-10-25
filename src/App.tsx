@@ -23,7 +23,6 @@ import {
   FilePlusIcon,
   FileTextIcon,
   GearIcon,
-  BadgeIcon,
   PlusCircledIcon,
   TrashIcon,
   UpdateIcon,
@@ -58,7 +57,6 @@ import {
   VaultService,
   type TreeItemKind,
 } from './vault';
-import { useBacklinks } from './graph';
 import { shortcut, shortcutWithShift } from './platform';
 
 const NOTE_BODY_CACHE_MAX = 24;
@@ -70,7 +68,7 @@ import {
   revealTextRange,
   waitForTextRanges,
 } from './search/inFileFind';
-import { MetaService } from './meta';
+import { splitFrontmatter } from './meta/frontmatter';
 import {
   appendCardLines,
   applyCardDelete,
@@ -147,7 +145,7 @@ const demoContent: Record<string, string> = {
   'Welcome.md':
     '# Welcome to your vault\n\nA fast, local-first home for your thinking.\n\n## Start here\n\n- Open a folder to work with real Markdown files\n- Create **folders** to organize topics (Stats, Machine Learning, …)\n- Create notes inside those folders\n- Link notes with [[Projects]] and [[Ideas]]\n\n> The best knowledge system is the one that gets out of your way.',
   'Projects.md':
-    '# Projects\n\nA place for active work.\n\nSee also [[Welcome]].\n\n- [ ] Build the review queue\n- [ ] Add backlinks\n- [ ] Design the quiz experience\n',
+    '# Projects\n\nA place for active work.\n\nSee also [[Welcome]].\n\n- [ ] Build the review queue\n- [ ] Design the quiz experience\n',
   'Ideas.md': '# Ideas\n\nCapture quickly. Organize later.\n\nBack to [[Welcome]].\n',
   'Stats/Overview.md':
     '# Stats\n\nNotes living under the **Stats** folder.\n\nCreate more `.md` files here to keep metrics and analysis together.\n',
@@ -155,7 +153,7 @@ const demoContent: Record<string, string> = {
     '# Machine Learning\n\nA topic folder for ML notes, papers, and experiments.\n',
 };
 
-type RailView = 'files' | 'tags' | 'review' | 'ai';
+type RailView = 'files' | 'review' | 'ai';
 type Overlay = 'settings' | 'search' | null;
 
 const LAYOUT_KEY = 'mv:layout';
@@ -219,7 +217,7 @@ function loadLayout(): LayoutState {
     const parsed = JSON.parse(raw) as Partial<LayoutState>;
     return {
       sidebarOpen: parsed.sidebarOpen !== false,
-      // Right panel (backlinks + review) starts collapsed unless user opened it
+      // Right panel starts collapsed unless user opened it.
       rightOpen: parsed.rightOpen === true,
       focusMode: false,
     };
@@ -831,18 +829,6 @@ export default function App() {
     });
   }, [root, selected, controller]);
 
-  const notes = useMemo(
-    () =>
-      files.map((path) => ({
-        path,
-        content:
-          path === selected
-            ? controller.content
-            : (contents[path] ?? demoContent[path] ?? ''),
-      })),
-    [files, selected, controller.content, contents],
-  );
-
   // Warm index: load missing note bodies when vault opens
   useEffect(() => {
     if (!root) return;
@@ -927,15 +913,9 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [selected, controller.content, reviewIndex, searchIndex]);
 
-  const { backlinks } = useBacklinks(selected, notes);
   const searchResults = useSearch(searchIndex, query);
-  const meta = useMemo(() => new MetaService().build(notes), [notes]);
-  const allTags = meta.getTags();
-  const noteTags = selected ? meta.getTags(selected) : [];
 
   const filterPaths = (() => {
-    const tagMatch = query.trim().match(/^#(\S+)$/);
-    if (tagMatch) return meta.getNotesWithTag(tagMatch[1]);
     if (query.trim()) return searchResults.map((r) => r.path);
     return null;
   })();
@@ -1361,7 +1341,7 @@ export default function App() {
     if (controller.isDirty) await controller.persistence.flush();
     // Pick up edits to the open note that the debounce hasn't indexed yet.
     if (selected && editorPathRef.current === selected) reviewIndex.update(selected, controller.content);
-    const cards = reviewIndex.all().filter(deckFilter(deck, reviewIndex));
+    const cards = reviewIndex.all().filter(deckFilter(deck));
     const session = new ReviewSession(cards, review.store, review.scheduler, review.settings, Date.now());
     setReviewRun({ id: Date.now(), session, deck, paused: false });
     setLayout((current) => ({ ...current, focusMode: false }));
@@ -1838,24 +1818,6 @@ export default function App() {
         <IconButton
           type="button"
           className={
-            rail === 'tags' && layout.sidebarOpen && !layout.focusMode
-              ? 'rail-button active'
-              : 'rail-button'
-          }
-          size="2"
-          variant="ghost"
-          color="gray"
-          highContrast
-          aria-label="Tags"
-          title="Tags"
-          aria-pressed={rail === 'tags' && layout.sidebarOpen && !layout.focusMode}
-          onClick={() => selectRail('tags')}
-        >
-          <BadgeIcon width={18} height={18} />
-        </IconButton>
-        <IconButton
-          type="button"
-          className={
             rail === 'review' && layout.sidebarOpen && !layout.focusMode
               ? 'rail-button rail-button-review active'
               : 'rail-button rail-button-review'
@@ -1915,46 +1877,6 @@ export default function App() {
             onStart={(deck) => void startReview(deck)}
             onClose={() => setSidebarOpen(false)}
           />
-        ) : rail === 'tags' ? (
-          <>
-            <Flex className="sidebar-heading" align="center" justify="between" px="3">
-              <Text size="1" color="gray" weight="bold">
-                TAGS
-              </Text>
-              <IconButton
-                type="button"
-                size="1"
-                variant="ghost"
-                color="gray"
-                aria-label="Collapse sidebar"
-                onClick={() => setSidebarOpen(false)}
-              >
-                <Cross1Icon />
-              </IconButton>
-            </Flex>
-            <div className="file-tree tag-list">
-              {allTags.length === 0 ? (
-                <Text size="2" color="gray" mx="3">
-                  No tags yet
-                </Text>
-              ) : (
-                allTags.map((tag) => (
-                  <button
-                    type="button"
-                    className="file-row"
-                    key={tag}
-                    onClick={() => setQuery(`#${tag}`)}
-                  >
-                    <BadgeIcon width={14} height={14} />
-                    <span>{tag}</span>
-                    <Text size="1" color="gray" className="tag-count">
-                      {meta.getNotesWithTag(tag).length}
-                    </Text>
-                  </button>
-                ))
-              )}
-            </div>
-          </>
         ) : (
           <>
             <div
@@ -2085,13 +2007,6 @@ export default function App() {
             onEndReview={() => setReviewRun(null)}
           />
           <div className="tab-spacer" />
-          {!reviewing && !isQuizPath(selected) && noteTags.length > 0 && (
-            <div className="note-tags">
-              {noteTags.map((t) => (
-                <span key={t}>{t}</span>
-              ))}
-            </div>
-          )}
           <Flex className="tabs-actions" align="center" gap="3" pr="3">
             <IconButton
               type="button"
@@ -2230,10 +2145,16 @@ export default function App() {
                 documentId={selected}
                 vaultRoot={root ?? undefined}
                 contentRevision={editorRevision}
-                markdown={controller.content}
+                markdown={splitFrontmatter(controller.content).body}
                 onChange={(value) => {
-                  controller.setContent(value);
-                  setContents((prev) => ({ ...prev, [selected]: value }));
+                  const current = controller.content;
+                  const parsed = splitFrontmatter(current);
+                  const metadata = parsed.raw
+                    ? current.slice(0, current.length - parsed.body.length)
+                    : '';
+                  const updated = metadata + value;
+                  controller.setContent(updated);
+                  setContents((prev) => ({ ...prev, [selected]: updated }));
                 }}
                 onBlur={() => void controller.persistence.flush()}
               />
@@ -2325,30 +2246,6 @@ export default function App() {
           />
         ) : (
           <>
-            <div className="panel-title-row">
-              <div className="panel-title">BACKLINKS</div>
-            </div>
-            {backlinks.length === 0 ? (
-              <div className="empty-panel">
-                <BadgeIcon width={18} height={18} />
-                <span>No backlinks yet</span>
-                <small>Links to this note will appear here.</small>
-              </div>
-            ) : (
-              <div className="backlink-list">
-                {backlinks.map((hit) => (
-                  <button
-                    type="button"
-                    className="backlink-row"
-                    key={hit.path}
-                    onClick={() => select(hit.path)}
-                  >
-                    <FileTextIcon width={14} height={14} />
-                    <span>{hit.title}</span>
-                  </button>
-                ))}
-              </div>
-            )}
             {selected && !isQuizPath(selected) && !isPdfFileName(selected) ? (
               <div className="panel-section">
                 <NoteCardsPanel

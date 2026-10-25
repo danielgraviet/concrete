@@ -1,5 +1,5 @@
 /**
- * Minimal YAML frontmatter parser for simple `key: value` and tag lists.
+ * Minimal YAML frontmatter parser for simple `key: value` and list metadata.
  * Not a full YAML implementation — enough for vault MVP metadata.
  */
 

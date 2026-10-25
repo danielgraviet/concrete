@@ -60,6 +60,7 @@ export function isBareMathLine(line: string): boolean {
 /** Wrap whole-line bare TeX in `$$...$$` (outside fenced code). */
 export function wrapBareMathLines(markdown: string): string {
   let inCode = false;
+  let inDisplayMath = false;
   return markdown
     .split('\n')
     .map((line) => {
@@ -67,7 +68,20 @@ export function wrapBareMathLines(markdown: string): string {
         inCode = !inCode;
         return line;
       }
-      if (inCode || !isBareMathLine(line)) return line;
+      if (inCode) return line;
+
+      // A multiline display block may contain one bare TeX command per line.
+      // Keep those lines inside the same block instead of wrapping each one
+      // in its own `$$...$$` pair.
+      if (inDisplayMath) {
+        if (line.includes('$$')) inDisplayMath = false;
+        return line;
+      }
+      if (/^\s*\$\$/.test(line)) {
+        inDisplayMath = !line.trim().slice(2).includes('$$');
+        return line;
+      }
+      if (!isBareMathLine(line)) return line;
       const indent = line.match(/^([ \t]*)/)?.[1] ?? '';
       return `${indent}$$${line.trim()}$$`;
     })

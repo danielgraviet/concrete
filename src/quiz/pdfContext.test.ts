@@ -48,7 +48,7 @@ describe('parsePageRange', () => {
 describe('buildPdfContext', () => {
   const pages = Array.from({ length: 50 }, (_, i) => `Page ${i + 1} text. `.repeat(60));
 
-  it('returns every selected page with tags when it fits', () => {
+  it('returns every selected page with markers when it fits', () => {
     const out = buildPdfContext(['alpha beta gamma delta', 'epsilon zeta eta'], [1, 2], 1000);
     expect(out).toBe('[p. 1]\nalpha beta gamma delta\n\n[p. 2]\nepsilon zeta eta');
   });

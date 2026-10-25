@@ -9,7 +9,6 @@ export {
   CodeBlock,
   ThematicBreakBlock,
   WikilinkBlock,
-  TagBlock,
   QuizCardBlock,
   findBlock,
   findParent,

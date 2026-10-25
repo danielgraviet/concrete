@@ -78,7 +78,7 @@ describe('SearchIndex', () => {
 
   it('ignores frontmatter, hidden files and non-markdown files', () => {
     const index = indexOf([
-      ['Meta.md', '---\ntags: secret\n---\n# Meta\n\nvisible'],
+      ['Meta.md', '---\nprivate: secret\n---\n# Meta\n\nvisible'],
       ['AGENTS.md', '# Agents\n\nsecret'],
       ['paper.pdf', 'secret'],
     ]);

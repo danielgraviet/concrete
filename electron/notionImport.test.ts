@@ -19,18 +19,17 @@ async function tempDirectory() {
 
 describe('Notion import helpers', () => {
   it('parses CSV rows and merges Notion metadata into frontmatter', () => {
-    expect(parseCsv('Name,Tags,Course\nPhysics,"mechanics, motion",STEM')).toEqual([
-      { Name: 'Physics', Tags: 'mechanics, motion', Course: 'STEM' },
+    expect(parseCsv('Name,Course,Level\nPhysics,STEM,advanced')).toEqual([
+      { Name: 'Physics', Course: 'STEM', Level: 'advanced' },
     ]);
-    const metadata = pageMetadata('# Physics\nTags: waves\n\nA note.', {
+    const metadata = pageMetadata('# Physics\n\nA note.', {
       Name: 'Physics',
-      Tags: 'mechanics, motion',
       Course: 'STEM',
+      Level: 'advanced',
     });
-    expect(metadata.tags).toEqual(['waves', 'mechanics', 'motion']);
-    expect(metadata.properties).toEqual({ Course: 'STEM' });
-    expect(mergeImportedFrontmatter('# Physics\n\nA note.', metadata.tags, metadata.properties)).toContain(
-      'tags: ["waves", "mechanics", "motion"]',
+    expect(metadata.properties).toEqual({ Course: 'STEM', Level: 'advanced' });
+    expect(mergeImportedFrontmatter('# Physics\n\nA note.', metadata.properties)).toContain(
+      'Course: "STEM"',
     );
   });
 
@@ -42,17 +41,17 @@ describe('Notion import helpers', () => {
 });
 
 describe('importNotionExport', () => {
-  it('imports folders, tags, CSV properties, and all visible files without overwriting', async () => {
+  it('imports folders, CSV properties, and all visible files without overwriting', async () => {
     const source = await tempDirectory();
     const destination = await tempDirectory();
     await mkdir(path.join(source, 'Export', 'Notes'), { recursive: true });
     await writeFile(
       path.join(source, 'Export', 'Notes', 'Physics.md'),
-      '# Physics\n\nTags: waves\n\n![diagram](diagram.png)\n',
+      '# Physics\n\nCourse: STEM\n\n![diagram](diagram.png)\n',
     );
     await writeFile(
       path.join(source, 'Export', 'Notes', 'Database.csv'),
-      'Name,Tags,Course\nPhysics,"mechanics, motion",STEM\n',
+      'Name,Course,Level\nPhysics,STEM,advanced\n',
     );
     await writeFile(path.join(source, 'Export', 'Notes', 'diagram.png'), 'asset');
     await writeFile(path.join(source, 'Export', 'Notes', 'unused.png'), 'unused');
@@ -68,8 +67,8 @@ describe('importNotionExport', () => {
     expect(result.preservedFiles).toEqual(['Notes/Database.csv', 'Notes/diagram.png', 'Notes/unused.png']);
     expect(result.copiedAssets).toEqual(['Notes/diagram.png', 'Notes/unused.png']);
     expect(result.skippedFiles).toEqual([]);
-    expect(physics).toContain('tags: ["waves", "mechanics", "motion"]');
     expect(physics).toContain('Course: "STEM"');
+    expect(physics).toContain('Level: "advanced"');
     expect(existsSync(path.join(destination, 'Notes', 'diagram.png'))).toBe(true);
     expect(existsSync(path.join(destination, 'Notes', 'unused.png'))).toBe(true);
     expect(existsSync(path.join(destination, 'Notes', 'Database.csv'))).toBe(true);
@@ -81,7 +80,7 @@ describe('importNotionExport', () => {
     const zipPath = path.join(root, 'notion-export.zip');
     const destination = path.join(root, 'Concrete');
     await writeFile(zipPath, zipSync({
-      'Notion Export/Projects/Launch.md': strToU8('# Launch\n\n#planning'),
+      'Notion Export/Projects/Launch.md': strToU8('# Launch\n\nPlan next steps.'),
     }));
 
     const result = await importNotionExport(zipPath, destination);

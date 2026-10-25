@@ -88,7 +88,7 @@ function excerpt(text: string, limit: number): string {
 /**
  * Fit the selected pages into `budgetChars`. When the text is too long, keep
  * pages evenly spread across the selection (not just the first ones) so the
- * quiz covers the whole range. Each page is tagged `[p. N]`.
+ * quiz covers the whole range. Each page is marked `[p. N]`.
  */
 export function buildPdfContext(cleanedPages: string[], pageNumbers: number[], budgetChars: number): string {
   const chosen = pageNumbers
@@ -109,7 +109,7 @@ export function buildPdfContext(cleanedPages: string[], pageNumbers: number[], b
     fit === chosen.length
       ? chosen
       : Array.from({ length: fit }, (_, i) => chosen[Math.floor((i * chosen.length) / fit)]);
-  // Leave room for the "[p. N]" tags and separators.
+  // Leave room for the "[p. N]" markers and separators.
   const perPage = Math.floor(budgetChars / sampled.length) - 16;
   return render(sampled, Math.max(1, perPage));
 }

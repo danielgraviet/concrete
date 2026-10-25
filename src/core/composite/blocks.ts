@@ -225,27 +225,6 @@ export class WikilinkBlock extends BaseBlock {
   }
 }
 
-export class TagBlock extends BaseBlock {
-  readonly type = 'tag' as const;
-
-  constructor(id: string, public name: string) {
-    super(id);
-  }
-
-  toMarkdown(): string {
-    const n = this.name.replace(/^#/, '');
-    return `#${n}`;
-  }
-
-  accept(visitor: BlockVisitor): void {
-    visitor.visitTag(this);
-  }
-
-  clone(): TagBlock {
-    return new TagBlock(this.id, this.name);
-  }
-}
-
 export class QuizCardBlock extends BaseBlock {
   readonly type = 'quizCard' as const;
 
@@ -254,7 +233,6 @@ export class QuizCardBlock extends BaseBlock {
     public notePath: string,
     public front: string,
     public back: string,
-    public tags: string[] = [],
     public createdAt: number = Date.now(),
   ) {
     super(id);
@@ -266,15 +244,12 @@ export class QuizCardBlock extends BaseBlock {
       notePath: this.notePath,
       front: this.front,
       back: this.back,
-      tags: [...this.tags],
       createdAt: this.createdAt,
     };
   }
 
   toMarkdown(): string {
-    const tagLine =
-      this.tags.length > 0 ? `\ntags: ${this.tags.join(', ')}` : '';
-    return `\`\`\`quiz\nfront: ${this.front}\nback: ${this.back}${tagLine}\n\`\`\``;
+    return `\`\`\`quiz\nfront: ${this.front}\nback: ${this.back}\n\`\`\``;
   }
 
   accept(visitor: BlockVisitor): void {
@@ -287,7 +262,6 @@ export class QuizCardBlock extends BaseBlock {
       this.notePath,
       this.front,
       this.back,
-      [...this.tags],
       this.createdAt,
     );
   }

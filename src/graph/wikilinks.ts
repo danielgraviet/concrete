@@ -1,7 +1,25 @@
-import { parseWikilinks, type WikilinkRef } from '../patterns/visitor/BacklinksVisitor';
+/** A parsed `[[target]]` or `[[target|alias]]` occurrence. */
+export type WikilinkRef = {
+  target: string;
+  alias?: string;
+  raw: string;
+};
 
-export type { WikilinkRef };
-export { parseWikilinks };
+/** Matches `[[Note]]`, `[[Note|alias]]`, and optional heading fragments. */
+export const WIKILINK_RE = /\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]+))?\]\]/g;
+
+export function parseWikilinks(text: string): WikilinkRef[] {
+  const refs: WikilinkRef[] = [];
+  const re = new RegExp(WIKILINK_RE.source, 'g');
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text)) !== null) {
+    const target = match[1].trim();
+    const alias = match[2]?.trim();
+    if (!target) continue;
+    refs.push({ target, ...(alias ? { alias } : {}), raw: match[0] });
+  }
+  return refs;
+}
 
 /** Normalize a wikilink target for comparison (case-insensitive, no .md). */
 export function normalizeNoteKey(name: string): string {

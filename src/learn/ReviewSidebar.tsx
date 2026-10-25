@@ -23,18 +23,18 @@ type Props = {
   onClose: () => void;
 };
 
-/** Deck list: all cards, then every folder and tag that has cards. */
+/** Deck list: all cards, then every folder that has cards. */
 export function ReviewSidebar({ system, onStart, onClose }: Props) {
-  const { cards, index, store, settings, revision } = system;
+  const { cards, store, settings, revision } = system;
 
   const rows = useMemo(() => {
     const now = Date.now();
-    return [ALL_DECK, ...listDecks(cards, index)].map((deck) => {
-      const inDeck = cards.filter(deckFilter(deck, index));
+    return [ALL_DECK, ...listDecks(cards)].map((deck) => {
+      const inDeck = cards.filter(deckFilter(deck));
       return { deck, total: inDeck.length, counts: queueCounts(inDeck, store, settings, now) };
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- revision covers index/store changes
-  }, [cards, index, store, settings, revision]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- revision covers card/store changes
+  }, [cards, store, settings, revision]);
 
   const stats = useMemo(() => {
     const now = Date.now();

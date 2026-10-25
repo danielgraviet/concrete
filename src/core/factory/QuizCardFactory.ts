@@ -13,16 +13,11 @@ export class QuizCardFactory {
       throw new Error('Quiz cards require a notePath');
     }
 
-    const tags = (selection.tags ?? [])
-      .map((t) => t.replace(/^#/, '').trim())
-      .filter(Boolean);
-
     return new QuizCardBlock(
       createId('qc'),
       selection.notePath,
       front,
       back,
-      tags,
       Date.now(),
     );
   }

@@ -1,4 +1,3 @@
-import { extractTags } from '../meta/tags';
 import { isQuizPath } from '../quiz/paths';
 import { isHiddenVaultFile } from '../vault/fileTree';
 import { cardsFromNote, cardsFromQuiz } from './buildCards';
@@ -6,7 +5,6 @@ import type { ReviewCard } from './types';
 
 export type NoteCards = {
   cards: ReviewCard[];
-  tags: string[];
   /** Quiz source text, kept so quiz attempts can be mapped back to cards. */
   quizMarkdown?: string;
 };
@@ -44,7 +42,7 @@ export class CardIndex {
     this.ingest(path, content);
     const after = this.notes.get(path);
     const key = (entry?: NoteCards) =>
-      entry ? `${entry.tags.join(',')}|${entry.cards.map((c) => `${c.id}@${c.source.line}`).join(',')}` : '';
+      entry ? entry.cards.map((c) => `${c.id}@${c.source.line}`).join(',') : '';
     if (key(before) === key(after) && before?.quizMarkdown === after?.quizMarkdown) return false;
     this.emit();
     return true;
@@ -89,10 +87,6 @@ export class CardIndex {
     return out;
   }
 
-  tagsFor(path: string): string[] {
-    return this.notes.get(path)?.tags ?? [];
-  }
-
   private ingest(path: string, content: string): void {
     if (isHiddenVaultFile(path) || !/\.md$/i.test(path)) {
       this.notes.delete(path);
@@ -106,7 +100,6 @@ export class CardIndex {
     }
     this.notes.set(path, {
       cards,
-      tags: extractTags(content),
       ...(quiz ? { quizMarkdown: content } : {}),
     });
   }
