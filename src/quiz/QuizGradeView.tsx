@@ -116,7 +116,11 @@ export function QuizGradeView({ report, quiz, responses, sessionSeed, client, on
               <div className="quiz-flashcard-action">
                 <span>Add to flashcards?</span>
                 {addedQuestionIds.has(item.questionId) || isQuestionInFlashcards?.(item.questionId) ? (
-                  <span className="quiz-muted" role="status">Added to flashcards</span>
+                  <span className="quiz-flashcard-added" role="status" aria-label="Added to flashcards" title="Added to flashcards">
+                    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                      <path d="m4.5 10.5 3.5 3.5 7.5-8" />
+                    </svg>
+                  </span>
                 ) : (
                   <button
                     type="button"

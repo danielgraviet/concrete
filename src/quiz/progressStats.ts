@@ -70,11 +70,11 @@ function skillOf(type?: string, kind?: string): { key: string; label: string } |
 }
 
 function dayKey(date: Date): string {
-  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 /** Everything the progress visuals need, for an already-scoped list of attempts. */
-export function summarizeAttempts(attempts: QuizAttempt[], now = new Date()): ProgressSummary {
+export function summarizeAttempts(attempts: QuizAttempt[], now = new Date(), activeDays: string[] = []): ProgressSummary {
   const ordered = [...attempts].sort((a, b) => a.completedAt - b.completedAt);
   const percents = ordered.map((a) => a.percent);
   const latest = percents.length ? percents[percents.length - 1] : 0;
@@ -115,6 +115,9 @@ export function summarizeAttempts(attempts: QuizAttempt[], now = new Date()): Pr
     const key = dayKey(new Date(attempt.completedAt));
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
+  // Daily app use is tracked separately from quiz completion. A day with both
+  // still counts as one active day, while quiz volume remains visible in levels.
+  for (const key of activeDays) counts.set(key, Math.max(1, counts.get(key) ?? 0));
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const start = new Date(today);
   start.setDate(today.getDate() - today.getDay() - (WEEKS - 1) * 7);
@@ -130,14 +133,8 @@ export function summarizeAttempts(attempts: QuizAttempt[], now = new Date()): Pr
     activity.push(column);
   }
 
-  // A streak survives until the end of the day after your last session.
-  let streak = 0;
-  const cursor = new Date(today);
-  if (!counts.has(dayKey(cursor))) cursor.setDate(cursor.getDate() - 1);
-  while (counts.has(dayKey(cursor))) {
-    streak += 1;
-    cursor.setDate(cursor.getDate() - 1);
-  }
+  // Lenient streak: missed days do not reset it; every recorded active day adds one.
+  const streak = [...counts.keys()].filter((key) => key <= dayKey(today)).length;
 
   return { kpis, trend, skills, activity, streak };
 }

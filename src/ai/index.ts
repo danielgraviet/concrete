@@ -50,5 +50,3 @@ export {
   truncateNoteContext,
   buildTeacherCompletePrompt,
 } from './systemPrompt';
-export { setSlashAiHandler, handoffSlashToAi } from './slashHandoff';
-export type { SlashAiHandler } from './slashHandoff';

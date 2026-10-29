@@ -19,6 +19,7 @@ export {
 } from './slash';
 export type { SlashCommand, SlashCommandId } from './slash';
 export { quoteExitPlugin, QuoteExitComposer } from './quote';
+export { selectionMenuPlugin, SelectionFormatMenu } from './selectionMenu';
 export { inlineCodeExitPlugin, InlineCodeExitComposer } from './inlineCode';
 export {
   mathPlugin,

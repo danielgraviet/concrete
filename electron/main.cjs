@@ -971,7 +971,16 @@ ipcMain.handle('vault:readImageDataUrl', async (_event, root, notePath, src) => 
   }
   const relative = path.posix.normalize(noteDir && noteDir !== '.' ? `${noteDir}/${decoded}` : decoded);
   const { resolved } = resolveWithinRoot(root, relative);
-  const bytes = await fs.readFile(resolved);
+  let bytes;
+  try {
+    bytes = await fs.readFile(resolved);
+  } catch (error) {
+    // Stale Markdown image references are normal (for example, after an
+    // attachment is removed). Return the same empty result as other
+    // unsupported/unavailable images instead of rejecting the IPC call.
+    if (error?.code === 'ENOENT') return '';
+    throw error;
+  }
   if (bytes.length > 8 * 1024 * 1024) return '';
   const mime = IMAGE_MIME[path.extname(resolved).toLowerCase()] || 'application/octet-stream';
   return `data:${mime};base64,${bytes.toString('base64')}`;
@@ -1256,6 +1265,11 @@ ipcMain.handle('ai:agentRun', async (event, payload) => {
       ...(payload ?? {}),
       // Keep Tutor AI provider credentials separate from BYO agent auth.
       apiKey: providerId === 'codex' ? undefined : configuredApiKey(providerId),
+      // Model id/alias the agent's own CLI should use; undefined = CLI default.
+      agentModel:
+        typeof payload?.agentModel === 'string' && payload.agentModel.trim()
+          ? payload.agentModel.trim()
+          : undefined,
       concreteMcp: buildConcreteMcpConfig(),
       excalidrawMcp,
     },

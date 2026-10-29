@@ -202,6 +202,7 @@ function toolEndProgress(meta, resultBlock, vaultRoot, changedPaths) {
  *   notePath?: string | null;
  *   prompt: string;
  *   apiKey?: string;
+ *   agentModel?: string;
  *   concreteMcp?: {
  *     command: string;
  *     args: string[];
@@ -219,6 +220,10 @@ export async function runAgentTurn(input, onProgress, onEvent) {
   const notePath =
     typeof input.notePath === 'string' && input.notePath.trim()
       ? input.notePath.trim()
+      : null;
+  const agentModel =
+    typeof input.agentModel === 'string' && input.agentModel.trim()
+      ? input.agentModel.trim()
       : null;
   const concreteMcp =
     input.concreteMcp &&
@@ -309,6 +314,7 @@ export async function runAgentTurn(input, onProgress, onEvent) {
         allowDangerouslySkipPermissions: true,
         mcpServers,
         abortController,
+        ...(agentModel ? { model: agentModel } : {}),
       },
     });
 

@@ -628,6 +628,19 @@ export function SettingsPanel({
             {agentStatus}
           </Text>
         ) : null}
+        {settings.agentProviderId !== 'off' ? (
+          <>
+            <TextField.Root
+              placeholder="Default (your CLI's own model)"
+              value={settings.agentModelId}
+              onChange={(event) => store.setAgentModelId(event.target.value)}
+            />
+            <Text size="1" color="gray">
+              Model id or alias to request from your {settings.agentProviderId === 'claude' ? 'Claude Code' : 'Codex'} CLI
+              {' '}(e.g. a custom profile like "terra"). Leave blank to use whatever your CLI defaults to.
+            </Text>
+          </>
+        ) : null}
         <Flex align="center" gap="2">
           <Checkbox
             checked={settings.excalidrawMcpEnabled}

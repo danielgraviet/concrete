@@ -36,6 +36,8 @@ type Props = {
   /** Vault-wide sessions; the active one follows the user across notes. */
   sessions: ChatSessionStore;
   agentProviderId: AgentProviderId;
+  /** Model id/alias to request from the BYO agent's own CLI; '' = CLI default. */
+  agentModelId?: string;
   /** False when the open file is not an editable Markdown note. */
   canInsert: boolean;
   onInsert: (markdown: string, target: ChatInsertTarget) => void;
@@ -90,6 +92,7 @@ export function StudyChatPane({
   vaultRoot,
   sessions,
   agentProviderId,
+  agentModelId,
   canInsert,
   onInsert,
   onClose,
@@ -293,6 +296,8 @@ export function StudyChatPane({
           notePath: path || null,
           prompt,
           agentProviderId: agentProviderId === 'claude' ? 'claude' : 'codex',
+          // Model the BYO agent's own CLI should use; '' lets the CLI pick its default.
+          ...(agentModelId ? { agentModel: agentModelId } : {}),
           excalidrawMcpEnabled: useExcalidrawMcp,
           // The agent's generate_quiz tool writes quizzes with the tutor's model.
           ...(tutor instanceof ChatModelProvider ? { aiBackend: tutor.id, aiModel: tutor.model } : {}),
@@ -320,6 +325,7 @@ export function StudyChatPane({
       agentEnabled,
       agentLabel,
       agentProviderId,
+      agentModelId,
       busy,
       client,
       notePath,

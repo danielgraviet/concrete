@@ -26,6 +26,7 @@ async function inlineLocalImages(job: ExportJob): Promise<string> {
     try {
       const dataUrl = await readImage(job.root, job.notePath, src);
       if (dataUrl) markdown = markdown.replace(match[0], `![${match[1]}](${dataUrl})`);
+      else markdown = markdown.replace(match[0], match[1] || '');
     } catch {
       markdown = markdown.replace(match[0], match[1] || '');
     }

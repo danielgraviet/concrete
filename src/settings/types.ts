@@ -61,6 +61,11 @@ export type AppSettings = {
   claudeModelId: string;
   /** BYO coding agent: off | codex | claude */
   agentProviderId: AgentProviderId;
+  /**
+   * Model id/alias to request from the BYO agent's own CLI (e.g. a custom
+   * Codex profile name). Empty string = let the CLI use its own default.
+   */
+  agentModelId: string;
   /** Attach the official Excalidraw MCP server to agent runs. */
   excalidrawMcpEnabled: boolean;
   /** Where code runs: a registered sandbox runner id ('docker', 'daytona', 'off', …). */
@@ -97,6 +102,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   openRouterModelId: 'deepseek/deepseek-v4-flash-0731',
   claudeModelId: 'sonnet',
   agentProviderId: 'off',
+  agentModelId: '',
   excalidrawMcpEnabled: false,
   sandboxProviderId: 'docker',
   quiz: { ...DEFAULT_QUIZ_SETTINGS },

@@ -41,6 +41,8 @@ function readStorage(): AppSettings {
       openRouterModelId: resolveOpenRouterModelId(parsed.openRouterModelId),
       claudeModelId: resolveClaudeModelId(parsed.claudeModelId),
       agentProviderId: resolveAgentProviderId(parsed.agentProviderId),
+      agentModelId:
+        typeof parsed.agentModelId === 'string' ? parsed.agentModelId.trim() : DEFAULT_SETTINGS.agentModelId,
       excalidrawMcpEnabled: typeof parsed.excalidrawMcpEnabled === 'boolean'
         ? parsed.excalidrawMcpEnabled
         : DEFAULT_SETTINGS.excalidrawMcpEnabled,
@@ -140,6 +142,13 @@ export class SettingsStore {
       ...this.settings,
       agentProviderId: resolveAgentProviderId(agentProviderId),
     };
+    this.persist();
+    return this.get();
+  }
+
+  /** Free-text model id/alias — the agent CLI owns the list, not this app. */
+  setAgentModelId(agentModelId: string): AppSettings {
+    this.settings = { ...this.settings, agentModelId: agentModelId.trim() };
     this.persist();
     return this.get();
   }
