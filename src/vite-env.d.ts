@@ -277,6 +277,8 @@ interface AiAgentRunRequest {
   notePath?: string | null;
   prompt: string;
   agentProviderId?: 'codex' | 'claude';
+  /** Model id/alias the agent's own CLI should use; omitted = CLI default. */
+  agentModel?: string;
   /** Tutor model the agent's generate_quiz tool should use. */
   aiBackend?: AiChatBackend;
   aiModel?: string;

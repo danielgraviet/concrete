@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { Button, Flex, IconButton, Text } from '@radix-ui/themes';
@@ -94,7 +95,6 @@ import {
   LocalEchoProvider,
   MockAiProvider,
   ChatModelProvider,
-  setSlashAiHandler,
   truncateNoteContext,
 } from './ai';
 import {
@@ -109,6 +109,7 @@ import {
 } from './quiz';
 import { notePathKey, QuizFromNotePrompt, quizSourceFromMarkdown } from './quiz/QuizFromNotePrompt';
 import { QuizHistoryStore } from './quiz';
+import { DailyActivityStore } from './quiz/dailyActivity';
 import { buildPdfContext, cleanPdfPages, parsePageRange } from './quiz/pdfContext';
 import { AUTO_QUIZ_ANALYSIS_SYSTEM, parseAutoQuizCounts, type AutoQuizAnalysis, type AutoQuizCounts, type ExistingSourceQuiz } from './quiz/autoComposition';
 import { settingsStore } from './settings';
@@ -173,6 +174,22 @@ function loadStudyChatLayout(): { open: boolean; width: number } {
     };
   } catch {
     return { open: false, width: STUDY_CHAT_DEFAULT_WIDTH };
+  }
+}
+
+const SIDEBAR_WIDTH_KEY = 'mv:sidebar-width';
+const SIDEBAR_MIN_WIDTH = 200;
+const SIDEBAR_DEFAULT_WIDTH = 248;
+const SIDEBAR_MAX_WIDTH = 480;
+/** Keep at least this much room for the editor beside the sidebar. */
+const SIDEBAR_EDITOR_MIN = 360;
+
+function loadSidebarWidth(): number {
+  try {
+    const raw = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+    return Number.isFinite(raw) && raw > 0 ? raw : SIDEBAR_DEFAULT_WIDTH;
+  } catch {
+    return SIDEBAR_DEFAULT_WIDTH;
   }
 }
 const NEW_QUIZZES_KEY = 'mv:new-quizzes';
@@ -316,6 +333,8 @@ export default function App() {
   const [chatFocusToken, setChatFocusToken] = useState(0);
   const editorRef = useRef<WysiwygEditorHandle>(null);
   const editorSplitRef = useRef<HTMLDivElement>(null);
+  const [sidebarWidth, setSidebarWidth] = useState(() => loadSidebarWidth());
+  const appShellRef = useRef<HTMLDivElement>(null);
   const [reviewRun, setReviewRun] = useState<{ id: number; session: ReviewSession; deck: Deck; paused: boolean } | null>(null);
   const [createCardsOpen, setCreateCardsOpen] = useState(false);
   const [layout, setLayout] = useState<LayoutState>(() => loadLayout());
@@ -346,6 +365,7 @@ export default function App() {
   const [agentProviderId, setAgentProviderId] = useState<AgentProviderId>(
     () => settingsStore.get().agentProviderId,
   );
+  const [agentModelId, setAgentModelId] = useState(() => settingsStore.get().agentModelId);
   const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
   const [editorRevision, setEditorRevision] = useState(0);
 
@@ -391,6 +411,39 @@ export default function App() {
       document.body.classList.remove('study-chat-resizing');
     };
     document.body.classList.add('study-chat-resizing');
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
+    } catch {
+      // Storage unavailable — width resets next launch.
+    }
+  }, [sidebarWidth]);
+
+  /** Drag the divider between the file-tree sidebar and the editor. */
+  const startSidebarResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const shell = appShellRef.current;
+    if (!shell) return;
+    event.preventDefault();
+    const shellLeft = shell.getBoundingClientRect().left;
+    const railWidth = 46;
+    const onMove = (move: PointerEvent) => {
+      const max = Math.max(
+        SIDEBAR_MIN_WIDTH,
+        Math.min(SIDEBAR_MAX_WIDTH, shell.clientWidth - railWidth - SIDEBAR_EDITOR_MIN),
+      );
+      const next = move.clientX - shellLeft - railWidth;
+      setSidebarWidth(Math.round(Math.min(max, Math.max(SIDEBAR_MIN_WIDTH, next))));
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      document.body.classList.remove('sidebar-resizing');
+    };
+    document.body.classList.add('sidebar-resizing');
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
   };
@@ -590,6 +643,32 @@ export default function App() {
   }, [files, root, quizSourceScan]);
 
   const quizHistory = useMemo(() => new QuizHistoryStore(root ?? ''), [root]);
+  const dailyActivity = useMemo(() => new DailyActivityStore(root ?? ''), [root]);
+  useEffect(() => {
+    const recordActivity = () => {
+      if (document.visibilityState === 'visible') dailyActivity.recordToday();
+    };
+    // Opening the app counts as use; further interactions catch days when the
+    // app stays open across midnight. The store deduplicates each local day.
+    recordActivity();
+    void window.ai?.telemetry?.().then((spans) => {
+      const dates = spans
+        .filter((span) => Number.isFinite(span.startedAt))
+        .map((span) => {
+          const date = new Date(span.startedAt);
+          return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        });
+      dailyActivity.mergeDays(dates);
+    }).catch(() => {});
+    document.addEventListener('pointerdown', recordActivity, { passive: true });
+    document.addEventListener('keydown', recordActivity);
+    document.addEventListener('visibilitychange', recordActivity);
+    return () => {
+      document.removeEventListener('pointerdown', recordActivity);
+      document.removeEventListener('keydown', recordActivity);
+      document.removeEventListener('visibilitychange', recordActivity);
+    };
+  }, [dailyActivity]);
   const rubricCalibrationSamples = getRecentOpenAnswerSamples(quizHistory.getAll(), 10);
   const review = useReviewSystem(root);
   const reviewIndex = review.index;
@@ -615,9 +694,11 @@ export default function App() {
   useEffect(() => {
     const settings = settingsStore.hydrate();
     setAgentProviderId(settings.agentProviderId);
+    setAgentModelId(settings.agentModelId);
     aiClient.setProvider(resolveAiProvider(settings));
     const unsub = settingsStore.subscribe((next) => {
       setAgentProviderId(next.agentProviderId);
+      setAgentModelId(next.agentModelId);
       aiClient.setProvider(resolveAiProvider(next));
     });
 
@@ -661,11 +742,6 @@ export default function App() {
       // Storage unavailable — skip remembering.
     }
   }, [selected]);
-
-  useEffect(() => {
-    setSlashAiHandler((query) => openAiChat(query));
-    return () => setSlashAiHandler(null);
-  }, []);
 
   // First launch always creates and opens Documents/Concrete before the required tour.
   // Returning users restore their existing vault as usual.
@@ -1795,7 +1871,11 @@ export default function App() {
     .join(' ');
 
   return (
-    <div className={shellClass}>
+    <div
+      className={shellClass}
+      ref={appShellRef}
+      style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties}
+    >
       <aside className="rail" aria-label="Primary">
         <IconButton
           type="button"
@@ -1871,6 +1951,16 @@ export default function App() {
       </aside>
 
       <aside className="sidebar" aria-hidden={!layout.sidebarOpen || layout.focusMode}>
+        {layout.sidebarOpen && !layout.focusMode ? (
+          <div
+            className="sidebar-resizer"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
+            onPointerDown={startSidebarResize}
+            onDoubleClick={() => setSidebarWidth(SIDEBAR_DEFAULT_WIDTH)}
+          />
+        ) : null}
         {rail === 'review' ? (
           <ReviewSidebar
             system={review}
@@ -1886,26 +1976,24 @@ export default function App() {
                 if (event.target === event.currentTarget) setActiveFolder('');
               }}
             >
+              <button
+                type="button"
+                className="sidebar-search-bar"
+                aria-label="Search notes"
+                title={`Search notes (${shortcut('P')})`}
+                onClick={() => setOverlay('search')}
+              >
+                <MagnifyingGlassIcon width={14} height={14} />
+                <span className="sidebar-search-label">Search</span>
+                <span className="sidebar-search-kbd">{shortcut('P')}</span>
+              </button>
               <Flex
                 className="sidebar-heading-actions"
-                justify="center"
-                gap="2"
+                gap="1"
                 onClick={(event) => {
                   if (event.target === event.currentTarget) setActiveFolder('');
                 }}
               >
-                <IconButton
-                  type="button"
-                  size="2"
-                  variant="ghost"
-                  color="gray"
-                  highContrast
-                  aria-label="Search notes"
-                  title={`Search notes (${shortcut('P')})`}
-                  onClick={() => setOverlay('search')}
-                >
-                  <MagnifyingGlassIcon width={16} height={16} />
-                </IconButton>
                 <IconButton
                   type="button"
                   size="2"
@@ -2196,6 +2284,7 @@ export default function App() {
                   vaultRoot={root}
                   sessions={chatSessions}
                   agentProviderId={agentProviderId}
+                  agentModelId={agentModelId}
                   canInsert={Boolean(selected) && !isQuizPath(selected) && !isPdfFileName(selected) && !reviewing}
                   onInsert={insertFromChat}
                   onClose={() => setAiChatOpen(false)}
@@ -2257,7 +2346,7 @@ export default function App() {
               </div>
             ) : null}
             <div className="panel-section">
-              <ProgressPanel store={quizHistory} folder={parentDir(selected)} />
+              <ProgressPanel store={quizHistory} activityStore={dailyActivity} folder={parentDir(selected)} />
             </div>
           </>
         )}

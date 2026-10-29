@@ -41,6 +41,7 @@ import { excalidrawCodeBlockDescriptor } from '../integrations/excalidraw/Excali
 import { quoteExitPlugin } from './quote';
 import { inlineCodeExitPlugin } from './inlineCode';
 import { slashMenuPlugin } from './slash';
+import { selectionMenuPlugin } from './selectionMenu';
 import {
   mathPlugin,
   normalizeMathMarkdown,
@@ -190,6 +191,7 @@ export function createDefaultWysiwygPlugins(
     arrowPlugin(),
     emDashPlugin(),
     slashMenuPlugin(),
+    selectionMenuPlugin(),
     quoteExitPlugin(),
     inlineCodeExitPlugin(),
     cardShortcutsPlugin(),
@@ -216,6 +218,7 @@ export function createLiteWysiwygPlugins(): NonNullable<MDXEditorProps['plugins'
       },
     }),
     markdownShortcutPlugin(),
+    selectionMenuPlugin(),
     quoteExitPlugin(),
     inlineCodeExitPlugin(),
     emDashPlugin(),

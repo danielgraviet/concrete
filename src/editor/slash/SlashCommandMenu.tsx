@@ -31,13 +31,11 @@ import {
   insertTable$,
 } from '@mdxeditor/editor';
 import { $insertNodeToNearestRoot } from '@lexical/utils';
-import { handoffSlashToAi } from '../../ai/slashHandoff';
 import { insertCardSeparator, insertClozeBlank } from '../cards/cardShortcutsPlugin';
 import { computeDefaultImageWidth } from '../images';
 import {
   filterSlashCommands,
   isAmbiguousSlashPrefix,
-  isFreeformSlashQuery,
   resolveExactSlashCommand,
   type SlashCommand,
   type SlashCommandId,
@@ -63,8 +61,7 @@ function getSlashMatch(editor: LexicalEditor): SlashState | null {
     if (!$isTextNode(node)) return;
 
     const textUpToCursor = node.getTextContent().slice(0, anchor.offset);
-    // Allow spaces so `/how do I …` stays a slash query for AI handoff.
-    const match = /(?:^|\s)(\/([^\n]*))$/.exec(textUpToCursor);
+    const match = /(?:^|\s)(\/(\S*))$/.exec(textUpToCursor);
     if (!match) return;
 
     const replaceable = match[1];
@@ -261,23 +258,6 @@ export function SlashCommandMenu() {
     [editor, insertMarkdown, insertTable, insertThematicBreak, pickImageFile],
   );
 
-  const runAiHandoff = useCallback(
-    (query: string, replaceLength: number) => {
-      if (applyingRef.current) return;
-      const trimmed = query.trim();
-      if (!trimmed) return;
-      applyingRef.current = true;
-      setMenu(null);
-      removeSlashTrigger(editor, replaceLength);
-      queueMicrotask(() => {
-        handoffSlashToAi(trimmed);
-        editor.focus();
-        applyingRef.current = false;
-      });
-    },
-    [editor],
-  );
-
   // Track `/query` at the caret and auto-apply exact aliases.
   useEffect(() => {
     return editor.registerUpdateListener(() => {
@@ -289,12 +269,8 @@ export function SlashCommandMenu() {
         return;
       }
 
-      // Exact single-token aliases auto-apply. Freeform (spaces / no hits) stays open for AI.
-      if (
-        match.query.length > 0 &&
-        !/\s/.test(match.query) &&
-        !isFreeformSlashQuery(match.query)
-      ) {
+      // Exact single-token aliases auto-apply as soon as they're unambiguous.
+      if (match.query.length > 0) {
         const exact = resolveExactSlashCommand(match.query);
         if (exact && !isAmbiguousSlashPrefix(match.query)) {
           runCommand(exact, match.replaceLength);
@@ -329,9 +305,6 @@ export function SlashCommandMenu() {
   useEffect(() => {
     if (!menu) return;
 
-    const freeform = isFreeformSlashQuery(menu.query);
-    const showAskAi = freeform || (menu.query.trim().length > 0 && options.length === 0);
-
     const onDown = editor.registerCommand(
       KEY_ARROW_DOWN_COMMAND,
       (event) => {
@@ -355,11 +328,6 @@ export function SlashCommandMenu() {
     const onEnter = editor.registerCommand(
       KEY_ENTER_COMMAND,
       (event) => {
-        if (showAskAi || freeform) {
-          event?.preventDefault();
-          runAiHandoff(menu.query, menu.replaceLength);
-          return true;
-        }
         // Honor the highlighted row; an exact alias only wins when nothing is highlighted.
         const command = options[selectedIndex] ?? resolveExactSlashCommand(menu.query);
         if (!command) return false;
@@ -372,11 +340,6 @@ export function SlashCommandMenu() {
     const onTab = editor.registerCommand(
       KEY_TAB_COMMAND,
       (event) => {
-        if (showAskAi && options.length === 0) {
-          event?.preventDefault();
-          runAiHandoff(menu.query, menu.replaceLength);
-          return true;
-        }
         // Honor the highlighted row; an exact alias only wins when nothing is highlighted.
         const command = options[selectedIndex] ?? resolveExactSlashCommand(menu.query);
         if (!command) return false;
@@ -403,7 +366,7 @@ export function SlashCommandMenu() {
       onTab();
       onEsc();
     };
-  }, [editor, menu, options, runAiHandoff, runCommand, selectedIndex]);
+  }, [editor, menu, options, runCommand, selectedIndex]);
 
   const fileInput = (
     <input
@@ -421,10 +384,8 @@ export function SlashCommandMenu() {
     />
   );
 
-  const freeform = menu ? isFreeformSlashQuery(menu.query) : false;
-  const showAskAi = menu ? freeform || (menu.query.trim().length > 0 && options.length === 0) : false;
   // Bare `/` still shows the format list (options === all commands).
-  if (!menu || (options.length === 0 && !showAskAi && menu.query.trim().length > 0)) {
+  if (!menu || (options.length === 0 && menu.query.trim().length > 0)) {
     return fileInput;
   }
 
@@ -466,25 +427,6 @@ export function SlashCommandMenu() {
                   <small>{command.aliases[0] ? `/${command.aliases[0]}` : command.hint}</small>
                 </button>
               ))}
-            </>
-          ) : null}
-          {showAskAi ? (
-            <>
-              <div className="slash-heading">TUTOR</div>
-              <button
-                type="button"
-                role="option"
-                aria-selected
-                className="selected"
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  runAiHandoff(menu.query, menu.replaceLength);
-                }}
-              >
-                <span className="command-symbol">?</span>
-                <span>Ask tutor</span>
-                <small>Enter</small>
-              </button>
             </>
           ) : null}
         </div>,

@@ -194,17 +194,3 @@ export function filterSlashCommands(query: string): SlashCommand[] {
     return command.keywords.some((keyword) => keyword.includes(q));
   });
 }
-
-/**
- * True when `/query` should go to the tutor instead of a format command.
- * Exact aliases (h1, quote, …) stay formatting. Spaces or zero menu hits → AI.
- */
-export function isFreeformSlashQuery(query: string): boolean {
-  const q = query.trim();
-  if (!q) return false;
-  if (/\s/.test(q)) return true;
-  const exact = resolveExactSlashCommand(q);
-  if (exact && !isAmbiguousSlashPrefix(q)) return false;
-  if (exact && isAmbiguousSlashPrefix(q)) return false;
-  return filterSlashCommands(q).length === 0;
-}
