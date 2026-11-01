@@ -402,8 +402,8 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
-    minWidth: 960,
-    minHeight: 640,
+    minWidth: 640,
+    minHeight: 480,
     show: false,
     backgroundColor: '#191919',
     title: 'Concrete',
