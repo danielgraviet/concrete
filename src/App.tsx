@@ -471,6 +471,49 @@ export default function App() {
     );
   }, [layout.sidebarOpen, layout.rightOpen]);
 
+  // Below these widths the sidebar/right-panel grid tracks no longer fit beside the
+  // editor's 360px floor, so auto-collapse them (like a half-screen window snap) rather
+  // than letting the layout clip. Only panels we closed automatically get reopened when
+  // the window widens again — a manual collapse made by the user is left alone.
+  useEffect(() => {
+    const RIGHT_PANEL_COLLAPSE_WIDTH = 920;
+    const SIDEBAR_COLLAPSE_WIDTH = 700;
+    const autoCollapsed = { sidebar: false, right: false };
+
+    const handleResize = () => {
+      const width = window.innerWidth;
+      setLayout((current) => {
+        if (current.focusMode) return current;
+        let { sidebarOpen, rightOpen } = current;
+
+        if (width < RIGHT_PANEL_COLLAPSE_WIDTH && rightOpen) {
+          rightOpen = false;
+          autoCollapsed.right = true;
+        } else if (width >= RIGHT_PANEL_COLLAPSE_WIDTH && !rightOpen && autoCollapsed.right) {
+          rightOpen = true;
+          autoCollapsed.right = false;
+        }
+
+        if (width < SIDEBAR_COLLAPSE_WIDTH && sidebarOpen) {
+          sidebarOpen = false;
+          autoCollapsed.sidebar = true;
+        } else if (width >= SIDEBAR_COLLAPSE_WIDTH && !sidebarOpen && autoCollapsed.sidebar) {
+          sidebarOpen = true;
+          autoCollapsed.sidebar = false;
+        }
+
+        if (sidebarOpen === current.sidebarOpen && rightOpen === current.rightOpen) {
+          return current;
+        }
+        return { ...current, sidebarOpen, rightOpen };
+      });
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const meta = event.metaKey || event.ctrlKey;

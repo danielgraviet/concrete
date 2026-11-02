@@ -1282,6 +1282,9 @@ body{
   background:var(--accent-3,#2f2f2f);
   color:var(--mv-text,#ddd);
 }
+.sidebar-heading .sidebar-search-bar:hover{
+  color:var(--mv-text,#ddd);
+}
 .sidebar-search-label{
   flex:1;
   min-width:0;
