@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { addComposerChild$, realmPlugin } from '@mdxeditor/editor';
-import { $isListItemNode } from '@lexical/list';
+import { $isListItemNode, $isListNode, ListNode } from '@lexical/list';
 import { $findMatchingParent, $getNearestBlockElementAncestorOrThrow } from '@lexical/utils';
 import {
   $getSelection,
@@ -39,6 +39,24 @@ function TabIndentComposer(): null {
         },
         COMMAND_PRIORITY_HIGH,
       ),
+    [editor],
+  );
+
+  // Indenting under a numbered list copies the parent's type ('number'),
+  // so a nested item restarts at "1." instead of becoming a sub-bullet like
+  // most editors (Word, Docs, Notion) do. Force any list nested one level
+  // inside a numbered list to render as bullets.
+  useEffect(
+    () =>
+      editor.registerNodeTransform(ListNode, (node) => {
+        const parentItem = node.getParent();
+        if (!$isListItemNode(parentItem)) return;
+        const outerList = parentItem.getParent();
+        if (!$isListNode(outerList)) return;
+        if (outerList.getListType() === 'number' && node.getListType() !== 'bullet') {
+          node.setListType('bullet');
+        }
+      }),
     [editor],
   );
 
