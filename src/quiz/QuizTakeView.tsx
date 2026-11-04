@@ -50,10 +50,10 @@ export function QuizTakeView({ markdown, documentPath, client, onEdit, historySt
   const celebration = quizNumber ? (
     <QuizCelebration quizNumber={quizNumber} seed={sessionSeed} />
   ) : null;
-
   if (phase === 'graded' && report) {
     return (
       <>
+        {celebration}
         <QuizGradeView report={report} quiz={quiz} responses={responses} sessionSeed={sessionSeed} client={client} onRetake={retake} onEdit={onEdit}
           onAddQuestionToFlashcards={onAddQuestionToFlashcards} isQuestionInFlashcards={isQuestionInFlashcards}
           hasDeferredAiGrade={history.forQuiz(documentPath).some((item) => item.id === sessionSeed && item.pendingAiGrade)}
