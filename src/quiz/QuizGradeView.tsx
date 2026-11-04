@@ -27,7 +27,6 @@ type Props = {
   client: AiClient;
   onRetake: () => void;
   onEdit?: () => void;
-  onPreviewCelebration?: () => void;
   hasDeferredAiGrade?: boolean;
   canSubmitAiGrade?: boolean;
   onSubmitAiGrade?: () => Promise<void>;
@@ -35,7 +34,7 @@ type Props = {
   isQuestionInFlashcards?: (questionId: string) => boolean;
 };
 
-export function QuizGradeView({ report, quiz, responses, sessionSeed, client, onRetake, onEdit, onPreviewCelebration, hasDeferredAiGrade = false, canSubmitAiGrade = false, onSubmitAiGrade, onAddQuestionToFlashcards, isQuestionInFlashcards }: Props) {
+export function QuizGradeView({ report, quiz, responses, sessionSeed, client, onRetake, onEdit, hasDeferredAiGrade = false, canSubmitAiGrade = false, onSubmitAiGrade, onAddQuestionToFlashcards, isQuestionInFlashcards }: Props) {
   const [submittingAiGrade, setSubmittingAiGrade] = useState(false);
   const [aiGradeError, setAiGradeError] = useState<string | null>(null);
   const [addedQuestionIds, setAddedQuestionIds] = useState<Set<string>>(() => new Set());
@@ -179,11 +178,6 @@ export function QuizGradeView({ report, quiz, responses, sessionSeed, client, on
         </div>
       ) : null}
       <div className="quiz-actions">
-        {onPreviewCelebration ? (
-          <button type="button" className="quiz-btn" onClick={onPreviewCelebration}>
-            Preview celebration
-          </button>
-        ) : null}
         <button type="button" className="quiz-btn primary" onClick={onRetake}>
           Retake
         </button>
