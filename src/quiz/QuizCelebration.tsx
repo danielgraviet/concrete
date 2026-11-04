@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { hashSeed } from './shuffle';
 
@@ -31,6 +32,28 @@ type Props = {
 /** Attempts already celebrated, so leaving and reopening a quiz doesn't pop it again. */
 const celebrated = new Set<string>();
 
+function confettiNoise(index: number, salt: number): number {
+  const value = Math.sin((index + 1) * (salt * 12.9898 + 78.233)) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+const CONFETTI = Array.from({ length: 300 }, (_, index) => {
+  const noise = (salt: number) => confettiNoise(index, salt);
+  return {
+    style: {
+      '--confetti-x': `${noise(1) * 100}%`,
+      '--confetti-delay': `${(index / 300) * 3.8 + noise(2) * 0.04}s`,
+      '--confetti-duration': `${6.4 + noise(3) * 2.7}s`,
+      '--confetti-rotation': `${noise(4) * 360}deg`,
+      '--confetti-drift': `${(noise(5) - 0.5) * 28}vw`,
+      '--confetti-hue': `${Math.round(noise(6) * 360)}`,
+      '--confetti-size': `${7 + noise(7) * 9}px`,
+      '--confetti-height': `${4 + noise(8) * 6}px`,
+      '--confetti-radius': noise(9) > 0.72 ? '50%' : '2px',
+    } as CSSProperties,
+  };
+});
+
 /** A small "you did a hard thing" moment right after submitting, over the dimmed quiz. */
 export function QuizCelebration({ quizNumber, seed }: Props) {
   const [open, setOpen] = useState(() => !celebrated.has(seed));
@@ -62,6 +85,9 @@ export function QuizCelebration({ quizNumber, seed }: Props) {
         if (event.target === event.currentTarget) close();
       }}
     >
+      <div className="quiz-celebration-confetti" aria-hidden="true">
+        {CONFETTI.map((piece, index) => <span key={index} style={piece.style} />)}
+      </div>
       <section className="quiz-celebration" role="dialog" aria-modal="true" aria-labelledby="quiz-celebration-title">
         <div className="quiz-celebration-mark" aria-hidden>🎉</div>
         <h2 id="quiz-celebration-title">

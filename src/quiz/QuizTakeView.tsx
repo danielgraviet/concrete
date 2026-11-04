@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { AiClient } from '../ai/AiClient';
 import { QuizGradeView } from './QuizGradeView';
 import { QuizQuestionCard } from './QuizQuestionCard';
@@ -21,6 +22,7 @@ type Props = {
 };
 
 export function QuizTakeView({ markdown, documentPath, client, onEdit, historyStore, offlineMode = false, onAddQuestionToFlashcards, isQuestionInFlashcards }: Props) {
+  const [celebrationPreviewId, setCelebrationPreviewId] = useState(0);
   const {
     quiz,
     presented,
@@ -50,11 +52,21 @@ export function QuizTakeView({ markdown, documentPath, client, onEdit, historySt
   const celebration = quizNumber ? (
     <QuizCelebration quizNumber={quizNumber} seed={sessionSeed} />
   ) : null;
+  const celebrationPreview = celebrationPreviewId > 0 ? (
+    <QuizCelebration
+      key={celebrationPreviewId}
+      quizNumber={quizNumber ?? 70}
+      seed={`${sessionSeed}:celebration-preview:${celebrationPreviewId}`}
+    />
+  ) : null;
+  const previewCelebration = () => setCelebrationPreviewId((id) => id + 1);
 
   if (phase === 'graded' && report) {
     return (
       <>
-        <QuizGradeView report={report} quiz={quiz} responses={responses} sessionSeed={sessionSeed} client={client} onRetake={retake} onEdit={onEdit}
+        {celebration}
+        {celebrationPreview}
+        <QuizGradeView report={report} quiz={quiz} responses={responses} sessionSeed={sessionSeed} client={client} onRetake={retake} onEdit={onEdit} onPreviewCelebration={previewCelebration}
           onAddQuestionToFlashcards={onAddQuestionToFlashcards} isQuestionInFlashcards={isQuestionInFlashcards}
           hasDeferredAiGrade={history.forQuiz(documentPath).some((item) => item.id === sessionSeed && item.pendingAiGrade)}
           canSubmitAiGrade={canSubmitAiGrade} onSubmitAiGrade={() => submitDeferredForAi(sessionSeed)} />
@@ -69,6 +81,7 @@ export function QuizTakeView({ markdown, documentPath, client, onEdit, historySt
   return (
     <div className="quiz-take">
       {phase === 'grading' ? celebration : null}
+      {celebrationPreview}
       <header className="quiz-take-header">
         <div>
           <div className="quiz-kicker">Quiz</div>
@@ -76,6 +89,10 @@ export function QuizTakeView({ markdown, documentPath, client, onEdit, historySt
           {quiz.source ? <p className="quiz-muted">From {quiz.source}</p> : null}
         </div>
         <div className="quiz-actions">
+          {/* Temporary control for previewing the completion celebration without submitting. */}
+          <button type="button" className="quiz-btn" onClick={previewCelebration}>
+            Preview celebration
+          </button>
           <button type="button" className="quiz-btn" onClick={reshuffle} title="Reshuffle choices">
             Shuffle
           </button>

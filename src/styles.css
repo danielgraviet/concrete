@@ -2731,7 +2731,15 @@ div[class*="selectContainer"] [class*="selectItem"][data-state="checked"]{
   position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:24px;
   background:#0006;backdrop-filter:blur(2px);animation:quiz-fade .2s ease-out;
 }
+.quiz-celebration-confetti{position:fixed;inset:0;overflow:hidden;pointer-events:none;z-index:3}
+.quiz-celebration-confetti span{
+  position:absolute;left:var(--confetti-x);top:-18px;width:var(--confetti-size);height:var(--confetti-height);
+  border-radius:var(--confetti-radius);background:hsl(var(--confetti-hue) 95% 62%);opacity:0;
+  box-shadow:0 0 5px hsl(var(--confetti-hue) 95% 62% / .35);
+  animation:quiz-confetti-fall var(--confetti-duration) cubic-bezier(.2,.65,.45,1) var(--confetti-delay) both;
+}
 .quiz-celebration{
+  position:relative;z-index:2;
   width:min(460px,100%);text-align:center;padding:28px 28px 22px;border-radius:14px;
   background:var(--mv-surface,#1f1f1f);color:var(--mv-text,#ddd);
   border:1px solid color-mix(in srgb, var(--mv-accent,#888) 45%, var(--mv-border,#3a3a3a));
@@ -2747,7 +2755,16 @@ div[class*="selectContainer"] [class*="selectItem"][data-state="checked"]{
 .quiz-celebration-quote cite{display:block;margin-top:6px;font-style:normal;font-size:12px;color:var(--mv-muted,#888)}
 @keyframes quiz-fade{from{opacity:0}}
 @keyframes quiz-celebrate{from{opacity:0;transform:translateY(8px) scale(.96)}to{opacity:1;transform:none}}
-@media (prefers-reduced-motion: reduce){.quiz-celebration,.quiz-celebration-backdrop{animation:none}}
+@keyframes quiz-confetti-fall{
+  0%{opacity:0;transform:translate3d(0,-2vh,0) rotate(var(--confetti-rotation))}
+  10%{opacity:.95}
+  84%{opacity:.9}
+  100%{opacity:0;transform:translate3d(var(--confetti-drift),108vh,0) rotate(calc(var(--confetti-rotation) + 620deg))}
+}
+@media (prefers-reduced-motion: reduce){
+  .quiz-celebration,.quiz-celebration-backdrop,.quiz-celebration-confetti span{animation:none}
+  .quiz-celebration-confetti{display:none}
+}
 
 /* Study Chat — split pane beside the note. Theme tokens only, so light packs work. */
 .editor-split{flex:1 1 auto;min-height:0;min-width:0;display:flex}
