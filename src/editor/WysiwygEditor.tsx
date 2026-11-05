@@ -38,6 +38,7 @@ import {
 } from './images';
 import { RUN_CODE_EVENT, runnableCodeBlockDescriptor } from './RunnableCodeBlock';
 import { excalidrawCodeBlockDescriptor } from '../integrations/excalidraw/ExcalidrawCodeBlock';
+import { mermaidCodeBlockDescriptor } from '../integrations/mermaid/MermaidCodeBlock';
 import { quoteExitPlugin } from './quote';
 import { inlineCodeExitPlugin } from './inlineCode';
 import { slashMenuPlugin } from './slash';
@@ -149,7 +150,7 @@ export function createDefaultWysiwygPlugins(
     linkPlugin(),
     codeBlockPlugin({
       defaultCodeBlockLanguage: 'python',
-      codeBlockEditorDescriptors: [excalidrawCodeBlockDescriptor, runnableCodeBlockDescriptor],
+      codeBlockEditorDescriptors: [excalidrawCodeBlockDescriptor, mermaidCodeBlockDescriptor, runnableCodeBlockDescriptor],
     }),
     codeMirrorPlugin({
       // Stable `tok-*` classes so token colors follow the active theme via CSS.
@@ -180,6 +181,7 @@ export function createDefaultWysiwygPlugins(
       codeBlockLanguages: {
         python: 'Python',
         typescript: 'TypeScript',
+        mermaid: 'Mermaid',
         text: 'Raw Text',
         '': 'Raw Text',
       },
@@ -207,12 +209,16 @@ export function createLiteWysiwygPlugins(): NonNullable<MDXEditorProps['plugins'
     quotePlugin(),
     thematicBreakPlugin(),
     linkPlugin(),
-    codeBlockPlugin({ defaultCodeBlockLanguage: 'text' }),
+    codeBlockPlugin({
+      defaultCodeBlockLanguage: 'text',
+      codeBlockEditorDescriptors: [mermaidCodeBlockDescriptor],
+    }),
     codeMirrorPlugin({
       codeMirrorExtensions: [syntaxHighlighting(classHighlighter)],
       codeBlockLanguages: {
         python: 'Python',
         typescript: 'TypeScript',
+        mermaid: 'Mermaid',
         text: 'Raw Text',
         '': 'Raw Text',
       },
