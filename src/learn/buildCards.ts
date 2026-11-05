@@ -1,22 +1,25 @@
 import { parseQuizMarkdown } from '../quiz/parseQuizMarkdown';
 import type { QuizQuestion } from '../quiz/types';
 import { cardFingerprint, cardIdFor } from './cardId';
+import { draftsFromLinked, mcqDraft, type LinkedCard } from './LinkedCards';
 import { mightContainCards, parseNoteCards } from './parseNoteCards';
 import type { CardDraft as Draft, ReviewCard } from './types';
 
-function withIds(drafts: Draft[]): ReviewCard[] {
+/** Give drafts ids from their text; identical cards under one path stay distinct. */
+export function withIds(drafts: Draft[]): ReviewCard[] {
   const seen = new Map<string, number>();
   return drafts.map((draft) => {
     const base = cardIdFor(cardFingerprint(draft));
     const count = (seen.get(base) ?? 0) + 1;
     seen.set(base, count);
-    // Identical cards in one note stay distinct.
     return { ...draft, id: count === 1 ? base : `${base}~${count}` } as ReviewCard;
   });
 }
 
-/** Cards written with card syntax in a regular note. */
-export function cardsFromNote(path: string, markdown: string): ReviewCard[] {
+const idBase = (draft: Draft) => cardIdFor(cardFingerprint(draft));
+
+/** Card drafts written with card syntax in a regular note. */
+export function draftsFromNote(path: string, markdown: string): Draft[] {
   if (!mightContainCards(markdown)) return [];
   const drafts: Draft[] = [];
   for (const card of parseNoteCards(markdown)) {
@@ -30,34 +33,19 @@ export function cardsFromNote(path: string, markdown: string): ReviewCard[] {
       continue;
     }
     if (!card.options.some((option) => option.correct)) continue;
-    const draft: Draft = {
-      kind: 'mcq',
-      question: {
-        id: '',
-        type: 'mcq',
-        prompt: card.prompt,
-        options: card.options.map((option, index) => ({
-          id: `opt-${index + 1}`,
-          text: option.text,
-          correct: option.correct,
-        })),
-      },
-      source,
-    };
-    const idBase = cardIdFor(cardFingerprint(draft));
-    drafts.push({
-      ...draft,
-      question: {
-        ...draft.question,
-        id: `${idBase}-q`,
-        options: draft.question.options.map((option, index) => ({
-          ...option,
-          id: `${idBase}-opt-${index + 1}`,
-        })),
-      },
-    });
+    drafts.push(mcqDraft(card.prompt, card.options, source, idBase(mcqDraft(card.prompt, card.options, source, ''))));
   }
-  return withIds(drafts);
+  return drafts;
+}
+
+/** Cards written with card syntax in a regular note. */
+export function cardsFromNote(path: string, markdown: string): ReviewCard[] {
+  return withIds(draftsFromNote(path, markdown));
+}
+
+/** Review card drafts for cards kept in `.vault/cards.json`. */
+export function draftsFromLinkedCards(cards: LinkedCard[]): Draft[] {
+  return cards.flatMap((card) => draftsFromLinked(card, idBase));
 }
 
 export function quizQuestionDraft(question: QuizQuestion, path: string, line: number): Draft | null {
@@ -113,8 +101,8 @@ export function quizHeadingLines(markdown: string): number[] {
   return headingLines;
 }
 
-/** Every question of a quiz file as a card (whether it's in review is decided by the store). */
-export function cardsFromQuiz(path: string, markdown: string): ReviewCard[] {
+/** Card drafts for every question of a quiz file. */
+export function draftsFromQuiz(path: string, markdown: string): Draft[] {
   let questions: QuizQuestion[];
   try {
     questions = parseQuizMarkdown(markdown).questions;
@@ -122,11 +110,15 @@ export function cardsFromQuiz(path: string, markdown: string): ReviewCard[] {
     return [];
   }
   const headingLines = quizHeadingLines(markdown);
-  const drafts = questions.flatMap((question, index) => {
+  return questions.flatMap((question, index) => {
     const draft = quizQuestionDraft(question, path, headingLines[index] ?? 0);
     return draft ? [draft] : [];
   });
-  return withIds(drafts);
+}
+
+/** Every question of a quiz file as a card (whether it's in review is decided by the store). */
+export function cardsFromQuiz(path: string, markdown: string): ReviewCard[] {
+  return withIds(draftsFromQuiz(path, markdown));
 }
 
 /** Map a quiz question id (`q-3`) to its card, by position. */

@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { appendCardLines, formatMcqCardBlock } from './appendCardLines';
 import {
   buildBasicFillPrompt,
   buildClozeFillPrompt,
@@ -88,17 +87,5 @@ describe('cardBlocksFromModel', () => {
     expect(parseNoteCards(blocks[0])[0]).toMatchObject({ kind: 'basic' });
     expect(parseNoteCards(blocks[1])[0]).toMatchObject({ kind: 'cloze' });
     expect(parseNoteCards(blocks[2])[0]).toMatchObject({ kind: 'mcq' });
-  });
-});
-
-describe('appendCardLines', () => {
-  it('appends a ?mcq block under ## Flashcards', () => {
-    const block = formatMcqCardBlock('Pick one', [
-      { text: 'A', correct: false },
-      { text: 'B', correct: true },
-    ]);
-    const next = appendCardLines('# Note\n\nBody', [block]);
-    expect(next).toContain('## Flashcards');
-    expect(parseNoteCards(next)).toHaveLength(1);
   });
 });

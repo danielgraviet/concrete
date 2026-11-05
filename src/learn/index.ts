@@ -16,8 +16,11 @@ export { ReviewSidebar } from './ReviewSidebar';
 export { NoteCardsPanel } from './NoteCardsPanel';
 export { CreateCardsPanel } from './CreateCardsPanel';
 export { QuizReviewToggle } from './QuizReviewToggle';
-export { appendCardLines } from './appendCardLines';
-export { applyCardEdit, applyCardDelete, canEditCard, quizQuestionForCard } from './editCard';
+export { applyCardEdit, applyCardDelete, canEditCard, linkedCardEdit, pairCards, quizQuestionForCard } from './editCard';
+export { LinkedCardStore, writeVaultData } from './LinkedCardStore';
+export type { LinkedCard, LinkedCardInput } from './LinkedCards';
+export { pendingUid, planNoteMigration } from './migrateFlashcards';
+export type { NotePlan } from './migrateFlashcards';
 export type { CardEdit } from './editCard';
 export {
   cardBlocksFromModel,

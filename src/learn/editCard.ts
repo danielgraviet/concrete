@@ -3,6 +3,7 @@ import { serializeQuestion } from '../quiz/serializeQuizMarkdown';
 import type { McqQuestion, QuizQuestion } from '../quiz/types';
 import { cardsFromNote, cardsFromQuiz, quizHeadingLines, quizQuestionDraft } from './buildCards';
 import { cardFingerprint } from './cardId';
+import { cleanLinkedInput, linkedInputProblem, type LinkedCard, type LinkedCardInput } from './LinkedCards';
 import { parseNoteCardSpans, serializeNoteMcq, type NoteCardSpan, type ParsedMcqOption } from './parseNoteCards';
 import type { Migration } from './reconcile';
 import type { ReviewCard } from './types';
@@ -188,7 +189,7 @@ function basicLines(prefix: string, front: string, back: string, span: NoteCardS
 }
 
 /** Pair the cards a span held before and after an edit, so each keeps its history. */
-function pairCards(before: ReviewCard[], after: ReviewCard[]): Migration[] {
+export function pairCards(before: ReviewCard[], after: ReviewCard[]): Migration[] {
   const key = (card: ReviewCard, index: number) =>
     card.kind === 'cloze' ? `c:${card.group}` : card.kind === 'mcq' ? `m:${index}` : `b:${index}`;
   const afterByKey = new Map(after.map((card, index) => [key(card, index), card]));
@@ -289,4 +290,22 @@ export function applyCardEdit(markdown: string, card: ReviewCard, edit: CardEdit
     };
   }
   return { ok: true, markdown: next, card: edited, migrations };
+}
+
+/** The stored card an edit of a linked review card should save, or why it can't. */
+export function linkedCardEdit(card: ReviewCard, stored: LinkedCard, edit: CardEdit): { ok: true; input: LinkedCardInput } | { ok: false; error: string } {
+  if (edit.kind === 'quiz' || edit.kind !== stored.kind) return { ok: false, error: 'This card can’t be edited here.' };
+  let input: LinkedCardInput;
+  if (edit.kind === 'basic') {
+    // A reversed card shows the stored card the other way round.
+    const [front, back] = card.source.reverse ? [edit.back, edit.front] : [edit.front, edit.back];
+    input = { kind: 'basic', front, back, ...(stored.kind === 'basic' && stored.reverse ? { reverse: true } : {}) };
+  } else if (edit.kind === 'cloze') {
+    input = { kind: 'cloze', text: edit.text };
+  } else {
+    input = { kind: 'mcq', prompt: edit.prompt, options: edit.options };
+  }
+  input = cleanLinkedInput(input);
+  const problem = linkedInputProblem(input);
+  return problem ? { ok: false, error: problem } : { ok: true, input };
 }

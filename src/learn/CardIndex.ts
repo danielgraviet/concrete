@@ -1,7 +1,8 @@
 import { isQuizPath } from '../quiz/paths';
 import { isHiddenVaultFile } from '../vault/fileTree';
-import { cardsFromNote, cardsFromQuiz } from './buildCards';
-import type { ReviewCard } from './types';
+import { draftsFromLinkedCards, draftsFromNote, draftsFromQuiz, withIds } from './buildCards';
+import type { LinkedCard } from './LinkedCards';
+import type { CardDraft, ReviewCard } from './types';
 
 export type NoteCards = {
   cards: ReviewCard[];
@@ -9,12 +10,17 @@ export type NoteCards = {
   quizMarkdown?: string;
 };
 
+type Parsed = { drafts: CardDraft[]; quizMarkdown?: string };
+
 /**
- * Every card in the vault, grouped by note. Holds parsed cards only (not note
- * bodies), so it stays small no matter how large the vault is.
+ * Every card in the vault, grouped by note: cards written in the note plus
+ * cards linked to it from `.vault/cards.json`. Holds parsed cards only (not
+ * note bodies), so it stays small no matter how large the vault is.
  */
 export class CardIndex {
   private notes = new Map<string, NoteCards>();
+  private parsed = new Map<string, Parsed>();
+  private linked = new Map<string, CardDraft[]>();
   private listeners = new Set<() => void>();
   private cached: ReviewCard[] | null = null;
   /** True once every note in the vault has been read at least once. */
@@ -30,8 +36,9 @@ export class CardIndex {
 
   /** Replace the whole index (vault opened / file list changed). */
   replaceAll(entries: Array<readonly [string, string]>): void {
-    this.notes.clear();
+    this.parsed.clear();
     for (const [path, content] of entries) this.ingest(path, content);
+    this.rebuildAll();
     this.complete = true;
     this.emit();
   }
@@ -40,6 +47,7 @@ export class CardIndex {
   update(path: string, content: string): boolean {
     const before = this.notes.get(path);
     this.ingest(path, content);
+    this.rebuild(path);
     const after = this.notes.get(path);
     const key = (entry?: NoteCards) =>
       entry ? entry.cards.map((c) => `${c.id}@${c.source.line}`).join(',') : '';
@@ -49,16 +57,33 @@ export class CardIndex {
   }
 
   remove(path: string): void {
-    if (this.notes.delete(path)) this.emit();
+    if (!this.parsed.delete(path)) return;
+    this.rebuild(path);
+    this.emit();
+  }
+
+  /** Replace every linked card (`.vault/cards.json` changed). */
+  setLinked(cards: LinkedCard[]): void {
+    const paths = new Set(this.linked.keys());
+    this.linked.clear();
+    for (const draft of draftsFromLinkedCards(cards)) {
+      const list = this.linked.get(draft.source.path);
+      if (list) list.push(draft);
+      else this.linked.set(draft.source.path, [draft]);
+      paths.add(draft.source.path);
+    }
+    for (const path of paths) this.rebuild(path);
+    this.emit();
   }
 
   /** Drop notes no longer in the vault's file list. */
   retain(paths: string[]): void {
     const keep = new Set(paths);
     let changed = false;
-    for (const path of [...this.notes.keys()]) {
+    for (const path of [...this.parsed.keys()]) {
       if (!keep.has(path)) {
-        this.notes.delete(path);
+        this.parsed.delete(path);
+        this.rebuild(path);
         changed = true;
       }
     }
@@ -89,19 +114,32 @@ export class CardIndex {
 
   private ingest(path: string, content: string): void {
     if (isHiddenVaultFile(path) || !/\.md$/i.test(path)) {
-      this.notes.delete(path);
+      this.parsed.delete(path);
       return;
     }
     const quiz = isQuizPath(path);
-    const cards = quiz ? cardsFromQuiz(path, content) : cardsFromNote(path, content);
-    if (cards.length === 0) {
+    const drafts = quiz ? draftsFromQuiz(path, content) : draftsFromNote(path, content);
+    if (drafts.length === 0) {
+      this.parsed.delete(path);
+      return;
+    }
+    this.parsed.set(path, { drafts, ...(quiz ? { quizMarkdown: content } : {}) });
+  }
+
+  /** Note cards first, then linked ones, so linked cards never shift a note card's id. */
+  private rebuild(path: string): void {
+    const parsed = this.parsed.get(path);
+    const drafts = [...(parsed?.drafts ?? []), ...(this.linked.get(path) ?? [])];
+    if (drafts.length === 0) {
       this.notes.delete(path);
       return;
     }
-    this.notes.set(path, {
-      cards,
-      ...(quiz ? { quizMarkdown: content } : {}),
-    });
+    this.notes.set(path, { cards: withIds(drafts), ...(parsed?.quizMarkdown !== undefined ? { quizMarkdown: parsed.quizMarkdown } : {}) });
+  }
+
+  private rebuildAll(): void {
+    this.notes.clear();
+    for (const path of new Set([...this.parsed.keys(), ...this.linked.keys()])) this.rebuild(path);
   }
 
   private emit(): void {
