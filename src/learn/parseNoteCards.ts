@@ -55,9 +55,9 @@ const PREFIX_RE = /^\s*(?:>\s?)*(?:#{1,6}\s+|(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+
 const LIST_ITEM_RE = /^\s*(?:>\s?)*(?:[-*+]|\d+[.)])\s+/;
 const HEADING_RE = /^\s*#{1,6}\s+/;
 const CLOZE_RE = /\{\{((?:(?!\}\}).)+?)\}\}/g;
-const MULTILINE_SEP_RE = /^\s*(\?\??)\s*$/;
-const MCQ_SEP_RE = /^\s*\?mcq\s*$/i;
-const MCQ_OPTION_RE = /^\s*(?:[-*+]|\d+[.)])\s+\[([ xX])\]\s+(.*\S)\s*$/;
+export const MULTILINE_SEP_RE = /^\s*(\?\??)\s*$/;
+export const MCQ_SEP_RE = /^\s*\?mcq\s*$/i;
+export const MCQ_OPTION_RE = /^\s*(?:[-*+]|\d+[.)])\s+\[([ xX])\]\s+(.*\S)\s*$/;
 
 /** Same length as `text`, with inline code and inline math blanked out (for detection only). */
 export function maskInline(text: string): string {
@@ -101,9 +101,10 @@ export function parseClozeBlanks(text: string): ClozeBlank[] {
   return blanks;
 }
 
-type Line = { text: string; code: boolean };
+export type Line = { text: string; code: boolean };
 
-function classifyLines(lines: string[], from: number): Line[] {
+/** Mark lines inside code fences / `$$` math blocks (and before `from`) as code. */
+export function classifyLines(lines: string[], from: number): Line[] {
   const out: Line[] = [];
   let fence: string | null = null;
   let math = false;
@@ -140,7 +141,7 @@ function classifyLines(lines: string[], from: number): Line[] {
   return out;
 }
 
-function frontmatterEnd(lines: string[]): number {
+export function frontmatterEnd(lines: string[]): number {
   if (lines[0]?.trim() !== '---') return 0;
   for (let i = 1; i < lines.length; i += 1) {
     if (lines[i].trim() === '---') return i + 1;
@@ -155,7 +156,7 @@ function skipBlock(lines: Line[], start: number): number {
   return i;
 }
 
-function splitOn(line: string, masked: string, sep: string): [string, string] | null {
+export function splitOn(line: string, masked: string, sep: string): [string, string] | null {
   const re = new RegExp(`(^|\\s)${sep}(\\s|$)`);
   const match = re.exec(masked);
   if (!match) return null;

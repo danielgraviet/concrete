@@ -212,6 +212,11 @@ export class ReviewStateStore {
     this.changed();
   }
 
+  /** The full review state as JSON (for backups). */
+  snapshot(): string {
+    return JSON.stringify(this.data);
+  }
+
   /** Forget a card's history so it starts over as new. */
   reset(id: string): void {
     delete this.data.cards[id];

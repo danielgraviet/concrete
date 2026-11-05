@@ -71,10 +71,14 @@ import {
 } from './search/inFileFind';
 import { splitFrontmatter } from './meta/frontmatter';
 import {
-  appendCardLines,
   applyCardDelete,
   applyCardEdit,
   CreateCardsPanel,
+  linkedCardEdit,
+  pairCards,
+  pendingUid,
+  planNoteMigration,
+  writeVaultData,
   deckFilter,
   quizQuestionForCard,
   NoteCardsPanel,
@@ -88,6 +92,8 @@ import {
   quizCardForQuestion,
   type CardEdit,
   type Deck,
+  type LinkedCardInput,
+  type NotePlan,
   type ReviewCard,
 } from './learn';
 import {
@@ -876,6 +882,9 @@ export default function App() {
       const vaultRoot = rootRef.current;
       const markdown = contentRef.current;
       if (isPdfFileName(path)) return;
+      // The editor still holds another note (e.g. startup placeholder text while
+      // the selected note loads): saving now would overwrite the selected note.
+      if (editorPathRef.current !== path) return;
       if (vaultRoot && path) {
         await VaultService.write(vaultRoot, path, markdown);
       }
@@ -1472,8 +1481,32 @@ export default function App() {
     if (card.source.path !== selected) select(card.source.path);
   };
 
+  /** Cards with this path, with their vault-wide ids (as stored in review history). */
+  const vaultCardsAt = (path: string) => reviewIndex.all().filter((c) => c.source.path === path);
+
+  /** Edit a card kept in `.vault/cards.json`; history follows it to its new id. */
+  const editLinkedCard = async (card: ReviewCard, edit: CardEdit): Promise<string | null> => {
+    const uid = card.source.uid;
+    const stored = uid ? review.linked.get(uid) : undefined;
+    if (!uid || !stored) return 'That card no longer exists.';
+    const result = linkedCardEdit(card, stored, edit);
+    if (!result.ok) return result.error;
+    const before = vaultCardsAt(stored.path).filter((c) => c.source.uid === uid);
+    try {
+      await review.linked.update(uid, result.input);
+    } catch (error) {
+      return error instanceof Error ? error.message : 'Could not save the card.';
+    }
+    const cards = vaultCardsAt(stored.path);
+    const migrations = pairCards(before, cards.filter((c) => c.source.uid === uid));
+    review.store.rekey(migrations, cards);
+    reviewRun?.session.rekey(migrations, cards);
+    return null;
+  };
+
   /** Rewrite a card in its note from the review screen, keeping its review history. */
   const editCard = async (card: ReviewCard, edit: CardEdit): Promise<string | null> => {
+    if (card.source.origin === 'linked') return editLinkedCard(card, edit);
     const path = card.source.path;
     const isOpen = path === selected && editorPathRef.current === path;
     if (controller.isDirty) await controller.persistence.flush();
@@ -1506,6 +1539,14 @@ export default function App() {
   };
 
   const deleteCard = async (card: ReviewCard): Promise<string | null> => {
+    if (card.source.origin === 'linked') {
+      try {
+        if (card.source.uid) await review.linked.remove([card.source.uid]);
+        return null;
+      } catch (error) {
+        return error instanceof Error ? error.message : 'Could not delete the card.';
+      }
+    }
     const path = card.source.path;
     const isOpen = path === selected && editorPathRef.current === path;
     if (controller.isDirty) await controller.persistence.flush();
@@ -1557,25 +1598,121 @@ export default function App() {
     });
   };
 
-  const insertCardBlocks = async (blocks: string[]) => {
+  /** Save a card linked to the open note; the note's text is left alone. */
+  const addLinkedCard = async (input: LinkedCardInput) => {
     const path = selected;
-    if (!path || blocks.length === 0) return;
-    const next = appendCardLines(controller.content, blocks);
-    if (canUseDiskVault(root)) {
+    if (!path) return;
+    await review.linked.add(path, input);
+  };
+
+  /**
+   * One-time per vault: move app-written `## Flashcards` sections out of notes
+   * into `.vault/cards.json`, recovering answers the old note syntax cut short.
+   * Review history moves to each card's new id. Notes and review state are
+   * backed up to `.vault/cards-migration-backup.json` first, and a note is left
+   * alone if any card with history couldn't be matched.
+   */
+  const migrateFlashcardSections = async (vaultRoot: string) => {
+    const { index, store, linked } = review;
+    // Never save the editor from here: at startup it can still hold placeholder
+    // text that isn't the open note. Only files read from disk are rewritten.
+
+    const plans: Array<{ plan: NotePlan; beforeIds: string[] }> = [];
+    const originals: Record<string, string> = {};
+    for (const path of files) {
+      if (!/\.md$/i.test(path) || isHiddenVaultFile(path) || isQuizPath(path)) continue;
+      let markdown: string;
       try {
-        await VaultService.write(root, path, next);
+        markdown = await VaultService.read(vaultRoot, path);
+      } catch {
+        continue;
+      }
+      if (!/^\s{0,3}##\s+Flashcards\s*$/im.test(markdown)) continue;
+      // The open note has unsaved edits: try again next time instead of racing them.
+      if (path === selectedRef.current && controller.isDirty) return;
+      const plan = planNoteMigration(path, markdown, linked.all());
+      if (!plan) continue;
+      // Index exactly what's on disk so ids line up with the plan.
+      index.update(path, markdown);
+      const beforeIds = vaultCardsAt(path).map((card) => card.id);
+      const perNote = index.note(path)?.cards ?? [];
+      const lost = plan.unpaired.filter((card) => {
+        const at = perNote.findIndex((c) => c.id === card.id);
+        return at >= 0 && store.get(beforeIds[at])?.sched;
+      });
+      if (plan.problem || lost.length || perNote.length !== plan.before.length || perNote.some((c, i) => c.id !== plan.before[i].id)) {
+        console.warn(`[cards] left “${path}” as is:`, plan.problem ?? (lost.length ? 'cards with history had no match' : 'index out of date'));
+        continue;
+      }
+      originals[path] = markdown;
+      plans.push({ plan, beforeIds });
+    }
+
+    const now = Date.now();
+    if (plans.length === 0) {
+      await linked.markMigrated(now);
+      return;
+    }
+    await writeVaultData(
+      vaultRoot,
+      '.vault/cards-migration-backup.json',
+      JSON.stringify({ createdAt: now, notes: originals, srs: JSON.parse(store.snapshot()) }, null, 2),
+    );
+
+    // Cards first: if a note can't be rewritten, its cards are removed again.
+    const created = await linked.addMany(
+      plans.flatMap(({ plan }) => plan.inputs.map((input) => ({ path: plan.path, input }))),
+      now,
+    );
+    let offset = 0;
+    for (const { plan, beforeIds } of plans) {
+      const mine = created.slice(offset, offset + plan.inputs.length);
+      offset += plan.inputs.length;
+      try {
+        await VaultService.write(vaultRoot, plan.path, plan.markdown);
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Could not save the new cards.';
-        window.alert(message);
-        throw error instanceof Error ? error : new Error(message);
+        console.error(`[cards] could not rewrite “${plan.path}”; its cards stay in the note`, error);
+        await linked.remove(mine.map((card) => card.uid));
+        continue;
+      }
+      index.update(plan.path, plan.markdown);
+      const uidFor = new Map(mine.map((card, i) => [pendingUid(i), card.uid]));
+      const after = vaultCardsAt(plan.path);
+      const lined =
+        after.length === plan.after.length &&
+        after.every((card, i) => card.kind === plan.after[i].kind && (card.source.uid ?? '') === (uidFor.get(plan.after[i].source.uid ?? '') ?? plan.after[i].source.uid ?? ''));
+      if (!lined) {
+        console.warn(`[cards] “${plan.path}”: cards didn’t line up; history will be matched by text instead`);
+      } else {
+        const froms = new Set(plan.pairs.map(([b]) => beforeIds[b]));
+        const migrations = plan.pairs
+          .map(([b, a]) => ({ from: beforeIds[b], to: after[a].id }))
+          .filter(({ from, to }) => from === to || !store.get(to) || froms.has(to));
+        store.rekey(migrations, after);
+      }
+      setContents((prev) => ({ ...prev, [plan.path]: plan.markdown }));
+      if (plan.path === selectedRef.current && editorPathRef.current === plan.path && !controller.isDirty) {
+        controller.loadContent(plan.markdown);
+        controller.markSaved();
+        setEditorRevision((n) => n + 1);
       }
     }
-    setContents((prev) => ({ ...prev, [path]: next }));
-    controller.loadContent(next);
-    controller.markSaved();
-    setEditorRevision((n) => n + 1);
-    reviewIndex.update(path, next);
+    store.flush();
+    await linked.markMigrated(now);
   };
+
+  const cardMigrationRoot = useRef<string | null>(null);
+  useEffect(() => {
+    if (!root || !canUseDiskVault(root)) return;
+    const { index, store, linked } = review;
+    if (!index.complete || !store.isLoaded || !linked.isWritable || linked.migratedAt !== undefined) return;
+    if (cardMigrationRoot.current === root) return;
+    // Wait until the editor shows the selected note (not startup placeholder text).
+    if (selected && editorPathRef.current !== selected) return;
+    cardMigrationRoot.current = root;
+    void migrateFlashcardSections(root).catch((error) => console.error('[cards] moving Flashcards sections failed', error));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- revision covers index/store/linked loading
+  }, [root, review.revision, selected, editorRevision]);
 
   const openCreateCards = () => {
     if (!selected || isQuizPath(selected)) return;
@@ -1627,6 +1764,7 @@ export default function App() {
         try {
           const renamed = await vault.rename(path, target);
           renamePinnedPath(path, renamed, 'folder');
+          void review.linked.renamePath(path, renamed, 'folder').catch((error) => console.error('[cards] could not relink cards', error));
           setContents((prev) => {
             const copy: Record<string, string> = {};
             for (const [key, value] of Object.entries(prev)) {
@@ -1665,6 +1803,7 @@ export default function App() {
           .sort((a, b) => a.localeCompare(b)),
       );
       renamePinnedPath(path, target, 'folder');
+      void review.linked.renamePath(path, target, 'folder').catch((error) => console.error('[cards] could not relink cards', error));
       vault.setFiles((current) =>
         current
           .map((file) =>
@@ -1727,6 +1866,7 @@ export default function App() {
       try {
         const renamed = await vault.rename(path, target);
         renamePinnedPath(path, renamed, 'file');
+        void review.linked.renamePath(path, renamed, 'file').catch((error) => console.error('[cards] could not relink cards', error));
         setContents((prev) => {
           const copy = { ...prev };
           copy[renamed] = copy[path] ?? controller.content;
@@ -1748,6 +1888,7 @@ export default function App() {
       current.map((f) => (f === path ? target : f)).sort(),
     );
     renamePinnedPath(path, target, 'file');
+    void review.linked.renamePath(path, target, 'file').catch((error) => console.error('[cards] could not relink cards', error));
     setContents((prev) => {
       const copy = { ...prev };
       copy[target] = copy[path] ?? controller.content;
@@ -2373,7 +2514,7 @@ export default function App() {
             client={aiClient}
             path={selected}
             content={controller.content}
-            onInsert={insertCardBlocks}
+            onAdd={addLinkedCard}
             onClose={() => setCreateCardsOpen(false)}
           />
         ) : (

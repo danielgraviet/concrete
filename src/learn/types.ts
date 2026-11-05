@@ -9,9 +9,17 @@ export const RATINGS: readonly Rating[] = ['again', 'hard', 'good', 'easy'];
 /** Where a card was written: vault-relative note path and 0-based line. */
 export type CardSource = {
   path: string;
+  /** 0-based line in the note; always 0 for linked cards. */
   line: number;
-  /** 'note' = written with card syntax; 'quiz' = a question in a `Quiz *.md` file. */
-  origin: 'note' | 'quiz';
+  /**
+   * 'note' = written with card syntax; 'quiz' = a question in a `Quiz *.md` file;
+   * 'linked' = made in the app and kept in `.vault/cards.json`, linked to `path`.
+   */
+  origin: 'note' | 'quiz' | 'linked';
+  /** Linked cards only: the stored card this was built from. */
+  uid?: string;
+  /** Linked cards only: the generated reverse of a two-way card. */
+  reverse?: boolean;
 };
 
 export type BasicCard = {

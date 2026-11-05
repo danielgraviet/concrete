@@ -4,11 +4,6 @@ import { CheckIcon, Cross1Icon, LightningBoltIcon, PlusIcon, TrashIcon } from '@
 import type { AiClient } from '../ai/AiClient';
 import { noteTitle } from '../vault/fileTree';
 import {
-  formatBasicCardLine,
-  formatClozeCardLine,
-  formatMcqCardBlock,
-} from './appendCardLines';
-import {
   buildBasicFillPrompt,
   buildClozeFillPrompt,
   buildMcqFillPrompt,
@@ -17,6 +12,7 @@ import {
   parseFillReply,
   parseMcqOptionsReply,
 } from './cardGeneration';
+import { cleanLinkedInput, linkedInputProblem, type LinkedCardInput } from './LinkedCards';
 import type { ParsedMcqOption } from './parseNoteCards';
 
 type Mode = 'basic' | 'cloze' | 'mcq';
@@ -25,7 +21,8 @@ type Props = {
   client: AiClient;
   path: string;
   content: string;
-  onInsert: (blocks: string[]) => void | Promise<void>;
+  /** Save a card linked to `path` (kept out of the note itself). */
+  onAdd: (card: LinkedCardInput) => void | Promise<void>;
   onClose: () => void;
 };
 
@@ -42,7 +39,7 @@ function wait(ms: number) {
 }
 
 /** Half-panel composer: Generate fills the missing side / options / cloze via Cerebras. */
-export function CreateCardsPanel({ client, path, content, onInsert, onClose }: Props) {
+export function CreateCardsPanel({ client, path, content, onAdd, onClose }: Props) {
   const [mode, setMode] = useState<Mode>('basic');
   const [front, setFront] = useState('');
   const [back, setBack] = useState('');
@@ -90,47 +87,27 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
     setManualError('');
     setAiError('');
     setStatusOk('');
-    let block = '';
-    if (mode === 'basic') {
-      if (!front.trim() || !back.trim()) {
-        setManualError('Add both a front and a back.');
-        return;
-      }
-      block = formatBasicCardLine(front, back);
-    } else if (mode === 'cloze') {
-      if (!cloze.trim()) {
-        setManualError('Add cloze text with at least one {{blank}}.');
-        return;
-      }
-      if (!/\{\{[^}]+\}\}/.test(cloze)) {
-        setManualError('Wrap the hidden answer in {{…}}.');
-        return;
-      }
-      block = formatClozeCardLine(cloze);
-    } else {
-      const options = mcqOptions.map((option) => ({ text: option.text.trim(), correct: option.correct })).filter((option) => option.text);
-      if (!mcqPrompt.trim()) {
-        setManualError('Add a question.');
-        return;
-      }
-      if (options.length < 2) {
-        setManualError('Add at least two options.');
-        return;
-      }
-      if (!options.some((option) => option.correct)) {
-        setManualError('Mark at least one option as correct.');
-        return;
-      }
-      block = formatMcqCardBlock(mcqPrompt, options);
+    // Fields are saved as typed (blank lines, math, lists and all).
+    const card = cleanLinkedInput(
+      mode === 'basic'
+        ? { kind: 'basic', front, back }
+        : mode === 'cloze'
+          ? { kind: 'cloze', text: cloze }
+          : { kind: 'mcq', prompt: mcqPrompt, options: mcqOptions },
+    );
+    const problem = linkedInputProblem(card);
+    if (problem) {
+      setManualError(problem);
+      return;
     }
 
     setSaving(true);
     try {
       // Keep the spinner visible even when the write is instant.
-      await Promise.all([onInsert([block]), wait(450)]);
+      await Promise.all([onAdd(card), wait(450)]);
       clearFields();
       setAiStatus('idle');
-      showOk('Added to note');
+      showOk('Card added');
     } catch (err) {
       setManualError(err instanceof Error ? err.message : 'Could not add the card.');
     } finally {
@@ -248,7 +225,7 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
 
       <div className="srs-create-body">
         <Text size="1" color="gray" className="srs-create-sub">
-          Into “{noteTitle(path)}” · stays in this note
+          Linked to “{noteTitle(path)}” · the note itself isn’t changed
         </Text>
 
         <SegmentedControl.Root value={mode} onValueChange={(value) => resetManual(value as Mode)} size="1">
@@ -371,7 +348,7 @@ export function CreateCardsPanel({ client, path, content, onInsert, onClose }: P
               Generate
             </Button>
             <Button highContrast size="2" loading={saving} disabled={saving || aiStatus === 'running'} onClick={() => void addManual()}>
-              {saving ? 'Adding…' : 'Add to note'}
+              {saving ? 'Adding…' : 'Add card'}
             </Button>
           </div>
         </div>
