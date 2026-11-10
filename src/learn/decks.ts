@@ -24,7 +24,7 @@ export function deckFilter(deck: Deck): (card: ReviewCard) => boolean {
     case 'all':
       return () => true;
     case 'folder':
-      return (card) => card.source.path.startsWith(`${deck.folder}/`);
+      return (card) => card.source.folder === deck.folder || card.source.path.startsWith(`${deck.folder}/`);
     case 'note':
       return (card) => card.source.path === deck.path;
   }
@@ -34,6 +34,11 @@ export function deckFilter(deck: Deck): (card: ReviewCard) => boolean {
 export function listDecks(cards: ReviewCard[]): Deck[] {
   const folders = new Set<string>();
   for (const card of cards) {
+    if (card.source.folder) {
+      const parts = card.source.folder.split('/');
+      for (let depth = 1; depth <= parts.length; depth += 1) folders.add(parts.slice(0, depth).join('/'));
+      continue;
+    }
     const parts = card.source.path.split('/');
     for (let depth = 1; depth < parts.length; depth += 1) folders.add(parts.slice(0, depth).join('/'));
   }

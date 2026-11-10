@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, IconButton, SegmentedControl, Text, TextArea, TextField } from '@radix-ui/themes';
+import { Button, IconButton, SegmentedControl, Select, Text, TextArea, TextField } from '@radix-ui/themes';
 import { CheckIcon, Cross1Icon, LightningBoltIcon, PlusIcon, TrashIcon } from '@radix-ui/react-icons';
 import type { AiClient } from '../ai/AiClient';
 import { noteTitle } from '../vault/fileTree';
@@ -20,9 +20,11 @@ type Mode = 'basic' | 'cloze' | 'mcq';
 type Props = {
   client: AiClient;
   path: string;
+  folders?: string[];
+  selectedFolder?: string;
   content: string;
   /** Save a card linked to `path` (kept out of the note itself). */
-  onAdd: (card: LinkedCardInput) => void | Promise<void>;
+  onAdd: (card: LinkedCardInput, folder: string) => void | Promise<void>;
   onClose: () => void;
 };
 
@@ -39,8 +41,9 @@ function wait(ms: number) {
 }
 
 /** Half-panel composer: Generate fills the missing side / options / cloze via Cerebras. */
-export function CreateCardsPanel({ client, path, content, onAdd, onClose }: Props) {
+export function CreateCardsPanel({ client, path, content, folders = [], selectedFolder = '', onAdd, onClose }: Props) {
   const [mode, setMode] = useState<Mode>('basic');
+  const [folder, setFolder] = useState(selectedFolder);
   const [front, setFront] = useState('');
   const [back, setBack] = useState('');
   const [cloze, setCloze] = useState('');
@@ -104,7 +107,7 @@ export function CreateCardsPanel({ client, path, content, onAdd, onClose }: Prop
     setSaving(true);
     try {
       // Keep the spinner visible even when the write is instant.
-      await Promise.all([onAdd(card), wait(450)]);
+      await Promise.all([onAdd(card, folder), wait(450)]);
       clearFields();
       setAiStatus('idle');
       showOk('Card added');
@@ -224,8 +227,12 @@ export function CreateCardsPanel({ client, path, content, onAdd, onClose }: Prop
       </div>
 
       <div className="srs-create-body">
+        {folders.length ? <label className="srs-create-label"><span className="srs-create-caption">Folder</span><Select.Root value={folder} onValueChange={setFolder}>
+          <Select.Trigger aria-label="Card folder" placeholder="Choose a folder" />
+          <Select.Content>{folders.map((item) => <Select.Item key={item} value={item}>{item}</Select.Item>)}</Select.Content>
+        </Select.Root></label> : null}
         <Text size="1" color="gray" className="srs-create-sub">
-          Linked to “{noteTitle(path)}” · the note itself isn’t changed
+          {path ? `Use “${noteTitle(path)}” as context · saved to the selected folder` : 'Saved to the selected folder · no note required'}
         </Text>
 
         <SegmentedControl.Root value={mode} onValueChange={(value) => resetManual(value as Mode)} size="1">
@@ -347,7 +354,7 @@ export function CreateCardsPanel({ client, path, content, onAdd, onClose }: Prop
               <LightningBoltIcon />
               Generate
             </Button>
-            <Button highContrast size="2" loading={saving} disabled={saving || aiStatus === 'running'} onClick={() => void addManual()}>
+            <Button highContrast size="2" loading={saving} disabled={saving || aiStatus === 'running' || folders.length === 0 || !folder} onClick={() => void addManual()}>
               {saving ? 'Adding…' : 'Add card'}
             </Button>
           </div>
