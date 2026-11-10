@@ -108,6 +108,16 @@ export class CardIndex {
         out.push(id === card.id ? card : { ...card, id });
       }
     }
+    for (const drafts of this.linked.values()) {
+      // Standalone cards use an empty path and live outside the note index.
+      // Cards at non-empty paths have already been included above.
+      for (const card of withIds(drafts.filter((draft) => !draft.source.path))) {
+        let id = card.id;
+        for (let n = 2; seen.has(id); n += 1) id = `${card.id}@${n}`;
+        seen.add(id);
+        out.push(id === card.id ? card : { ...card, id });
+      }
+    }
     this.cached = out;
     return out;
   }
@@ -128,6 +138,7 @@ export class CardIndex {
 
   /** Note cards first, then linked ones, so linked cards never shift a note card's id. */
   private rebuild(path: string): void {
+    if (!path) return;
     const parsed = this.parsed.get(path);
     const drafts = [...(parsed?.drafts ?? []), ...(this.linked.get(path) ?? [])];
     if (drafts.length === 0) {

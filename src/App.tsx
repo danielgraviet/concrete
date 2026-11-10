@@ -343,6 +343,7 @@ export default function App() {
   const appShellRef = useRef<HTMLDivElement>(null);
   const [reviewRun, setReviewRun] = useState<{ id: number; session: ReviewSession; deck: Deck; paused: boolean } | null>(null);
   const [createCardsOpen, setCreateCardsOpen] = useState(false);
+  const [createCardsStandalone, setCreateCardsStandalone] = useState(false);
   const [layout, setLayout] = useState<LayoutState>(() => loadLayout());
   const [generateQuizOpen, setGenerateQuizOpen] = useState(false);
   const [quizJob, setQuizJob] = useState<
@@ -1477,6 +1478,7 @@ export default function App() {
 
   /** Jump from a card to the note it was written in; the review waits in the tab bar. */
   const openCardSource = (card: ReviewCard) => {
+    if (!card.source.path) return;
     setReviewRun((current) => (current ? { ...current, paused: true } : current));
     if (card.source.path !== selected) select(card.source.path);
   };
@@ -1598,11 +1600,9 @@ export default function App() {
     });
   };
 
-  /** Save a card linked to the open note; the note's text is left alone. */
-  const addLinkedCard = async (input: LinkedCardInput) => {
-    const path = selected;
-    if (!path) return;
-    await review.linked.add(path, input);
+  const addFolderCard = async (input: LinkedCardInput, folder: string) => {
+    if (!folder) throw new Error('Choose a folder for this card.');
+    await review.linked.addToFolder(folder, input);
   };
 
   /**
@@ -1715,7 +1715,15 @@ export default function App() {
   }, [root, review.revision, selected, editorRevision]);
 
   const openCreateCards = () => {
-    if (!selected || isQuizPath(selected)) return;
+    if (selected && isQuizPath(selected)) return;
+    setCreateCardsOpen(true);
+    setCreateCardsStandalone(false);
+    setRightOpen(true);
+    setLayout((current) => ({ ...current, focusMode: false }));
+  };
+
+  const openQuickCreate = () => {
+    setCreateCardsStandalone(true);
     setCreateCardsOpen(true);
     setRightOpen(true);
     setLayout((current) => ({ ...current, focusMode: false }));
@@ -2149,6 +2157,7 @@ export default function App() {
           <ReviewSidebar
             system={review}
             onStart={(deck) => void startReview(deck)}
+            onCreate={openQuickCreate}
             onClose={() => setSidebarOpen(false)}
           />
         ) : (
@@ -2509,13 +2518,15 @@ export default function App() {
       </main>
 
       <aside className="right-panel" aria-hidden={!layout.rightOpen || layout.focusMode}>
-        {createCardsOpen && selected && !isQuizPath(selected) ? (
+        {createCardsOpen && (!selected || !isQuizPath(selected)) ? (
           <CreateCardsPanel
             client={aiClient}
-            path={selected}
+            path={createCardsStandalone ? '' : selected || ''}
+            folders={vault.folders}
+            selectedFolder={activeFolder || parentDir(selected)}
             content={controller.content}
-            onAdd={addLinkedCard}
-            onClose={() => setCreateCardsOpen(false)}
+            onAdd={addFolderCard}
+            onClose={() => { setCreateCardsOpen(false); setCreateCardsStandalone(false); }}
           />
         ) : (
           <>

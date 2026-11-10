@@ -47,7 +47,7 @@ function adapterFor(root: string, name: string): Adapter {
 function isLinkedCard(value: unknown): value is LinkedCard {
   if (!value || typeof value !== 'object') return false;
   const card = value as Record<string, unknown>;
-  if (typeof card.uid !== 'string' || typeof card.path !== 'string') return false;
+  if (typeof card.uid !== 'string' || typeof card.path !== 'string' || (card.folder !== undefined && typeof card.folder !== 'string')) return false;
   if (card.kind === 'basic') return typeof card.front === 'string' && typeof card.back === 'string';
   if (card.kind === 'cloze') return typeof card.text === 'string';
   if (card.kind === 'mcq') return typeof card.prompt === 'string' && Array.isArray(card.options);
@@ -134,8 +134,13 @@ export class LinkedCardStore {
     return card;
   }
 
-  async addMany(items: Array<{ path: string; input: LinkedCardInput }>, now = Date.now(), migratedAt?: number): Promise<LinkedCard[]> {
-    const created = items.map(({ path, input }) => ({ ...cleanLinkedInput(input), uid: newUid(), path, created: now }) as LinkedCard);
+  async addToFolder(folder: string, input: LinkedCardInput, now = Date.now()): Promise<LinkedCard> {
+    const [card] = await this.addMany([{ path: '', input, folder }], now);
+    return card;
+  }
+
+  async addMany(items: Array<{ path: string; input: LinkedCardInput; folder?: string }>, now = Date.now(), migratedAt?: number): Promise<LinkedCard[]> {
+    const created = items.map(({ path, input, folder }) => ({ ...cleanLinkedInput(input), uid: newUid(), path, created: now, ...(folder ? { folder } : {}) }) as LinkedCard);
     await this.commit((data) => ({
       ...data,
       cards: [...data.cards, ...created],
@@ -149,7 +154,7 @@ export class LinkedCardStore {
     await this.commit((data) => {
       const existing = data.cards.find((card) => card.uid === uid);
       if (!existing) throw new Error('That card no longer exists.');
-      const updated = { ...cleanLinkedInput(input), uid, path: existing.path, created: existing.created } as LinkedCard;
+      const updated = { ...cleanLinkedInput(input), uid, path: existing.path, created: existing.created, ...(existing.folder ? { folder: existing.folder } : {}) } as LinkedCard;
       next = updated;
       return { ...data, cards: data.cards.map((card) => (card.uid === uid ? updated : card)) };
     });
@@ -174,8 +179,8 @@ export class LinkedCardStore {
       return path === from || path.startsWith(`${from}/`) ? `${to}${path.slice(from.length)}` : path;
     };
     await this.commit((data) =>
-      data.cards.some((card) => moved(card.path) !== card.path)
-        ? { ...data, cards: data.cards.map((card) => ({ ...card, path: moved(card.path) })) }
+      data.cards.some((card) => moved(card.path) !== card.path || (card.folder ? moved(card.folder) !== card.folder : false))
+        ? { ...data, cards: data.cards.map((card) => ({ ...card, path: moved(card.path), ...(card.folder ? { folder: moved(card.folder) } : {}) })) }
         : null,
     );
   }

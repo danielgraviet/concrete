@@ -16,6 +16,8 @@ export type CardSource = {
    * 'linked' = made in the app and kept in `.vault/cards.json`, linked to `path`.
    */
   origin: 'note' | 'quiz' | 'linked';
+  /** Explicit folder for standalone linked cards. */
+  folder?: string;
   /** Linked cards only: the stored card this was built from. */
   uid?: string;
   /** Linked cards only: the generated reverse of a two-way card. */

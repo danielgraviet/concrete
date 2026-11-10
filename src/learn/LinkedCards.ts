@@ -11,7 +11,7 @@ export type LinkedCardInput =
   | { kind: 'cloze'; text: string }
   | { kind: 'mcq'; prompt: string; options: ParsedMcqOption[] };
 
-export type LinkedCard = LinkedCardInput & { uid: string; path: string; created: number };
+export type LinkedCard = LinkedCardInput & { uid: string; path: string; created: number; /** Folder for cards created without a note. */ folder?: string };
 
 /** Trim fields and drop empty MCQ options. */
 export function cleanLinkedInput(input: LinkedCardInput): LinkedCardInput {
@@ -55,7 +55,7 @@ export function mcqDraft(prompt: string, options: ParsedMcqOption[], source: Car
 
 /** The review cards one linked card produces (a cloze gives one per blank group). */
 export function draftsFromLinked(card: LinkedCard, idBaseFor: (draft: CardDraft) => string): CardDraft[] {
-  const source: CardSource = { path: card.path, line: 0, origin: 'linked', uid: card.uid };
+  const source: CardSource = { path: card.path, line: 0, origin: 'linked', uid: card.uid, ...(card.folder ? { folder: card.folder } : {}) };
   if (card.kind === 'basic') {
     const drafts: CardDraft[] = [{ kind: 'basic', front: card.front, back: card.back, source }];
     if (card.reverse) drafts.push({ kind: 'basic', front: card.back, back: card.front, source: { ...source, reverse: true } });

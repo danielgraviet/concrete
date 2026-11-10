@@ -207,7 +207,7 @@ export function ReviewView({
         return;
       }
       if (!card) return;
-      if (key === 'o' || (key === 'e' && !canEditCard(card))) {
+      if ((key === 'o' && card.source.path) || (key === 'e' && !canEditCard(card))) {
         event.preventDefault();
         onOpenSource(card);
         return;
@@ -280,10 +280,9 @@ export function ReviewView({
         <>
           <article className="srs-card" key={card.id}>
             <div className="srs-card-meta">
-              <button type="button" className="srs-source" title="Open the note (O)" onClick={() => onOpenSource(card)}>
-                {noteTitle(card.source.path)}
-                <ExternalLinkIcon width={11} height={11} />
-              </button>
+              {card.source.path ? <button type="button" className="srs-source" title="Open the note (O)" onClick={() => onOpenSource(card)}>
+                {noteTitle(card.source.path)} <ExternalLinkIcon width={11} height={11} />
+              </button> : <span className="srs-source">{card.source.folder || 'Unsorted'}</span>}
               <span className="srs-card-meta-right">
                 <span className="srs-kind">{card.kind === 'mcq' ? 'multiple choice' : card.kind}</span>
                 <button type="button" className="srs-edit" aria-label={copied ? 'Copied card text' : 'Copy card text'} title={copied ? 'Copied' : 'Copy card text'} onClick={() => void copyCard()}>

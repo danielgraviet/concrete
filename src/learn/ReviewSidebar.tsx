@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import { IconButton, Text } from '@radix-ui/themes';
-import { Cross1Icon } from '@radix-ui/react-icons';
+import { Button, IconButton, Text } from '@radix-ui/themes';
+import { Cross1Icon, PlusIcon } from '@radix-ui/react-icons';
 import { ALL_DECK, deckFilter, deckKey, listDecks, type Deck } from './decks';
 import { queueCounts, type QueueCounts } from './ReviewSession';
 import { studyDayEnd } from './studyDay';
@@ -21,10 +21,11 @@ type Props = {
   system: ReviewSystem;
   onStart: (deck: Deck) => void;
   onClose: () => void;
+  onCreate?: () => void;
 };
 
 /** Deck list: all cards, then every folder that has cards. */
-export function ReviewSidebar({ system, onStart, onClose }: Props) {
+export function ReviewSidebar({ system, onStart, onClose, onCreate }: Props) {
   const { cards, store, settings, revision } = system;
 
   const rows = useMemo(() => {
@@ -59,6 +60,7 @@ export function ReviewSidebar({ system, onStart, onClose }: Props) {
         </IconButton>
       </div>
       <div className="srs-sidebar">
+        {onCreate ? <Button size="2" highContrast onClick={onCreate}><PlusIcon /> Create flashcard</Button> : null}
         {cards.length === 0 ? (
           <div className="srs-empty">
             <strong>No cards yet</strong>
