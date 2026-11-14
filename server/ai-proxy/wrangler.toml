@@ -4,7 +4,7 @@ compatibility_date = "2026-11-01"
 compatibility_flags = ["nodejs_compat"]
 
 # Public URL: Cloudflare creates the DNS record for this custom domain on deploy.
-routes = [{ pattern = "api.useconcrete.app", custom_domain = true }]
+routes = [{ pattern = "api.useconcrete.app", custom_domain = true, zone_name = "useconcrete.app" }]
 
 # Secret (never put it here):
 #   OPENROUTER_API_KEY  -> `npx wrangler secret put OPENROUTER_API_KEY`
@@ -28,7 +28,7 @@ MAX_TOKENS_CAP = "8000"
 # Requests per user per UTC month.
 QUOTA_MONTHLY = "100"
 # Optional comma-separated Firebase uids exempt from the monthly quota (e.g. the owner).
-QUOTA_ALLOWLIST_UIDS = ""
+QUOTA_ALLOWLIST_UIDS = "cD9SwH0h5BVJcGPQf9UVezlX4j83"
 # Largest single image/PDF upload to /v1/files, in MB.
 MAX_FILE_MB = "20"
 # Total file storage per user (R2 bytes), in MB. Separate from the AI quota.
