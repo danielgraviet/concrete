@@ -105,6 +105,7 @@ import {
   ChatModelProvider,
   truncateNoteContext,
 } from './ai';
+import { resolveOpenRouterModelId } from './ai/openRouterModels';
 import {
   isQuizPath,
   nextQuizTitle,
@@ -255,8 +256,11 @@ function loadLayout(): LayoutState {
 }
 
 function resolveAiProvider(settings: AppSettings) {
-  // Web has one live provider (the Concrete AI proxy, which picks the model).
-  if (getBackend().target === 'web') return new ChatModelProvider('claude');
+  // Web has one live provider: OpenRouter through the AI proxy Worker, with the
+  // model picked in Settings (the Worker enforces its allowlist).
+  if (getBackend().target === 'web') {
+    return new ChatModelProvider('openrouter', resolveOpenRouterModelId(settings.openRouterModelId));
+  }
   switch (settings.providerId) {
     case 'openrouter':
       return new ChatModelProvider('openrouter', settings.openRouterModelId);

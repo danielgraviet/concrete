@@ -58,6 +58,22 @@ describe("D1QuotaStore", () => {
     await q.refund("nobody", "2026-11");
     expect(await q.getUsed("u", "2026-11")).toBe(0);
   });
+
+  it("accumulates cost per user and month without touching the request count", async () => {
+    const { d1, sqlite } = makeD1();
+    const q = new D1QuotaStore(d1);
+    await q.reserve("u", "2026-11", 5);
+    await q.addCost("u", "2026-11", 0.1);
+    await q.addCost("u", "2026-11", 0.05);
+    await q.addCost("u", "2026-11", 0);
+    await q.addCost("u", "2026-11", Number.NaN);
+    await q.addCost("u", "2026-12", 0.2); // no reservation row yet: inserted with used = 0
+    const rows = sqlite.prepare("SELECT period, used, cost_usd FROM usage WHERE uid = 'u' ORDER BY period").all();
+    expect(rows.map((r) => ({ ...r }))).toEqual([
+      { period: "2026-11", used: 1, cost_usd: expect.closeTo(0.15, 10) },
+      { period: "2026-12", used: 0, cost_usd: 0.2 },
+    ]);
+  });
 });
 
 describe("BurstLimiter", () => {

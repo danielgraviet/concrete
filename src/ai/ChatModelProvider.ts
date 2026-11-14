@@ -16,6 +16,7 @@ import { quizDocumentFromModelText } from './quizDocumentFromModelText';
 import { truncateNoteContext } from './systemPrompt';
 import { normalize as normalizeAnswer, stubGradeQuiz } from './quizStubs';
 import {
+  OPENROUTER_MODEL_DEFAULT,
   OPENROUTER_MODEL_DEEPSEEK_V4_FLASH,
   OPENROUTER_MODEL_LUNA,
   openRouterModelLabel,
@@ -64,8 +65,13 @@ function followUpText(followUp: { question: string; answer: string } | undefined
     : '';
 }
 
-/** Display label used for every backend on the web build (the server picks the model). */
-export const WEB_PROVIDER_LABEL = 'Concrete AI';
+/** Provider name shown on the web build, where AI always runs on OpenRouter via the proxy. */
+export const WEB_PROVIDER_LABEL = 'OpenRouter';
+
+/** Web label, e.g. "OpenRouter · DeepSeek V4 Flash". */
+export function webProviderLabel(model: string | undefined): string {
+  return `${WEB_PROVIDER_LABEL} · ${openRouterModelLabel(model || OPENROUTER_MODEL_DEFAULT)}`;
+}
 
 function isWebTarget(): boolean {
   return getBackend().target === 'web';
@@ -86,9 +92,10 @@ function requireAiBridge() {
 }
 
 /**
- * Proxy errors (quota, sign-in, rate limit, refusal, ...) are final: retrying on
- * a "fallback model" would hit the same server-chosen model, spend another
+ * Proxy errors (quota, sign-in, rate limit, out of credits, refusal, ...) are
+ * final: retrying on a fallback model would fail the same way, spend another
  * quota unit, and could replace the friendly message with a different one.
+ * Parse failures and empty completions still fall back (web included).
  */
 function rethrowIfProxyError(error: unknown): void {
   if (isAiProxyError(error)) throw error;
@@ -111,7 +118,7 @@ export class ChatModelProvider implements AiProvider {
     this.id = backend;
     this.model = model;
     this.label = isWebTarget()
-      ? WEB_PROVIDER_LABEL
+      ? webProviderLabel(model)
       : backend === 'openrouter'
         ? `OpenRouter (${openRouterModelLabel(model ?? '')})`
         : backend === 'claude'

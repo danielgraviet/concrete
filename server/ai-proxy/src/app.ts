@@ -1,4 +1,3 @@
-import type Anthropic from "@anthropic-ai/sdk";
 import { AuthError, bearerToken, type TokenVerifier } from "./auth";
 import { BurstLimiter } from "./burst";
 import type { Config } from "./config";
@@ -6,27 +5,28 @@ import { corsHeaders, preflight } from "./cors";
 import { mapUpstreamError, REFUSED, type MappedError } from "./errors";
 import { filesRouteMethods, handleFiles, type FilesDeps } from "./files";
 import { json, type Cors } from "./http";
-import { BadRequest, clampMaxTokens, parseChatRequest, splitMessages } from "./messages";
+import {
+  BadRequest,
+  clampMaxTokens,
+  clampTemperature,
+  normalizeMessages,
+  parseChatRequest,
+  sanitizeProvider,
+  sanitizeReasoning,
+  type ChatMessage,
+  type ChatRequest,
+} from "./messages";
+import { Completion, openStream, type OpenRouterBody, type OpenRouterChunk, type Upstream } from "./openrouter";
 import { periodFor, resetsAtFor, UNLIMITED, type QuotaInfo, type QuotaStore } from "./quota";
 
 export const MAX_BODY_BYTES = 400 * 1024;
-
-/** The subset of the SDK's MessageStream the proxy relies on (lets tests inject fakes). */
-export interface ModelStream extends AsyncIterable<Anthropic.MessageStreamEvent> {
-  finalMessage(): Promise<Anthropic.Message>;
-  readonly request_id?: string | null;
-  abort?(): void;
-}
-
-export interface ModelClient {
-  stream(params: Anthropic.MessageStreamParams): ModelStream;
-}
 
 export interface Deps {
   config: Config;
   verifyToken: TokenVerifier;
   quota: QuotaStore;
-  model: ModelClient;
+  /** OpenRouter access (API key + fetch; tests inject a fake fetch). */
+  upstream: Upstream;
   /** R2 bucket + storage accounting for `/v1/files`; absent when the FILES binding is missing. */
   files?: FilesDeps;
   burst?: BurstLimiter;
@@ -37,13 +37,6 @@ export interface Deps {
 
 function errorJson(err: MappedError, cors: Cors): Response {
   return json(err.status, { error: err.code, message: err.message }, cors);
-}
-
-function textOf(message: Anthropic.Message): string {
-  return message.content
-    .filter((b): b is Anthropic.TextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("");
 }
 
 export async function handleRequest(req: Request, deps: Deps): Promise<Response> {
@@ -113,6 +106,26 @@ interface Caller {
   limit: number;
 }
 
+/** Chooses the OpenRouter model: the client's pick when allowlisted, else the server default. */
+export function chooseModel(requested: string | undefined, config: Config): string {
+  return requested !== undefined && config.allowedModels.has(requested) ? requested : config.defaultModel;
+}
+
+export function buildUpstreamBody(parsed: ChatRequest, messages: ChatMessage[], model: string, config: Config): OpenRouterBody {
+  const provider = sanitizeProvider(parsed.provider);
+  const reasoning = sanitizeReasoning(parsed.reasoning);
+  return {
+    model,
+    messages,
+    max_tokens: clampMaxTokens(parsed.max_tokens, config.maxTokensCap),
+    temperature: clampTemperature(parsed.temperature),
+    ...(provider ? { provider } : {}),
+    ...(reasoning ? { reasoning } : {}),
+    stream: true,
+    usage: { include: true },
+  };
+}
+
 async function handleChat(req: Request, deps: Deps, cors: Cors, caller: Caller): Promise<Response> {
   const { config } = deps;
   const log = deps.log ?? (() => {});
@@ -125,8 +138,8 @@ async function handleChat(req: Request, deps: Deps, cors: Cors, caller: Caller):
     return json(413, { error: "payload_too_large" }, cors);
   }
 
-  let parsed;
-  let split;
+  let parsed: ChatRequest;
+  let messages: ChatMessage[];
   try {
     let body: unknown;
     try {
@@ -135,15 +148,17 @@ async function handleChat(req: Request, deps: Deps, cors: Cors, caller: Caller):
       throw new BadRequest("body is not valid JSON");
     }
     parsed = parseChatRequest(body);
-    split = splitMessages(parsed.messages);
+    messages = normalizeMessages(parsed.messages);
   } catch (err) {
     if (err instanceof BadRequest) return json(400, { error: "bad_request", detail: err.message }, cors);
     throw err;
   }
 
-  if (parsed.model !== undefined && parsed.model !== config.model) {
-    log({ level: "info", event: "client_model_ignored", uid: caller.uid, requested: parsed.model, using: config.model });
+  const model = chooseModel(parsed.model, config);
+  if (parsed.model !== undefined && parsed.model !== model) {
+    log({ level: "info", event: "client_model_substituted", uid: caller.uid, requested: parsed.model, using: model });
   }
+  const upstreamBody = buildUpstreamBody(parsed, messages, model, config);
 
   // --- burst + quota (both before any model call) ---
   const release = deps.burst ? deps.burst.acquire(caller.uid) : () => {};
@@ -174,66 +189,73 @@ async function handleChat(req: Request, deps: Deps, cors: Cors, caller: Caller):
       }
     };
 
-    const params: Anthropic.MessageStreamParams = {
-      model: config.model,
-      max_tokens: clampMaxTokens(parsed.max_tokens, config.maxTokensCap),
-      messages: split.messages,
-      ...(split.system ? { system: split.system } : {}),
-      output_config: { effort: config.effort },
-      cache_control: { type: "ephemeral" },
+    const completion = new Completion(model);
+    let costRecorded = false;
+    /** Adds whatever OpenRouter reported as spent (also after failures; billed tokens are billed). */
+    const recordCost = async () => {
+      if (costRecorded) return;
+      costRecorded = true;
+      if (completion.cost <= 0) return;
+      try {
+        await deps.quota.addCost(caller.uid, caller.period, completion.cost);
+      } catch (err) {
+        log({ level: "error", event: "cost_record_failed", uid: caller.uid, error: String(err) });
+      }
     };
-
-    // Start the upstream call and wait for its first event, so connection-time errors
-    // (auth, rate limit, overload) still map to a proper HTTP status in both modes.
-    const stream = deps.model.stream(params);
-    const iterator = stream[Symbol.asyncIterator]();
-    let first: IteratorResult<Anthropic.MessageStreamEvent>;
-    try {
-      first = await iterator.next();
-    } catch (err) {
+    const failed = async (err: unknown): Promise<MappedError> => {
       await refund();
+      await recordCost();
       const mapped = mapUpstreamError(err);
-      log({ level: "warn", event: "upstream_error", uid: caller.uid, code: mapped.code, error: String(err) });
-      return errorJson(mapped, cors);
-    }
-
-    const logDone = (message: Anthropic.Message) =>
+      log({ level: "warn", event: "upstream_error", uid: caller.uid, model, code: mapped.code, error: String(err) });
+      return mapped;
+    };
+    const logDone = () =>
       log({
         level: "info",
         event: "chat",
         uid: caller.uid,
         operation: parsed.operation,
         stream: parsed.stream === true,
-        stop_reason: message.stop_reason,
-        usage: message.usage,
+        model: completion.model,
+        finish_reason: completion.finishReason,
+        usage: completion.usage,
         used: quota.used,
       });
+    const doneBody = () => ({
+      content: completion.content,
+      model: completion.model,
+      usage: completion.usage,
+      ...(completion.id ? { requestId: completion.id } : {}),
+      quota,
+    });
+
+    // Open the upstream stream and wait for its first data chunk, so connection-time
+    // errors (auth, credits, rate limit, moderation) still map to a proper HTTP status.
+    let upstream;
+    let first: IteratorResult<OpenRouterChunk>;
+    let firstDelta = "";
+    try {
+      upstream = await openStream(deps.upstream, upstreamBody);
+      first = await upstream.chunks.next();
+      if (!first.done) firstDelta = completion.apply(first.value);
+    } catch (err) {
+      upstream?.abort();
+      return errorJson(await failed(err), cors);
+    }
+    const { chunks } = upstream;
 
     if (parsed.stream !== true) {
       try {
-        for (let r = first; !r.done; r = await iterator.next()) {
-          /* drain */
+        if (!first.done) {
+          for (let r = await chunks.next(); !r.done; r = await chunks.next()) completion.apply(r.value);
         }
-        const message = await stream.finalMessage();
-        logDone(message);
-        if (message.stop_reason === "refusal") return errorJson(REFUSED, cors);
-        return json(
-          200,
-          {
-            content: textOf(message),
-            model: message.model,
-            usage: message.usage,
-            requestId: stream.request_id ?? message.id,
-            quota,
-          },
-          cors,
-        );
       } catch (err) {
-        await refund();
-        const mapped = mapUpstreamError(err);
-        log({ level: "warn", event: "upstream_error", uid: caller.uid, code: mapped.code, error: String(err) });
-        return errorJson(mapped, cors);
+        return errorJson(await failed(err), cors);
       }
+      await recordCost();
+      logDone();
+      if (completion.refused) return errorJson(REFUSED, cors);
+      return json(200, doneBody(), cors);
     }
 
     // --- SSE ---
@@ -241,6 +263,7 @@ async function handleChat(req: Request, deps: Deps, cors: Cors, caller: Caller):
     const writer = writable.getWriter();
     const encoder = new TextEncoder();
     const send = (event: unknown) => writer.write(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+    const abortUpstream = upstream.abort;
 
     const pump = async () => {
       let clientGone = false;
@@ -250,38 +273,34 @@ async function handleChat(req: Request, deps: Deps, cors: Cors, caller: Caller):
           await send(event);
         } catch {
           clientGone = true;
-          stream.abort?.(); // stop paying for tokens nobody will read
+          abortUpstream(); // stop paying for tokens nobody will read
         }
       };
       try {
-        for (let r = first; !r.done; r = await iterator.next()) {
-          const ev = r.value;
-          if (ev.type === "content_block_delta" && ev.delta.type === "text_delta") {
-            await safeSend({ type: "delta", text: ev.delta.text });
-            if (clientGone) return;
+        if (firstDelta) await safeSend({ type: "delta", text: firstDelta });
+        if (!first.done && !clientGone) {
+          for (let r = await chunks.next(); !r.done; r = await chunks.next()) {
+            const text = completion.apply(r.value);
+            if (text) await safeSend({ type: "delta", text });
+            if (clientGone) {
+              void chunks.return?.(undefined)?.catch(() => {});
+              return;
+            }
           }
         }
-        const message = await stream.finalMessage();
-        logDone(message);
-        if (message.stop_reason === "refusal") {
+        await recordCost();
+        logDone();
+        if (completion.refused) {
           await safeSend({ type: "error", code: REFUSED.code, message: REFUSED.message });
         } else {
-          await safeSend({
-            type: "done",
-            content: textOf(message),
-            model: message.model,
-            usage: message.usage,
-            requestId: stream.request_id ?? message.id,
-            quota,
-          });
+          await safeSend({ type: "done", ...doneBody() });
         }
       } catch (err) {
         if (clientGone) return;
-        await refund();
-        const mapped = mapUpstreamError(err);
-        log({ level: "warn", event: "upstream_error", uid: caller.uid, code: mapped.code, error: String(err) });
+        const mapped = await failed(err);
         await safeSend({ type: "error", code: mapped.code, message: mapped.message });
       } finally {
+        await recordCost();
         release();
         try {
           await writer.close();

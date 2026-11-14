@@ -1,5 +1,6 @@
 /**
- * Typed client for the Concrete AI proxy Worker (`server/ai-proxy`).
+ * Typed client for the Concrete AI proxy Worker (`server/ai-proxy`), which
+ * forwards chat requests to OpenRouter.
  * Auth is injected (`getIdToken`) so this module has no Firebase dependency.
  */
 
@@ -10,7 +11,14 @@ export interface AiProxyMessage {
 
 export interface AiProxyChatRequest {
   messages: AiProxyMessage[];
+  /** OpenRouter model id; the Worker uses it if allowlisted, else its default. */
+  model?: string;
   max_tokens?: number;
+  temperature?: number;
+  /** OpenRouter provider routing prefs (sanitized by the Worker). */
+  provider?: AiChatCompletionsRequest['provider'];
+  /** OpenRouter reasoning controls (sanitized by the Worker). */
+  reasoning?: AiChatCompletionsRequest['reasoning'];
   operation?: string;
   metadata?: Record<string, unknown>;
 }
@@ -39,6 +47,7 @@ export type AiProxyErrorCode =
   | 'bad_request'
   | 'upstream_error'
   | 'upstream_rate_limited'
+  | 'upstream_out_of_credits'
   | 'internal_error'
   | 'network_error'
   | 'aborted'
@@ -75,6 +84,8 @@ export function aiProxyErrorMessage(
       return `The AI request was invalid${extra.detail ? `: ${extra.detail}` : '.'}`;
     case 'upstream_rate_limited':
       return 'The AI service is busy right now. Try again in a minute.';
+    case 'upstream_out_of_credits':
+      return 'AI is temporarily unavailable. Try again later.';
     case 'upstream_error':
       return 'The AI service had a problem. Try again shortly.';
     case 'internal_error':
@@ -339,7 +350,7 @@ export class AiProxyClient {
 function resultFrom(body: Record<string, unknown>): AiProxyChatResult {
   return {
     content: String(body.content ?? ''),
-    model: typeof body.model === 'string' ? body.model : 'Concrete AI',
+    model: typeof body.model === 'string' ? body.model : 'OpenRouter',
     usage: body.usage ?? null,
     ...(typeof body.requestId === 'string' ? { requestId: body.requestId } : {}),
     ...(asQuota(body.quota) ? { quota: asQuota(body.quota) } : {}),

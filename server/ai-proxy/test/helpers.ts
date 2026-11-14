@@ -2,8 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import Anthropic from "@anthropic-ai/sdk";
-import type { Deps, ModelClient, ModelStream } from "../src/app";
+import type { Deps } from "../src/app";
 import { AuthError, type TokenVerifier } from "../src/auth";
 import { loadConfig, type Env } from "../src/config";
 import { D1QuotaStore } from "../src/quota";
@@ -34,67 +33,106 @@ export const fakeVerifier: TokenVerifier = async (token) => {
   throw new AuthError("bad token");
 };
 
-export interface FakeTurn {
-  texts?: string[];
-  stopReason?: Anthropic.StopReason;
-  /** Throw this error when the iterator reaches index `throwAt` (0 = before first event). */
-  error?: unknown;
-  throwAt?: number;
+export const TEST_USAGE = { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, cost: 0.00042 };
+
+/** One OpenRouter SSE `data:` event. */
+export function sse(payload: unknown): string {
+  return `data: ${typeof payload === "string" ? payload : JSON.stringify(payload)}\n\n`;
 }
 
-export function fakeModel(turn: FakeTurn = {}) {
-  const calls: Anthropic.MessageStreamParams[] = [];
+/** A realistic OpenRouter stream: processing comment, role chunk, text deltas, finish, usage, [DONE]. */
+export function openRouterStream(
+  opts: { texts?: string[]; model?: string; finishReason?: string; usage?: unknown; id?: string } = {},
+): string[] {
+  const id = opts.id ?? "gen-test-123";
+  const model = opts.model ?? "deepseek/deepseek-v4-flash-0731";
+  const texts = opts.texts ?? ["Hello", ", world"];
+  return [
+    ": OPENROUTER PROCESSING\n\n",
+    sse({ id, model, choices: [{ index: 0, delta: { role: "assistant", content: "" }, finish_reason: null }] }),
+    ...texts.map((content) => sse({ id, model, choices: [{ index: 0, delta: { content }, finish_reason: null }] })),
+    sse({ id, model, choices: [{ index: 0, delta: {}, finish_reason: opts.finishReason ?? "stop" }] }),
+    sse({ id, model, choices: [], usage: opts.usage ?? TEST_USAGE }),
+    "data: [DONE]\n\n",
+  ];
+}
+
+export interface FakeUpstreamSpec {
+  /** HTTP status for the response (default 200). */
+  status?: number;
+  /** JSON body for a non-2xx response. */
+  errorBody?: unknown;
+  /** Raw SSE text pieces, enqueued as separate network chunks (default: `openRouterStream()`). */
+  chunks?: (string | Uint8Array)[];
+  /** Reject the fetch itself (network failure). */
+  fetchError?: unknown;
+  /** Error the body stream after all chunks are delivered. */
+  errorAfterChunks?: boolean;
+  /** Keep the body open after the chunks (until aborted). */
+  hang?: boolean;
+}
+
+export interface UpstreamCall {
+  url: string;
+  headers: Record<string, string>;
+  body: Record<string, unknown>;
+}
+
+/** Fake `fetch` for OpenRouter. Pass one spec, or an array consumed one per call. */
+export function fakeOpenRouter(spec: FakeUpstreamSpec | FakeUpstreamSpec[] = {}) {
+  const calls: UpstreamCall[] = [];
   let aborted = false;
-  const client: ModelClient = {
-    stream(params) {
-      calls.push(params);
-      const texts = turn.texts ?? ["Hello", ", world"];
-      const events = [
-        { type: "message_start" },
-        { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "secret" } },
-        ...texts.map((text) => ({ type: "content_block_delta", index: 1, delta: { type: "text_delta", text } })),
-        { type: "message_stop" },
-      ] as unknown as Anthropic.MessageStreamEvent[];
-      const s: ModelStream = {
-        request_id: "req_test_123",
-        abort: () => {
-          aborted = true;
+  const specs = Array.isArray(spec) ? spec : null;
+  const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const s = specs ? (specs[calls.length] ?? specs[specs.length - 1]) : (spec as FakeUpstreamSpec);
+    calls.push({
+      url: String(input),
+      headers: { ...(init?.headers as Record<string, string>) },
+      body: JSON.parse(String(init?.body ?? "{}")),
+    });
+    const signal = init?.signal;
+    signal?.addEventListener("abort", () => {
+      aborted = true;
+    });
+    if (s.fetchError !== undefined) throw s.fetchError;
+    const status = s.status ?? 200;
+    if (status < 200 || status >= 300) {
+      return new Response(JSON.stringify(s.errorBody ?? { error: { code: status, message: "raw upstream body sk-or-SECRET" } }), {
+        status,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    const encoder = new TextEncoder();
+    const chunks = s.chunks ?? openRouterStream();
+    // Delivers one network chunk per read, so a later error doesn't discard queued chunks.
+    let i = 0;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        start(controller) {
+          signal?.addEventListener("abort", () => {
+            try {
+              controller.error(new DOMException("The operation was aborted.", "AbortError"));
+            } catch {
+              /* already closed */
+            }
+          });
         },
-        async *[Symbol.asyncIterator]() {
-          for (let i = 0; i < events.length; i++) {
-            if (turn.error !== undefined && (turn.throwAt ?? 0) === i) throw turn.error;
-            yield events[i];
+        pull(controller) {
+          if (i < chunks.length) {
+            const c = chunks[i++];
+            controller.enqueue(typeof c === "string" ? encoder.encode(c) : c);
+            return;
           }
+          if (s.errorAfterChunks) controller.error(new TypeError("network connection lost"));
+          else if (!s.hang) controller.close();
+          else return new Promise<void>(() => {}); // stay open until aborted
         },
-        async finalMessage() {
-          if (turn.error !== undefined) throw turn.error;
-          return {
-            id: "msg_1",
-            type: "message",
-            role: "assistant",
-            model: params.model,
-            content: [
-              { type: "thinking", thinking: "", signature: "x" },
-              { type: "text", text: texts.join(""), citations: null },
-            ],
-            stop_reason: turn.stopReason ?? "end_turn",
-            stop_sequence: null,
-            usage: { input_tokens: 10, output_tokens: 5 },
-          } as unknown as Anthropic.Message;
-        },
-      };
-      return s;
-    },
-  };
-  return { client, calls, wasAborted: () => aborted };
-}
-
-export function rateLimitError() {
-  return new Anthropic.RateLimitError(429, { type: "error" }, "rate limited sk-ant-SECRET", new Headers());
-}
-
-export function serverError() {
-  return Anthropic.APIError.generate(500, { type: "error", error: { message: "raw upstream body" } }, "boom", new Headers());
+      },
+      { highWaterMark: 0 },
+    );
+    return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+  }) as typeof fetch;
+  return { fetch: fetchImpl, calls, wasAborted: () => aborted };
 }
 
 interface FakeObject {
@@ -166,23 +204,38 @@ export function storageUsedFor(sqlite: DatabaseSync, uid: string): number {
   return row?.used_bytes ?? 0;
 }
 
-export function makeDeps(opts: { env?: Partial<Env>; turn?: FakeTurn; now?: Date; files?: boolean } = {}) {
+export function makeDeps(
+  opts: {
+    env?: Partial<Env>;
+    upstream?: FakeUpstreamSpec | FakeUpstreamSpec[];
+    idleTimeoutMs?: number;
+    now?: Date;
+    files?: boolean;
+  } = {},
+) {
   const { d1, sqlite } = makeD1();
   const r2 = makeR2();
-  const model = fakeModel(opts.turn);
+  const model = fakeOpenRouter(opts.upstream);
   const logs: Record<string, unknown>[] = [];
   const pending: Promise<unknown>[] = [];
+  const config = loadConfig({
+    DB: d1,
+    OPENROUTER_API_KEY: "sk-or-test",
+    FIREBASE_PROJECT_ID: "concrete-test",
+    ALLOWED_ORIGINS: "https://app.example.com,http://localhost:5173",
+    APP_URL: "https://app.example.com",
+    ...opts.env,
+  } as Env);
   const deps: Deps = {
-    config: loadConfig({
-      DB: d1,
-      ANTHROPIC_API_KEY: "sk-test",
-      FIREBASE_PROJECT_ID: "concrete-test",
-      ALLOWED_ORIGINS: "https://app.example.com,http://localhost:5173",
-      ...opts.env,
-    } as Env),
+    config,
     verifyToken: fakeVerifier,
     quota: new D1QuotaStore(d1),
-    model: model.client,
+    upstream: {
+      apiKey: "sk-or-test",
+      appUrl: config.appUrl,
+      fetch: model.fetch,
+      ...(opts.idleTimeoutMs ? { idleTimeoutMs: opts.idleTimeoutMs } : {}),
+    },
     ...(opts.files === false ? {} : { files: { bucket: r2.bucket, storage: new D1StorageStore(d1) } }),
     now: opts.now ? () => opts.now! : undefined,
     waitUntil: (p) => pending.push(p),
@@ -194,6 +247,11 @@ export function makeDeps(opts: { env?: Partial<Env>; turn?: FakeTurn; now?: Date
 export function usedFor(sqlite: DatabaseSync, uid: string): number {
   const row = sqlite.prepare("SELECT used FROM usage WHERE uid = ?").get(uid) as { used: number } | undefined;
   return row?.used ?? 0;
+}
+
+export function costFor(sqlite: DatabaseSync, uid: string): number {
+  const row = sqlite.prepare("SELECT cost_usd FROM usage WHERE uid = ?").get(uid) as { cost_usd: number } | undefined;
+  return row?.cost_usd ?? 0;
 }
 
 export function chatRequest(body: unknown, token: string | null = "good:alice", origin?: string): Request {

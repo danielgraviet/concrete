@@ -4,18 +4,22 @@ compatibility_date = "2026-11-01"
 compatibility_flags = ["nodejs_compat"]
 
 # Secret (never put it here):
-#   ANTHROPIC_API_KEY   -> `npx wrangler secret put ANTHROPIC_API_KEY`
-# For local `wrangler dev`, put it in .dev.vars (gitignored):  ANTHROPIC_API_KEY=sk-ant-...
+#   OPENROUTER_API_KEY  -> `npx wrangler secret put OPENROUTER_API_KEY`
+#   Use a dedicated OpenRouter key with a $20/month credit limit (see README "Spend cap").
+# For local `wrangler dev`, put it in .dev.vars (gitignored):  OPENROUTER_API_KEY=sk-or-...
 
 [vars]
 # Firebase project the web app signs users into. Tokens must have iss/aud for this project.
 FIREBASE_PROJECT_ID = "REPLACE_WITH_FIREBASE_PROJECT_ID"
 # Comma-separated list of web origins allowed to call the proxy ("*" allows any; avoid in prod).
 ALLOWED_ORIGINS = "http://localhost:5173"
-# Model used for every request. Client-supplied `model` is logged and ignored.
-MODEL = "claude-haiku-5-5"
-# output_config.effort: low | medium | high | xhigh | max
-EFFORT = "low"
+# Sent to OpenRouter as HTTP-Referer (app attribution). Usually your production web origin.
+APP_URL = ""
+# OpenRouter model used when the client sends none, or one not in ALLOWED_MODELS.
+DEFAULT_MODEL = "deepseek/deepseek-v4-flash-0731"
+# Comma-separated OpenRouter model ids clients may choose. Keep in sync with
+# OPENROUTER_MODEL_OPTIONS in src/ai/openRouterModels.ts. DEFAULT_MODEL is always allowed.
+ALLOWED_MODELS = "deepseek/deepseek-v4-flash-0731,qwen/qwen3.8-27b,qwen/qwen3.7-flash,openai/gpt-5.6-luna,openai/gpt-4o-mini"
 # Server-side ceiling for max_tokens; larger client values are clamped.
 MAX_TOKENS_CAP = "8000"
 # Requests per user per UTC month.

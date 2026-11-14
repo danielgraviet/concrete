@@ -1,28 +1,24 @@
 import type { AiBackend } from '../types';
 import { AiProxyError, type AiProxyChatRequest, type AiProxyChatResult, type AiProxyClient } from './aiProxyClient';
 
-/** Display name for the server-chosen model (the proxy ignores client model ids). */
-export const WEB_AI_MODEL_LABEL = 'Concrete AI';
+/** Display name for web AI (the proxy forwards to OpenRouter; the model is picked in Settings). */
+export const WEB_AI_MODEL_LABEL = 'OpenRouter';
 
 const DESKTOP_ONLY = 'Not available on web';
 
 /**
- * Map the desktop request shape onto the proxy's. `backend` / `model` are
- * ignored (the Worker picks the model); `temperature`, `provider`,
- * `reasoning` and `capture` have no proxy equivalent and are dropped.
+ * Map the desktop request shape onto the proxy's. `model`, `temperature`,
+ * `provider` and `reasoning` pass through (the Worker allowlists the model and
+ * sanitizes the rest); `backend` and `capture` have no proxy equivalent.
  */
 export function toProxyRequest(request: AiChatCompletionsRequest): AiProxyChatRequest {
-  const lastTurn = [...request.messages].reverse().find((m) => m.role !== 'system');
-  if (lastTurn?.role === 'assistant') {
-    // The proxy (and Claude) don't support assistant prefill.
-    throw new AiProxyError('bad_request', 0, {
-      detail: 'conversation must end with a user message',
-      message: 'AI request must end with a user message (assistant prefill is not supported on web).',
-    });
-  }
   return {
     messages: request.messages.map(({ role, content }) => ({ role, content })),
+    ...(typeof request.model === 'string' && request.model ? { model: request.model } : {}),
     ...(typeof request.max_tokens === 'number' ? { max_tokens: request.max_tokens } : {}),
+    ...(typeof request.temperature === 'number' ? { temperature: request.temperature } : {}),
+    ...(request.provider ? { provider: request.provider } : {}),
+    ...(request.reasoning ? { reasoning: request.reasoning } : {}),
     ...(request.operation ? { operation: request.operation } : {}),
     ...(request.metadata ? { metadata: request.metadata } : {}),
   };
@@ -46,9 +42,9 @@ export function createWebAi(client: AiProxyClient): AiBackend {
     const signedIn = await client.hasToken();
     return {
       configured: signedIn,
-      provider: 'claude',
+      provider: 'openrouter',
       model: WEB_AI_MODEL_LABEL,
-      message: signedIn ? 'Signed in — AI runs on Concrete AI.' : 'Sign in to use AI features.',
+      message: signedIn ? 'Signed in — AI runs on OpenRouter.' : 'Sign in to use AI features.',
     };
   };
 

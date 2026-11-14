@@ -1,21 +1,26 @@
-import type Anthropic from "@anthropic-ai/sdk";
-
-/** Request body for POST /v1/chat (mirrors the desktop app's request type). */
+/** Request body for POST /v1/chat (mirrors the desktop app's OpenRouter request type). */
 export interface ChatRequest {
-  messages: { role: "system" | "user" | "assistant"; content: string }[];
+  messages: ChatMessage[];
   max_tokens?: number;
+  temperature?: number;
   operation?: string;
   stream?: boolean;
   model?: string;
+  /** Raw client value; only sanitized via `sanitizeProvider` before it reaches OpenRouter. */
+  provider?: unknown;
+  /** Raw client value; only sanitized via `sanitizeReasoning` before it reaches OpenRouter. */
+  reasoning?: unknown;
   metadata?: Record<string, unknown>;
+}
+
+export interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
 }
 
 export class BadRequest extends Error {}
 
-export interface SplitResult {
-  system: string | undefined;
-  messages: Anthropic.MessageParam[];
-}
+export const MAX_MESSAGES = 200;
 
 /** Validates the raw JSON body shape. Throws BadRequest with a human-readable detail. */
 export function parseChatRequest(body: unknown): ChatRequest {
@@ -25,6 +30,9 @@ export function parseChatRequest(body: unknown): ChatRequest {
   const b = body as Record<string, unknown>;
   if (!Array.isArray(b.messages) || b.messages.length === 0) {
     throw new BadRequest("messages must be a non-empty array");
+  }
+  if (b.messages.length > MAX_MESSAGES) {
+    throw new BadRequest(`messages may contain at most ${MAX_MESSAGES} entries`);
   }
   b.messages.forEach((m, i) => {
     if (!m || typeof m !== "object") throw new BadRequest(`messages[${i}] must be an object`);
@@ -39,6 +47,9 @@ export function parseChatRequest(body: unknown): ChatRequest {
   if (b.max_tokens !== undefined && (typeof b.max_tokens !== "number" || !Number.isFinite(b.max_tokens))) {
     throw new BadRequest("max_tokens must be a number");
   }
+  if (b.temperature !== undefined && (typeof b.temperature !== "number" || !Number.isFinite(b.temperature))) {
+    throw new BadRequest("temperature must be a number");
+  }
   if (b.stream !== undefined && typeof b.stream !== "boolean") {
     throw new BadRequest("stream must be a boolean");
   }
@@ -52,43 +63,76 @@ export function parseChatRequest(body: unknown): ChatRequest {
 }
 
 /**
- * System-role messages are concatenated (in order) into the top-level system prompt.
- * The rest must form a valid conversation: consecutive same-role turns are merged,
- * the first turn must be `user`, and the last must be `user` (assistant prefill is not
- * supported by current models).
+ * OpenAI-style messages pass straight through (system messages stay in place).
+ * Only whitespace-only entries are dropped, since several providers reject empty
+ * content; at least one non-empty user/assistant message must remain.
  */
-export function splitMessages(input: ChatRequest["messages"]): SplitResult {
-  const systemParts: string[] = [];
-  const turns: { role: "user" | "assistant"; content: string }[] = [];
-
-  for (const m of input) {
-    if (m.role === "system") {
-      if (m.content.trim()) systemParts.push(m.content);
-      continue;
-    }
-    if (!m.content.trim()) continue; // the API rejects empty text blocks
-    const last = turns[turns.length - 1];
-    if (last && last.role === m.role) {
-      last.content += "\n\n" + m.content;
-    } else {
-      turns.push({ role: m.role, content: m.content });
-    }
+export function normalizeMessages(input: ChatMessage[]): ChatMessage[] {
+  const out = input
+    .filter((m) => m.content.trim().length > 0)
+    .map(({ role, content }) => ({ role, content }));
+  if (!out.some((m) => m.role !== "system")) {
+    throw new BadRequest("at least one non-empty user or assistant message is required");
   }
-
-  if (turns.length === 0) throw new BadRequest("at least one non-empty user message is required");
-  if (turns[0].role !== "user") throw new BadRequest("conversation must start with a user message");
-  if (turns[turns.length - 1].role !== "user") {
-    throw new BadRequest("conversation must end with a user message");
-  }
-
-  return {
-    system: systemParts.length ? systemParts.join("\n\n") : undefined,
-    messages: turns,
-  };
+  return out;
 }
 
 /** The client's max_tokens is honored only up to the server cap. */
 export function clampMaxTokens(requested: number | undefined, cap: number): number {
   if (requested === undefined || !Number.isFinite(requested)) return cap;
   return Math.max(1, Math.min(Math.floor(requested), cap));
+}
+
+/** Matches the desktop app's OpenRouter default when the client sends none. */
+export const DEFAULT_TEMPERATURE = 0.5;
+
+export function clampTemperature(requested: number | undefined): number {
+  if (requested === undefined || !Number.isFinite(requested)) return DEFAULT_TEMPERATURE;
+  return Math.max(0, Math.min(requested, 2));
+}
+
+export interface ProviderPrefs {
+  order?: string[];
+  allow_fallbacks?: boolean;
+  sort?: "price" | "throughput" | "latency";
+}
+
+const SORTS = new Set(["price", "throughput", "latency"]);
+const MAX_PROVIDER_ORDER = 5;
+
+/** Keeps only `order` (≤ 5 short strings), `allow_fallbacks` and `sort`. Undefined if nothing survives. */
+export function sanitizeProvider(raw: unknown): ProviderPrefs | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const r = raw as Record<string, unknown>;
+  const out: ProviderPrefs = {};
+  if (Array.isArray(r.order)) {
+    const order = r.order
+      .filter((v): v is string => typeof v === "string" && v.trim().length > 0 && v.length <= 64)
+      .map((v) => v.trim())
+      .slice(0, MAX_PROVIDER_ORDER);
+    if (order.length) out.order = order;
+  }
+  if (typeof r.allow_fallbacks === "boolean") out.allow_fallbacks = r.allow_fallbacks;
+  if (typeof r.sort === "string" && SORTS.has(r.sort)) out.sort = r.sort as ProviderPrefs["sort"];
+  return Object.keys(out).length ? out : undefined;
+}
+
+export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+const EFFORTS = new Set<string>(["none", "minimal", "low", "medium", "high", "xhigh", "max"]);
+
+export interface ReasoningPrefs {
+  enabled?: boolean;
+  effort?: ReasoningEffort;
+  exclude?: boolean;
+}
+
+/** Keeps only `enabled`, `effort` (fixed list) and `exclude`. Undefined if nothing survives. */
+export function sanitizeReasoning(raw: unknown): ReasoningPrefs | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const r = raw as Record<string, unknown>;
+  const out: ReasoningPrefs = {};
+  if (typeof r.enabled === "boolean") out.enabled = r.enabled;
+  if (typeof r.effort === "string" && EFFORTS.has(r.effort)) out.effort = r.effort as ReasoningEffort;
+  if (typeof r.exclude === "boolean") out.exclude = r.exclude;
+  return Object.keys(out).length ? out : undefined;
 }

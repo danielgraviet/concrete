@@ -63,6 +63,7 @@ describe('error mapping', () => {
     [400, { error: 'bad_request', detail: 'bad roles' }, 'bad_request', /bad roles/],
     [502, { error: 'upstream_error' }, 'upstream_error', /problem/],
     [503, { error: 'upstream_rate_limited' }, 'upstream_rate_limited', /busy/],
+    [503, { error: 'upstream_out_of_credits', message: 'AI is temporarily unavailable' }, 'upstream_out_of_credits', /temporarily unavailable/],
     [500, { error: 'internal_error' }, 'internal_error', /internal/],
     [418, null, 'http_418', /418/],
   ])('%i %j -> %s', (status, body, code, message) => {

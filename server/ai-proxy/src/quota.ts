@@ -17,6 +17,8 @@ export interface QuotaStore {
   reserve(uid: string, period: string, limit: number | null): Promise<ReserveResult>;
   /** Gives back one unit (never below zero). */
   refund(uid: string, period: string): Promise<void>;
+  /** Adds OpenRouter-reported spend (USD) to the user's month. Visibility only; never limits. */
+  addCost(uid: string, period: string, costUsd: number): Promise<void>;
 }
 
 /** Sentinel `limit` reported for allowlisted (unlimited) users. */
@@ -71,6 +73,18 @@ export class D1QuotaStore implements QuotaStore {
         "UPDATE usage SET used = MAX(used - 1, 0), updated_at = ?3 WHERE uid = ?1 AND period = ?2",
       )
       .bind(uid, period, new Date().toISOString())
+      .run();
+  }
+
+  async addCost(uid: string, period: string, costUsd: number): Promise<void> {
+    if (!Number.isFinite(costUsd) || costUsd <= 0) return;
+    await this.db
+      .prepare(
+        `INSERT INTO usage (uid, period, used, updated_at, cost_usd) VALUES (?1, ?2, 0, ?3, ?4)
+         ON CONFLICT (uid, period) DO UPDATE
+           SET cost_usd = cost_usd + excluded.cost_usd, updated_at = excluded.updated_at`,
+      )
+      .bind(uid, period, new Date().toISOString(), costUsd)
       .run();
   }
 }

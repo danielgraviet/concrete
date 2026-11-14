@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Flex, Progress, Text } from '@radix-ui/themes';
+import { Flex, Progress, Select, Text } from '@radix-ui/themes';
 import { getBackend } from '../backend';
 import { getAiProxyClient, type AiProxyQuota } from '../backend/web';
+import {
+  OPENROUTER_MODEL_OPTIONS,
+  openRouterModelLabel,
+  resolveOpenRouterModelId,
+} from '../ai/openRouterModels';
 import { formatQuotaUsage, quotaErrorText, quotaPercent } from './aiQuota';
 
 type QuotaState =
@@ -11,11 +16,21 @@ type QuotaState =
   | { kind: 'unavailable' };
 
 /**
- * Tutor AI settings on the web build: the server picks the model, so there is
- * no provider/model choice or key entry — just status and the monthly quota.
+ * Tutor AI settings on the web build: AI always runs on OpenRouter through the
+ * proxy (which holds the key), so there is no provider choice or key entry —
+ * just a model picker limited to the curated models, status and the monthly quota.
  * Fetches when `active` (the AI tab is shown) becomes true.
  */
-export function WebAiSection({ active }: { active: boolean }) {
+export function WebAiSection({
+  active,
+  modelId,
+  onModelChange,
+}: {
+  active: boolean;
+  modelId: string;
+  onModelChange: (modelId: string) => void;
+}) {
+  const selectedModel = resolveOpenRouterModelId(modelId);
   const [status, setStatus] = useState<AiStatus | null>(null);
   const [quota, setQuota] = useState<QuotaState>({ kind: 'loading' });
 
@@ -54,7 +69,20 @@ export function WebAiSection({ active }: { active: boolean }) {
 
   return (
     <>
-      <Text size="2">Concrete AI</Text>
+      <Text size="2">OpenRouter · {openRouterModelLabel(selectedModel)}</Text>
+      <Select.Root value={selectedModel} onValueChange={onModelChange}>
+        <Select.Trigger placeholder="Model" aria-label="AI model" />
+        <Select.Content>
+          {OPENROUTER_MODEL_OPTIONS.map((model) => (
+            <Select.Item key={model.id} value={model.id}>
+              {model.label}
+            </Select.Item>
+          ))}
+        </Select.Content>
+      </Select.Root>
+      <Text size="1" color="gray">
+        {OPENROUTER_MODEL_OPTIONS.find((model) => model.id === selectedModel)?.description}
+      </Text>
       {status?.message ? (
         <Text size="1" color={status.configured ? 'green' : 'gray'}>
           {status.configured ? '✓ ' : ''}{status.message}

@@ -480,7 +480,11 @@ export function SettingsPanel({
           Tutor AI
         </Text>
         {isWeb ? (
-          <WebAiSection active={section === 'ai'} />
+          <WebAiSection
+            active={section === 'ai'}
+            modelId={settings.openRouterModelId}
+            onModelChange={(value) => store.setOpenRouterModelId(value)}
+          />
         ) : (
         <>
         <Select.Root

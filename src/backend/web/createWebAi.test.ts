@@ -35,17 +35,17 @@ function setup(fetchImpl: (url: string, init: RequestInit) => Promise<Response>,
 afterEach(() => setWebIdTokenSource(null));
 
 describe('toProxyRequest', () => {
-  it('drops backend/model/temperature/provider/reasoning/capture and keeps the rest', () => {
+  it('passes model/temperature/provider/reasoning through and drops backend/capture', () => {
     expect(
       toProxyRequest({
         backend: 'openrouter',
-        model: 'x/y',
-        temperature: 0.4,
-        provider: { order: ['a'] },
-        reasoning: { enabled: false },
+        model: 'qwen/qwen3.8-27b',
+        temperature: 0.2,
+        provider: { order: ['Cerebras'], allow_fallbacks: true },
+        reasoning: { enabled: false, effort: 'none' },
         capture: 'full',
         max_tokens: 100,
-        operation: 'quiz_generation',
+        operation: 'create_card_fill',
         metadata: { topic: 't' },
         messages: [
           { role: 'system', content: 's' },
@@ -57,33 +57,54 @@ describe('toProxyRequest', () => {
         { role: 'system', content: 's' },
         { role: 'user', content: 'u' },
       ],
+      model: 'qwen/qwen3.8-27b',
       max_tokens: 100,
-      operation: 'quiz_generation',
+      temperature: 0.2,
+      provider: { order: ['Cerebras'], allow_fallbacks: true },
+      reasoning: { enabled: false, effort: 'none' },
+      operation: 'create_card_fill',
       metadata: { topic: 't' },
     });
   });
 
-  it('throws a clear error for a trailing assistant turn', () => {
-    expect(() =>
+  it('keeps temperature 0 and omits absent options', () => {
+    expect(toProxyRequest({ temperature: 0, messages: [{ role: 'user', content: 'u' }] })).toEqual({
+      messages: [{ role: 'user', content: 'u' }],
+      temperature: 0,
+    });
+  });
+
+  it('allows a trailing assistant turn (OpenRouter accepts it)', () => {
+    expect(
       toProxyRequest({
         messages: [
           { role: 'user', content: 'u' },
           { role: 'assistant', content: 'prefill' },
         ],
-      }),
-    ).toThrow(/must end with a user message/);
+      }).messages,
+    ).toHaveLength(2);
   });
 });
 
 describe('createWebAi', () => {
   it('routes chatCompletions to /v1/chat', async () => {
     const { ai, fetchMock } = setup(async () =>
-      jsonResponse(200, { content: 'ok', model: 'claude-haiku', usage: {}, requestId: 'r1', quota: { used: 1, limit: 5, resetsAt: 'x' } }),
+      jsonResponse(200, { content: 'ok', model: 'openai/gpt-4o-mini', usage: {}, requestId: 'r1', quota: { used: 1, limit: 5, resetsAt: 'x' } }),
     );
-    const result = await ai.chatCompletions({ backend: 'claude', model: 'm', messages: [{ role: 'user', content: 'hi' }] });
-    expect(result).toEqual({ content: 'ok', model: 'claude-haiku', usage: {}, requestId: 'r1' });
+    const result = await ai.chatCompletions({
+      backend: 'openrouter',
+      model: 'openai/gpt-4o-mini',
+      temperature: 0,
+      messages: [{ role: 'user', content: 'hi' }],
+    });
+    expect(result).toEqual({ content: 'ok', model: 'openai/gpt-4o-mini', usage: {}, requestId: 'r1' });
     const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-    expect(body).toEqual({ messages: [{ role: 'user', content: 'hi' }], stream: false });
+    expect(body).toEqual({
+      messages: [{ role: 'user', content: 'hi' }],
+      model: 'openai/gpt-4o-mini',
+      temperature: 0,
+      stream: false,
+    });
   });
 
   it('delivers stream deltas to onChatDelta listeners tagged with the streamId', async () => {
@@ -124,8 +145,9 @@ describe('createWebAi', () => {
   it('reports status from the token source', async () => {
     expect(await setup(async () => jsonResponse(200, {}), 'tok').ai.status()).toMatchObject({
       configured: true,
-      provider: 'claude',
-      model: 'Concrete AI',
+      provider: 'openrouter',
+      model: 'OpenRouter',
+      message: 'Signed in — AI runs on OpenRouter.',
     });
     expect(await setup(async () => jsonResponse(200, {}), null).ai.status()).toMatchObject({
       configured: false,
@@ -145,7 +167,7 @@ describe('createWebAi', () => {
     expect(await ai.recordActivity({ operation: 'x' })).toBe(false);
     expect(typeof ai.onAgentProgress(() => {})).toBe('function');
     expect(typeof ai.onSetTheme(() => {})).toBe('function');
-    expect(await ai.ping()).toMatchObject({ ok: true, model: 'Concrete AI' });
+    expect(await ai.ping()).toMatchObject({ ok: true, model: 'OpenRouter' });
     expect(fetchMock.mock.calls[0][0]).toBe('https://proxy.test/health');
   });
 });
