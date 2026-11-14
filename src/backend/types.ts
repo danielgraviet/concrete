@@ -29,9 +29,11 @@ export interface BackendCapabilities {
   diskImport: boolean;
   /**
    * "Import file…" into the vault (`vault.importFile`): a native picker on
-   * desktop, a browser picker + cloud file storage (PDFs) on web.
+   * desktop, a browser picker + cloud file storage (PDFs) on web. Optional
+   * so existing capability literals (tests, fakes) keep compiling; missing
+   * means off.
    */
-  fileImport: boolean;
+  fileImport?: boolean;
   /** Print a note to PDF via the hidden Electron window (`vault.exportNotePdf`). */
   nativePdfExport: boolean;
   /** Local activity / trajectories / telemetry pages (`ai.activity`, `ai.telemetry`, …). */
