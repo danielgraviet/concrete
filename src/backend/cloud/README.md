@@ -52,10 +52,9 @@ Firestore caps a document at 1 MiB. The repository rejects writes over **900 KB*
 `PayloadTooLargeError`, whose message names the path or key. This applies to notes, `writeData`, a single
 `appendData` line, and share payloads.
 
-**Risk:** `.vault/srs.json` (the review state for every card, the per-day stats, and the quiz state) is written whole. Each card adds its id, path, fingerprint and FSRS state, roughly
-250–350 bytes, so the file reaches the limit at about 2.5–3.5k cards.
-Before heavy users get there, either split it per deck/card (one doc per card, or one doc per 500 cards) or
-compress it. The app should catch `PayloadTooLargeError` and warn the user, not silently stop saving.
+**Resolved:** review state is now sharded (`.vault/srs-v2-manifest.json` + 64 `srs-v2-shard-XX.json` files, see `src/learn/srsShards.ts`), so every shard stays well under the limit even at ~50k cards. A load costs ~65 reads; a typical review save costs 2 writes (one shard + manifest).
+
+**Still open:** `.vault/cards.json` (LinkedCardStore) is one whole-file array of full card content (~0.3–1.5 KB per card) and hits the limit at roughly 600–3,000 app-made cards; it needs the same treatment.
 
 ## Free-tier budget (Spark plan)
 
@@ -79,7 +78,7 @@ What each call costs (every document read or written counts):
 Rules for the app adapter:
 
 1. **Debounce autosave by 2–3 s** (and flush on blur or unload). Saving on every keystroke would use up 20k writes a day within minutes of typing.
-2. Debounce `.vault/srs.json` saves too. The desktop's 400 ms is fine for disk but too fast here, so aim for about 2 s, plus a flush when the review session ends.
+2. Debounce review-state saves (`.vault/srs-v2-*`) too. The desktop's 400 ms is fine for disk but too fast here, so aim for about 2 s, plus a flush when the review session ends.
 3. On startup, call `listTree` **or** use `watch`'s first snapshot, not both. Each costs one read per note.
 4. Keep note bodies cached in memory. Do not call `readNote` again on every tab switch.
 5. Do not poll. Use `watch`, which only bills for changes.

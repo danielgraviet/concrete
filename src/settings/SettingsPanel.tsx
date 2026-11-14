@@ -297,7 +297,7 @@ export function SettingsPanel({
         <Text size="1" color="gray">
           Write cards in any note: <code>Question :: Answer</code>, <code>Term ::: Definition</code>{' '}
           (both directions), or <code>{'{{cloze}}'}</code> blanks. Review history is saved in{' '}
-          <code>.vault/srs.json</code> inside your vault.
+          <code>.vault/srs-v2-*.json</code> inside your vault.
         </Text>
       </Flex>
 
