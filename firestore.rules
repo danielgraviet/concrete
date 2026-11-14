@@ -1,0 +1,84 @@
+rules_version = '2';
+
+// Concrete web — Firestore security rules.
+// Data model: src/backend/cloud/README.md. Deploy: `firebase deploy --only firestore`.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isUser(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function data() {
+      return request.resource.data;
+    }
+
+    // ~1 MiB is Firestore's hard document cap; the app keeps payloads < 900 KB.
+    function smallString(value, max) {
+      return value is string && value.size() <= max;
+    }
+
+    function validPath(p) {
+      return p is string && p.size() > 0 && p.size() <= 1024 && !p.matches('(^|.*/)\\.\\.(/.*|$)');
+    }
+
+    // ── Private workspace: users/{uid}/** ──────────────────────────────────
+    match /users/{uid} {
+      allow read, write: if isUser(uid);
+
+      // { path, body, updatedAt, size }
+      match /notes/{noteId} {
+        allow read, delete: if isUser(uid);
+        allow create, update: if isUser(uid)
+          && data().keys().hasOnly(['path', 'body', 'updatedAt', 'size'])
+          && validPath(data().path)
+          && smallString(data().body, 1000000)
+          && smallString(data().updatedAt, 64)
+          && data().size is int;
+      }
+
+      // { path } — doc id is the encoded path
+      match /folders/{folderId} {
+        allow read, delete: if isUser(uid);
+        allow create, update: if isUser(uid)
+          && data().keys().hasOnly(['path'])
+          && validPath(data().path);
+      }
+
+      // { key, text, updatedAt, parts? | part? } — head doc + sealed append chunks
+      match /data/{dataId} {
+        allow read, delete: if isUser(uid);
+        allow create, update: if isUser(uid)
+          && data().keys().hasOnly(['key', 'text', 'updatedAt', 'parts', 'part'])
+          && smallString(data().key, 512)
+          && smallString(data().text, 1000000)
+          && smallString(data().updatedAt, 64)
+          && (!('parts' in data()) || data().parts is int)
+          && (!('part' in data()) || data().part is int);
+      }
+    }
+
+    // ── Public frozen snapshots: shares/{shareId} ──────────────────────────
+    // Anyone (even signed out) may fetch a share by id; ids are unguessable.
+    // Listing is limited to your own shares; shares are immutable.
+    match /shares/{shareId} {
+      allow get: if true;
+      allow list: if signedIn() && resource.data.ownerUid == request.auth.uid;
+      allow create: if signedIn()
+        && data().ownerUid == request.auth.uid
+        && data().keys().hasOnly(['ownerUid', 'kind', 'title', 'payload', 'createdAt'])
+        && data().kind in ['note', 'folder', 'deck', 'quiz']
+        && smallString(data().title, 500)
+        && smallString(data().payload, 1000000)
+        && smallString(data().createdAt, 64);
+      allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
+      allow update: if false;
+    }
+
+    // Everything else is denied (no rule = deny).
+  }
+}
