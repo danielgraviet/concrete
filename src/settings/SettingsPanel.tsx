@@ -20,6 +20,7 @@ import { DaytonaKeyField } from './DaytonaKeyField';
 import { RubricDashboard } from './RubricDashboard';
 import type { GradeReport } from '../quiz/types';
 import { getBackend } from '../backend';
+import { visibleSettingsSections, type SettingsSection } from './sections';
 
 // Charts load only when the AI Activity tab is opened.
 const TelemetryView = lazy(() =>
@@ -37,28 +38,6 @@ type Props = {
   providerOptions?: { id: string; label: string }[];
   onClose?: () => void;
 };
-
-type SettingsSection =
-  | 'appearance'
-  | 'editor'
-  | 'quiz'
-  | 'review'
-  | 'ai'
-  | 'agent'
-  | 'vault'
-  | 'activity';
-
-const SECTIONS: ReadonlyArray<readonly [SettingsSection, string]> = [
-  ['appearance', 'Appearance'],
-  ['editor', 'Editor'],
-  ['quiz', 'Quiz'],
-  ['review', 'Review'],
-  ['ai', 'Tutor AI'],
-  // TODO(web): gate 'agent' on capabilities.localAgents and 'activity' on capabilities.localTelemetry.
-  ['agent', 'Agent'],
-  ['vault', 'Vault'],
-  ['activity', 'AI Activity'],
-];
 
 /**
  * Full-window settings: section tabs down the left, the active section on the right.
@@ -93,6 +72,7 @@ export function SettingsPanel({
   const [setupMessage, setSetupMessage] = useState<string | null>(null);
   const [section, setSection] = useState<SettingsSection>('appearance');
   const [rubricDashboard, setRubricDashboard] = useState(false);
+  const capabilities = getBackend().capabilities;
 
   useEffect(() => store.subscribe(setSettings), [store]);
 
@@ -160,7 +140,7 @@ export function SettingsPanel({
           <Heading size="3">Settings</Heading>
         </div>
         <nav className="mv-settings-nav" role="tablist" aria-label="Settings sections" aria-orientation="vertical">
-          {SECTIONS.map(([id, label]) => (
+          {visibleSettingsSections(capabilities).map(([id, label]) => (
             <button
               key={id}
               type="button"
@@ -416,78 +396,81 @@ export function SettingsPanel({
           Customize grading rubric
         </Button>
 
-        {/* TODO(web): gate the code execution block on capabilities.sandbox. */}
-        <Text size="2" weight="medium">
-          Code execution
-        </Text>
-        <Select.Root
-          value={settings.sandboxProviderId}
-          onValueChange={(value) => store.setSandboxProviderId(value)}
-          disabled={sandboxProviders.length === 0}
-        >
-          <Select.Trigger placeholder="Code runner" />
-          <Select.Content>
-            {sandboxProviders.map((provider) => (
-              <Select.Item key={provider.id} value={provider.id}>
-                {provider.label}
-              </Select.Item>
-            ))}
-          </Select.Content>
-        </Select.Root>
-        <Text size="1" color="gray">
-          {sandboxStatus
-            ? `${sandboxStatus.available ? 'Ready' : 'Unavailable'} — ${sandboxStatus.detail ?? ''}`
-            : 'Checking…'}{' '}
-          Code questions run here to verify their answers; without a runner they are marked unverified.
-        </Text>
-        {settings.sandboxProviderId === 'daytona' ? (
-          <DaytonaKeyField
-            onChange={() => void getSandboxStatus('daytona').then(setSandboxStatus)}
-          />
+        {capabilities.sandbox ? (
+          <>
+            <Text size="2" weight="medium">
+              Code execution
+            </Text>
+            <Select.Root
+              value={settings.sandboxProviderId}
+              onValueChange={(value) => store.setSandboxProviderId(value)}
+              disabled={sandboxProviders.length === 0}
+            >
+              <Select.Trigger placeholder="Code runner" />
+              <Select.Content>
+                {sandboxProviders.map((provider) => (
+                  <Select.Item key={provider.id} value={provider.id}>
+                    {provider.label}
+                  </Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Root>
+            <Text size="1" color="gray">
+              {sandboxStatus
+                ? `${sandboxStatus.available ? 'Ready' : 'Unavailable'} — ${sandboxStatus.detail ?? ''}`
+                : 'Checking…'}{' '}
+              Code questions run here to verify their answers; without a runner they are marked unverified.
+            </Text>
+            {settings.sandboxProviderId === 'daytona' ? (
+              <DaytonaKeyField
+                onChange={() => void getSandboxStatus('daytona').then(setSandboxStatus)}
+              />
+            ) : null}
+            {sandboxStatus?.available
+              ? sandboxStatus.images
+                  ?.filter((image) => image.buildable)
+                  .map((image) => (
+                    <Flex key={image.id} align="center" justify="between" gap="3">
+                      <Text size="1" color="gray">
+                        {image.label}: {image.ready ? 'ready' : `not set up (${image.sizeHint ?? 'one-time build'})`}
+                      </Text>
+                      {image.ready ? null : (
+                        <Button
+                          size="1"
+                          variant="soft"
+                          disabled={settingUp !== null}
+                          onClick={() => {
+                            setSettingUp(image.id);
+                            setSetupMessage(null);
+                            const stop = onSandboxProgress(setSetupMessage);
+                            void prepareSandboxImage(image.id, settings.sandboxProviderId)
+                              .then((result) => {
+                                setSetupMessage(result.ok ? null : result.error ?? 'Setup failed.');
+                                return getSandboxStatus(settings.sandboxProviderId).then(setSandboxStatus);
+                              })
+                              .finally(() => {
+                                stop();
+                                setSettingUp(null);
+                              });
+                          }}
+                        >
+                          {settingUp === image.id ? 'Setting up…' : 'Set up now'}
+                        </Button>
+                      )}
+                    </Flex>
+                  ))
+              : null}
+            {setupMessage ? (
+              <Text size="1" color="gray">
+                {setupMessage}
+              </Text>
+            ) : null}
+            <Text size="1" color="gray">
+              Python code that imports numpy, pandas, scipy, scikit-learn or sympy runs in the data-science image
+              automatically; everything else uses the small default image. Code still has no network access.
+            </Text>
+          </>
         ) : null}
-        {sandboxStatus?.available
-          ? sandboxStatus.images
-              ?.filter((image) => image.buildable)
-              .map((image) => (
-                <Flex key={image.id} align="center" justify="between" gap="3">
-                  <Text size="1" color="gray">
-                    {image.label}: {image.ready ? 'ready' : `not set up (${image.sizeHint ?? 'one-time build'})`}
-                  </Text>
-                  {image.ready ? null : (
-                    <Button
-                      size="1"
-                      variant="soft"
-                      disabled={settingUp !== null}
-                      onClick={() => {
-                        setSettingUp(image.id);
-                        setSetupMessage(null);
-                        const stop = onSandboxProgress(setSetupMessage);
-                        void prepareSandboxImage(image.id, settings.sandboxProviderId)
-                          .then((result) => {
-                            setSetupMessage(result.ok ? null : result.error ?? 'Setup failed.');
-                            return getSandboxStatus(settings.sandboxProviderId).then(setSandboxStatus);
-                          })
-                          .finally(() => {
-                            stop();
-                            setSettingUp(null);
-                          });
-                      }}
-                    >
-                      {settingUp === image.id ? 'Setting up…' : 'Set up now'}
-                    </Button>
-                  )}
-                </Flex>
-              ))
-          : null}
-        {setupMessage ? (
-          <Text size="1" color="gray">
-            {setupMessage}
-          </Text>
-        ) : null}
-        <Text size="1" color="gray">
-          Python code that imports numpy, pandas, scipy, scikit-learn or sympy runs in the data-science image
-          automatically; everything else uses the small default image. Code still has no network access.
-        </Text>
       </Flex>
 
       <Flex direction="column" gap="2" className={`mv-settings-group ${section === 'ai' ? 'active' : ''}`}>
@@ -532,61 +515,64 @@ export function SettingsPanel({
                   : 'Uses your Codex login (ChatGPT subscription) and the model from your Codex config. An OpenAI API key, if set, is used instead.'}
               </Text>
             ) : null}
-            {/* TODO(web): gate API key entry on capabilities.apiKeySettings. */}
-            <TextField.Root
-              type="password"
-              placeholder={
-                aiStatus?.keySuffix
-                  ? 'Replace saved key (optional)'
-                  : backend === 'openrouter'
-                    ? 'OpenRouter API key'
-                    : backend === 'claude'
-                      ? 'Anthropic API key (optional)'
-                      : 'OpenAI API key (optional)'
-              }
-              value={apiKeyInput}
-              onChange={(event) => setApiKeyInput(event.target.value)}
-            />
-            <Flex align="center" gap="2" wrap="wrap">
-              <Button
-                type="button"
-                variant="soft"
-                disabled={!apiKeyInput.trim() || !getBackend().ai?.setApiKey}
-                onClick={() => {
-                  void getBackend().ai?.setApiKey(apiKeyInput.trim(), backend).then((status) => {
-                    setApiKeyInput('');
-                    setAiStatus(status);
-                    setKeyStatus('Key saved.');
-                  }).catch((error) => setKeyStatus(error instanceof Error ? error.message : 'Could not save key.'));
-                }}
-              >
-                Save key
-              </Button>
-              {backend !== 'openrouter' && aiStatus?.keySuffix ? (
-                <Button
-                  type="button"
-                  variant="soft"
-                  color="gray"
-                  onClick={() => {
-                    void getBackend().ai?.setApiKey('', backend).then((status) => {
-                      setAiStatus(status);
-                      setKeyStatus('Key removed. Using your CLI login.');
-                    }).catch((error) => setKeyStatus(error instanceof Error ? error.message : 'Could not remove key.'));
-                  }}
-                >
-                  Use login instead
-                </Button>
-              ) : null}
-              {backend === 'openrouter' ? (
-                <Link size="1" href={OPENROUTER_KEYS_URL} target="_blank" rel="noreferrer">
-                  Get an OpenRouter API key →
-                </Link>
-              ) : null}
-              {keyStatus ? <Text size="1" color="gray">{keyStatus}</Text> : null}
-            </Flex>
-            <Text size="1" color="gray">
-              Stored locally on this device and never shown again.
-            </Text>
+            {capabilities.apiKeySettings ? (
+              <>
+                <TextField.Root
+                  type="password"
+                  placeholder={
+                    aiStatus?.keySuffix
+                      ? 'Replace saved key (optional)'
+                      : backend === 'openrouter'
+                        ? 'OpenRouter API key'
+                        : backend === 'claude'
+                          ? 'Anthropic API key (optional)'
+                          : 'OpenAI API key (optional)'
+                  }
+                  value={apiKeyInput}
+                  onChange={(event) => setApiKeyInput(event.target.value)}
+                />
+                <Flex align="center" gap="2" wrap="wrap">
+                  <Button
+                    type="button"
+                    variant="soft"
+                    disabled={!apiKeyInput.trim() || !getBackend().ai?.setApiKey}
+                    onClick={() => {
+                      void getBackend().ai?.setApiKey(apiKeyInput.trim(), backend).then((status) => {
+                        setApiKeyInput('');
+                        setAiStatus(status);
+                        setKeyStatus('Key saved.');
+                      }).catch((error) => setKeyStatus(error instanceof Error ? error.message : 'Could not save key.'));
+                    }}
+                  >
+                    Save key
+                  </Button>
+                  {backend !== 'openrouter' && aiStatus?.keySuffix ? (
+                    <Button
+                      type="button"
+                      variant="soft"
+                      color="gray"
+                      onClick={() => {
+                        void getBackend().ai?.setApiKey('', backend).then((status) => {
+                          setAiStatus(status);
+                          setKeyStatus('Key removed. Using your CLI login.');
+                        }).catch((error) => setKeyStatus(error instanceof Error ? error.message : 'Could not remove key.'));
+                      }}
+                    >
+                      Use login instead
+                    </Button>
+                  ) : null}
+                  {backend === 'openrouter' ? (
+                    <Link size="1" href={OPENROUTER_KEYS_URL} target="_blank" rel="noreferrer">
+                      Get an OpenRouter API key →
+                    </Link>
+                  ) : null}
+                  {keyStatus ? <Text size="1" color="gray">{keyStatus}</Text> : null}
+                </Flex>
+                <Text size="1" color="gray">
+                  Stored locally on this device and never shown again.
+                </Text>
+              </>
+            ) : null}
           </>
         ) : null}
         {backend === 'openrouter' || backend === 'claude' ? (
@@ -685,22 +671,16 @@ export function SettingsPanel({
         <Text size="2" weight="medium">Vault</Text>
         <Text size="1" color="gray">Your Markdown files live in your Documents/Concrete folder by default.</Text>
         <Text size="1" color="gray">{vaultRoot ?? 'Documents/Concrete'}</Text>
-        <Button
-          type="button"
-          variant="soft"
-          onClick={onImportObsidian}
-          disabled={!onImportObsidian}
-        >
-          Import Obsidian Vault
-        </Button>
-        <Button
-          type="button"
-          variant="soft"
-          onClick={onImportNotion}
-          disabled={!onImportNotion}
-        >
-          Import Notion Export
-        </Button>
+        {onImportObsidian ? (
+          <Button type="button" variant="soft" onClick={onImportObsidian}>
+            Import Obsidian Vault
+          </Button>
+        ) : null}
+        {onImportNotion ? (
+          <Button type="button" variant="soft" onClick={onImportNotion}>
+            Import Notion Export
+          </Button>
+        ) : null}
         <Button
           type="button"
           variant="soft"

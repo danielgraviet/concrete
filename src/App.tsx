@@ -1198,8 +1198,7 @@ export default function App() {
     const name = await askText(
       noteTargetFolder ? `New note in ${noteTargetFolder}` : 'New note name',
       '',
-      // TODO(web): gate on capabilities.diskImport.
-      canUseDiskVault(root)
+      canUseDiskVault(root) && getBackend().capabilities.diskImport
         ? { extraAction: { label: 'Import file…', onClick: () => void importFileFromSidebar() } }
         : {},
     );
@@ -2742,9 +2741,8 @@ export default function App() {
               responses: rubricCalibrationSamples.map((sample) => sample.response),
               rubric,
             })}
-            // TODO(web): gate Obsidian/Notion import on capabilities.diskImport.
-            onImportObsidian={() => { void importObsidianVault().then((imported) => { if (imported) setOverlay(null); }); }}
-            onImportNotion={() => { void importNotionExport().then((imported) => { if (imported) setOverlay(null); }); }}
+            onImportObsidian={getBackend().capabilities.diskImport ? () => { void importObsidianVault().then((imported) => { if (imported) setOverlay(null); }); } : undefined}
+            onImportNotion={getBackend().capabilities.diskImport ? () => { void importNotionExport().then((imported) => { if (imported) setOverlay(null); }); } : undefined}
             onReplayOnboarding={() => {
               setOverlay(null);
               setOnboardingStep(0);
