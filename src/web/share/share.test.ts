@@ -6,7 +6,8 @@ import type { Backend } from '../../backend/types';
 import { initWebBackend, resetWebSessionForTesting } from '../../backend/web/session';
 import { cardsFromNote, draftsFromLinkedCards, withIds } from '../../learn/buildCards';
 import type { LinkedCard } from '../../learn/LinkedCards';
-import { LINKED_CARDS_FILE } from '../../learn/LinkedCardStore';
+import { LinkedCardStore } from '../../learn/LinkedCardStore';
+import { cloudRootFor } from '../../backend/web/cloudVault';
 import { parseQuizMarkdown } from '../../quiz/parseQuizMarkdown';
 import { serializeQuizMarkdown } from '../../quiz/serializeQuizMarkdown';
 import type { QuizDocument } from '../../quiz/types';
@@ -267,16 +268,27 @@ describe('share → getShare → duplicate round trip', () => {
 
     const deckRecord = (await repo.getShare(shareIds.deck))!;
     expect((readSharePayload('deck', deckRecord.payload) as DeckPayload).cards.length).toBeGreaterThan(0);
-    const before = JSON.parse((await repo.readData(recipient.uid, LINKED_CARDS_FILE)) ?? '{"cards":[]}').cards.length;
+    // Read cards back through LinkedCardStore's public API, straight from the repository
+    // (bypassing the vault's caches) so this proves they were persisted.
+    const storedCards = async () => {
+      const store = new LinkedCardStore(cloudRootFor(recipient.uid), {
+        read: (name) => repo.readData(recipient.uid, name),
+        write: (name, content) => repo.writeData(recipient.uid, name, content),
+      });
+      await store.load();
+      return store.all();
+    };
+    const before = (await storedCards()).length;
     const deck = await duplicateShare(deckRecord, deps);
     expect(deck.folder).toBe('Shared/Bio 2');
     expect(deck.cardsCreated).toBe(1);
     expect(await repo.readNote(recipient.uid, 'Shared/Bio 2/Cells.md')).toBe(NOTE_WITH_CARDS);
-    const stored = JSON.parse((await repo.readData(recipient.uid, LINKED_CARDS_FILE))!);
-    expect(stored.cards).toHaveLength(before + 1);
-    const created = stored.cards.at(-1);
+    const stored = await storedCards();
+    expect(stored).toHaveLength(before + 1);
+    const created = stored.at(-1)!;
     expect(created).toMatchObject({ kind: 'basic', front: 'What is ATP?', back: 'Energy currency', path: 'Shared/Bio 2/Cells.md' });
     expect(created.uid).not.toBe('lc-1');
+    expect(JSON.stringify(created)).not.toMatch(REVIEW_STATE_KEYS);
     // Nothing about the owner's review history reached the recipient.
     expect(await repo.readData(recipient.uid, '.vault/srs-v2-0.json')).toBeNull();
   });
