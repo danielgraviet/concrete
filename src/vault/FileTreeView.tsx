@@ -25,6 +25,8 @@ const PinnedNotesContext = createContext<{
   paths: ReadonlySet<string>;
   toggle: (path: string) => void;
 }>({ paths: new Set(), toggle: () => undefined });
+/** "Share…" in the context menus; absent when sharing is unavailable (desktop). */
+const ShareContext = createContext<((path: string, kind: TreeItemKind) => void) | undefined>(undefined);
 
 type FileTreeViewProps = {
   files: string[];
@@ -47,6 +49,8 @@ type FileTreeViewProps = {
   onDelete: (path: string, kind: TreeItemKind) => void | Promise<void>;
   /** Present for markdown files. Omitted when PDF export is unavailable. */
   onExportPdf?: (path: string) => void | Promise<void>;
+  /** Adds "Share…" to note and folder menus (web only). */
+  onShare?: (path: string, kind: TreeItemKind) => void;
 };
 
 function InlineRenameInput({
@@ -136,6 +140,7 @@ function FolderBranch({
   const isActive = activeFolder === node.path;
   const isRenaming = renaming?.kind === 'folder' && renaming.path === node.path;
   const badges = useContext(BadgesContext);
+  const onShare = useContext(ShareContext);
   const hasNewInside =
     !isOpen && [...badges.keys()].some((path) => path.startsWith(`${node.path}/`));
 
@@ -227,6 +232,7 @@ function FolderBranch({
           >
             Rename
           </ContextMenu.Item>
+          {onShare ? <ContextMenu.Item onSelect={() => onShare(node.path, 'folder')}>Share…</ContextMenu.Item> : null}
           <ContextMenu.Separator />
           <ContextMenu.Item
             color="red"
@@ -321,6 +327,7 @@ function TreeNode({
   const badge = useContext(BadgesContext).get(node.path);
   const pinnedNotes = useContext(PinnedNotesContext);
   const isPinned = pinnedNotes.paths.has(node.path);
+  const onShare = useContext(ShareContext);
 
   return (
     <ContextMenu.Root>
@@ -397,6 +404,9 @@ function TreeNode({
             {isPinned ? 'Unpin from top' : 'Pin to top'}
           </ContextMenu.Item>
         ) : null}
+        {onShare && /\.md$/i.test(node.name) ? (
+          <ContextMenu.Item onSelect={() => onShare(node.path, 'file')}>Share…</ContextMenu.Item>
+        ) : null}
         <ContextMenu.Separator />
         <ContextMenu.Item
           color="red"
@@ -438,6 +448,7 @@ export function FileTreeView({
   onRename,
   onDelete,
   onExportPdf,
+  onShare,
 }: FileTreeViewProps) {
   const pinnedPathSet = useMemo(() => new Set(pinnedPaths), [pinnedPaths]);
   const tree = useMemo(() => {
@@ -518,6 +529,7 @@ export function FileTreeView({
         if (source) commitRename(source, 'file', `@root/${source.split('/').pop() ?? source}`);
       }}
     >
+      <ShareContext.Provider value={onShare}>
       <BadgesContext.Provider value={badges}>
         <PinnedNotesContext.Provider value={{ paths: pinnedPathSet, toggle: onTogglePin ?? (() => undefined) }}>
         {tree.children.map((child) => (
@@ -541,6 +553,7 @@ export function FileTreeView({
         ))}
         </PinnedNotesContext.Provider>
       </BadgesContext.Provider>
+      </ShareContext.Provider>
     </div>
   );
 }
