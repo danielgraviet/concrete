@@ -126,6 +126,7 @@ import { getSandboxStatus } from './sandbox';
 import { verifyCodeQuestions } from './quiz/verifyCode';
 import type { AgentProviderId, AppSettings } from './settings';
 import { ProductTour } from './onboarding';
+import { getBackend } from './backend';
 
 const SettingsPanel = lazy(() =>
   import('./settings/SettingsPanel').then((m) => ({ default: m.SettingsPanel })),
@@ -701,7 +702,7 @@ export default function App() {
     // Opening the app counts as use; further interactions catch days when the
     // app stays open across midnight. The store deduplicates each local day.
     recordActivity();
-    void window.ai?.telemetry?.().then((spans) => {
+    void getBackend().ai?.telemetry?.().then((spans) => {
       const dates = spans
         .filter((span) => Number.isFinite(span.startedAt))
         .map((span) => {
@@ -758,7 +759,7 @@ export default function App() {
       if (settingsStore.get().providerId !== 'mock') return;
       try {
         for (const backend of ['openrouter', 'claude', 'codex'] as const) {
-          const status = await window.ai?.status(backend);
+          const status = await getBackend().ai?.status(backend);
           if (!status?.configured) continue;
           if (settingsStore.get().providerId === 'mock') settingsStore.setProviderId(backend);
           return;
@@ -802,10 +803,10 @@ export default function App() {
     const restore = () => {
       const opening = firstRun
         ? vault.openDefault()
-        : (window.vault?.restore ? vault.restore() : Promise.resolve(null));
+        : (getBackend().vault?.restore ? vault.restore() : Promise.resolve(null));
       void opening.then(async (result) => {
         if (cancelled || !result) {
-          void window.perf?.mark('renderer-interactive');
+          void getBackend().perf?.mark('renderer-interactive');
           return;
         }
         let seededPath = '';
@@ -856,7 +857,7 @@ export default function App() {
         setOpenTabs(preferred ? [preferred] : []);
         setPreviewTab(null);
         persistSelectionRef.current = true;
-        void window.perf?.mark('renderer-interactive');
+        void getBackend().perf?.mark('renderer-interactive');
       });
     };
     const idleId = window.setTimeout(restore, 0);
@@ -1197,6 +1198,7 @@ export default function App() {
     const name = await askText(
       noteTargetFolder ? `New note in ${noteTargetFolder}` : 'New note name',
       '',
+      // TODO(web): gate on capabilities.diskImport.
       canUseDiskVault(root)
         ? { extraAction: { label: 'Import file…', onClick: () => void importFileFromSidebar() } }
         : {},
@@ -2241,7 +2243,7 @@ export default function App() {
               }}
               onRename={renameTreeItem}
               onDelete={(path, kind) => void deleteTreeItem({ path, kind })}
-              onExportPdf={window.vault?.exportNotePdf ? (path) => void exportNotePdf(path) : undefined}
+              onExportPdf={getBackend().capabilities.nativePdfExport ? (path) => void exportNotePdf(path) : undefined}
             />
           </>
         )}
@@ -2740,6 +2742,7 @@ export default function App() {
               responses: rubricCalibrationSamples.map((sample) => sample.response),
               rubric,
             })}
+            // TODO(web): gate Obsidian/Notion import on capabilities.diskImport.
             onImportObsidian={() => { void importObsidianVault().then((imported) => { if (imported) setOverlay(null); }); }}
             onImportNotion={() => { void importNotionExport().then((imported) => { if (imported) setOverlay(null); }); }}
             onReplayOnboarding={() => {

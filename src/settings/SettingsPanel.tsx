@@ -19,6 +19,7 @@ import { getSandboxStatus, onSandboxProgress, prepareSandboxImage, type SandboxS
 import { DaytonaKeyField } from './DaytonaKeyField';
 import { RubricDashboard } from './RubricDashboard';
 import type { GradeReport } from '../quiz/types';
+import { getBackend } from '../backend';
 
 // Charts load only when the AI Activity tab is opened.
 const TelemetryView = lazy(() =>
@@ -53,6 +54,7 @@ const SECTIONS: ReadonlyArray<readonly [SettingsSection, string]> = [
   ['quiz', 'Quiz'],
   ['review', 'Review'],
   ['ai', 'Tutor AI'],
+  // TODO(web): gate 'agent' on capabilities.localAgents and 'activity' on capabilities.localTelemetry.
   ['agent', 'Agent'],
   ['vault', 'Vault'],
   ['activity', 'AI Activity'],
@@ -99,9 +101,10 @@ export function SettingsPanel({
   useEffect(() => {
     setAiStatus(null);
     setKeyStatus(null);
-    if (!backend || !window.ai?.status) return;
+    const ai = getBackend().ai;
+    if (!backend || !ai?.status) return;
     let cancelled = false;
-    void window.ai.status(backend).then((status) => {
+    void ai.status(backend).then((status) => {
       if (!cancelled) setAiStatus(status);
     }).catch(() => {});
     return () => {
@@ -110,7 +113,7 @@ export function SettingsPanel({
   }, [backend]);
 
   useEffect(() => {
-    void window.sandbox?.providers().then(setSandboxProviders).catch(() => setSandboxProviders([]));
+    void getBackend().sandbox?.providers().then(setSandboxProviders).catch(() => setSandboxProviders([]));
   }, []);
 
   useEffect(() => {
@@ -131,7 +134,7 @@ export function SettingsPanel({
       return;
     }
     let cancelled = false;
-    void window.ai?.agentStatus?.({ agentProviderId: settings.agentProviderId })
+    void getBackend().ai?.agentStatus?.({ agentProviderId: settings.agentProviderId })
       .then((status) => {
         if (!cancelled) setAgentStatus(status.message);
       })
@@ -413,6 +416,7 @@ export function SettingsPanel({
           Customize grading rubric
         </Button>
 
+        {/* TODO(web): gate the code execution block on capabilities.sandbox. */}
         <Text size="2" weight="medium">
           Code execution
         </Text>
@@ -528,6 +532,7 @@ export function SettingsPanel({
                   : 'Uses your Codex login (ChatGPT subscription) and the model from your Codex config. An OpenAI API key, if set, is used instead.'}
               </Text>
             ) : null}
+            {/* TODO(web): gate API key entry on capabilities.apiKeySettings. */}
             <TextField.Root
               type="password"
               placeholder={
@@ -546,9 +551,9 @@ export function SettingsPanel({
               <Button
                 type="button"
                 variant="soft"
-                disabled={!apiKeyInput.trim() || !window.ai?.setApiKey}
+                disabled={!apiKeyInput.trim() || !getBackend().ai?.setApiKey}
                 onClick={() => {
-                  void window.ai?.setApiKey(apiKeyInput.trim(), backend).then((status) => {
+                  void getBackend().ai?.setApiKey(apiKeyInput.trim(), backend).then((status) => {
                     setApiKeyInput('');
                     setAiStatus(status);
                     setKeyStatus('Key saved.');
@@ -563,7 +568,7 @@ export function SettingsPanel({
                   variant="soft"
                   color="gray"
                   onClick={() => {
-                    void window.ai?.setApiKey('', backend).then((status) => {
+                    void getBackend().ai?.setApiKey('', backend).then((status) => {
                       setAiStatus(status);
                       setKeyStatus('Key removed. Using your CLI login.');
                     }).catch((error) => setKeyStatus(error instanceof Error ? error.message : 'Could not remove key.'));
@@ -660,7 +665,7 @@ export function SettingsPanel({
             setCheckingExcalidraw(true);
             setExcalidrawStatus(null);
             try {
-              const status = await window.integrations?.checkExcalidrawMcp();
+              const status = await getBackend().integrations?.checkExcalidrawMcp();
               setExcalidrawStatus(status?.available
                 ? `Connected. ${status.tools.length} tools available.`
                 : status?.message ?? 'MCP status bridge unavailable. Restart Concrete and try again.');

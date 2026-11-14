@@ -1,6 +1,13 @@
+/// <reference types="vite/client" />
+
 declare module '*.svg?url' {
   const url: string;
   export default url;
+}
+
+interface ImportMetaEnv {
+  /** Build target: 'desktop' (Electron, default) or 'web'. Selects the backend in `src/backend`. */
+  readonly VITE_TARGET?: 'desktop' | 'web';
 }
 
 type VaultWatchType = 'add' | 'change' | 'unlink' | 'addDir' | 'unlinkDir';

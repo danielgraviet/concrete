@@ -1,3 +1,4 @@
+import { getBackend } from '../backend';
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const ALLOWED_IMAGE_MIME = new Set([
   'image/png',
@@ -15,7 +16,8 @@ export type ImageEditingContext = {
 export function createImageHandlers(getContext: () => ImageEditingContext) {
   const imageUploadHandler = async (file: File): Promise<string> => {
     const { vaultRoot, notePath } = getContext();
-    if (!vaultRoot || !notePath || !window.vault?.saveImage) {
+    const vault = getBackend().vault;
+    if (!vaultRoot || !notePath || !vault?.saveImage) {
       throw new Error('Image upload is only available inside the desktop app.');
     }
     if (file.size > MAX_IMAGE_BYTES) {
@@ -27,14 +29,15 @@ export function createImageHandlers(getContext: () => ImageEditingContext) {
       throw new Error(`Unsupported image type: ${mime}`);
     }
     const bytes = new Uint8Array(await file.arrayBuffer());
-    return window.vault.saveImage(vaultRoot, notePath, bytes, mime, file.name);
+    return vault.saveImage(vaultRoot, notePath, bytes, mime, file.name);
   };
 
   const imagePreviewHandler = async (src: string): Promise<string> => {
     if (/^(https?:|data:|blob:)/i.test(src)) return src;
     const { vaultRoot, notePath } = getContext();
-    if (!vaultRoot || !notePath || !window.vault?.readImageDataUrl) return src;
-    const dataUrl = await window.vault.readImageDataUrl(vaultRoot, notePath, src);
+    const vault = getBackend().vault;
+    if (!vaultRoot || !notePath || !vault?.readImageDataUrl) return src;
+    const dataUrl = await vault.readImageDataUrl(vaultRoot, notePath, src);
     return dataUrl || src;
   };
 

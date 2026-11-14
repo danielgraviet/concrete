@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { ChatSessionStore, memoryChatIO, vaultChatIO } from './sessionStore';
+import { getBackend } from '../../backend';
 
 /**
  * One Study Chat session store per vault. It lives above the chat pane so
@@ -7,7 +8,7 @@ import { ChatSessionStore, memoryChatIO, vaultChatIO } from './sessionStore';
  */
 export function useChatSessions(root: string | null, notePaths: string[]): ChatSessionStore {
   const store = useMemo(
-    () => new ChatSessionStore(root && window.vault?.readData ? vaultChatIO(root) : memoryChatIO()),
+    () => new ChatSessionStore(root && getBackend().vault?.readData ? vaultChatIO(root) : memoryChatIO()),
     [root],
   );
 

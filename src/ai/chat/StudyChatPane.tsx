@@ -24,6 +24,7 @@ import { ChatSessionList } from './ChatSessionList';
 import { asBlockquote, chatHistory } from './history';
 import type { ChatSessionStore } from './sessionStore';
 import type { StudyChatMessage, StudyChatMode } from './threadStore';
+import { getBackend } from '../../backend';
 
 export type ChatInsertTarget = 'cursor' | 'end';
 
@@ -263,7 +264,8 @@ export function StudyChatPane({
         ? 'Agent is off. Enable Codex or Claude (BYO) in Settings → Agent.'
         : !vaultRoot
           ? `Open a vault first so ${agentLabel} has a folder to edit.`
-          : typeof window.ai?.agentRun !== 'function'
+          // TODO(web): gate agent mode on capabilities.localAgents.
+          : typeof getBackend().ai?.agentRun !== 'function'
             ? 'Agent bridge missing. Fully restart Electron after updating.'
             : null;
       const userMsg = { role: 'user' as const, text: prompt, ...(path ? { notePath: path } : {}) };
@@ -286,12 +288,12 @@ export function StudyChatPane({
         });
       };
       appendLog(path ? 'Preparing note…' : 'Starting agent…', 'progress');
-      const stopProgress = window.ai?.onAgentProgress?.((event) => appendLog(event.text, event.kind));
+      const stopProgress = getBackend().ai?.onAgentProgress?.((event) => appendLog(event.text, event.kind));
 
       try {
         await onBeforeAgentRun?.();
         const tutor = client.getProvider();
-        const result = await window.ai!.agentRun({
+        const result = await getBackend().ai!.agentRun({
           vaultRoot,
           notePath: path || null,
           prompt,
@@ -357,7 +359,7 @@ export function StudyChatPane({
   }, [seedPrompt, busy, onSeedConsumed, sendChat]);
 
   const stop = () => {
-    if (mode === 'agent') void window.ai?.agentCancel?.();
+    if (mode === 'agent') void getBackend().ai?.agentCancel?.();
     else abortRef.current?.abort();
   };
 
@@ -516,15 +518,16 @@ export function StudyChatPane({
                 )}
                 {msg.pdfPaths?.length && vaultRoot ? (
                   <div className="study-chat-pdfs">
+                    {/* TODO(web): gate on capabilities.openWithOsApp / capabilities.revealInFolder. */}
                     {msg.pdfPaths.map((pdfPath) => (
                       <div key={pdfPath}>
                         <span>{pdfPath}</span>
-                        <button type="button" onClick={() => void window.vault?.openPath(vaultRoot, pdfPath)}>
+                        <button type="button" onClick={() => void getBackend().vault?.openPath(vaultRoot, pdfPath)}>
                           Open PDF
                         </button>
                         <button
                           type="button"
-                          onClick={() => void window.vault?.revealInFolder(vaultRoot, pdfPath)}
+                          onClick={() => void getBackend().vault?.revealInFolder(vaultRoot, pdfPath)}
                         >
                           Reveal in Finder
                         </button>

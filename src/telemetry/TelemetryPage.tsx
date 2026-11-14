@@ -18,6 +18,7 @@ import {
 } from './summary';
 import type { TelemetrySpan } from './types';
 import './telemetry.css';
+import { getBackend } from '../backend';
 
 type Tab = 'overview' | 'runs' | 'log';
 
@@ -326,8 +327,8 @@ function RawLog() {
   const [trajectories, setTrajectories] = useState<Trajectory[]>([]);
 
   const load = useCallback(() => {
-    void window.ai?.activity?.().then(setActivity).catch(() => setActivity([]));
-    void window.ai?.trajectories?.().then(setTrajectories).catch(() => setTrajectories([]));
+    void getBackend().ai?.activity?.().then(setActivity).catch(() => setActivity([]));
+    void getBackend().ai?.trajectories?.().then(setTrajectories).catch(() => setTrajectories([]));
   }, []);
   useEffect(load, [load]);
 
@@ -336,7 +337,7 @@ function RawLog() {
       <section className="tm-card">
         <header className="tm-card-head">
           <h3>Recent API calls ({activity.length})</h3>
-          <Button type="button" size="1" variant="soft" color="gray" onClick={() => window.ai?.activityClear?.().then(() => setActivity([]))}>
+          <Button type="button" size="1" variant="soft" color="gray" onClick={() => getBackend().ai?.activityClear?.().then(() => setActivity([]))}>
             Clear log
           </Button>
         </header>
@@ -392,11 +393,12 @@ export function TelemetryView() {
 
   const load = useCallback(() => {
     setNow(Date.now());
-    if (typeof window.ai?.telemetry !== 'function') {
+    const ai = getBackend().ai;
+    if (typeof ai?.telemetry !== 'function') {
       setSpans([]);
       return;
     }
-    void window.ai.telemetry().then(setSpans).catch(() => setSpans([]));
+    void ai.telemetry().then(setSpans).catch(() => setSpans([]));
   }, []);
   useEffect(load, [load]);
 
@@ -404,7 +406,7 @@ export function TelemetryView() {
 
   const clear = async () => {
     if (!window.confirm('Clear all AI telemetry? Usage charts will start empty.')) return;
-    await window.ai?.telemetryClear?.();
+    await getBackend().ai?.telemetryClear?.();
     load();
   };
 

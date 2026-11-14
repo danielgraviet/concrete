@@ -6,6 +6,7 @@ import {
 } from '../ai';
 import { truncateNoteContext } from '../ai';
 import { parseNoteCards, serializeNoteMcq, type ParsedMcqOption } from './parseNoteCards';
+import { getBackend } from '../backend';
 
 export type CardStyle = 'mixed' | 'basic' | 'cloze' | 'mcq';
 
@@ -130,7 +131,7 @@ export async function completeCardGeneration(
     // Qwen otherwise burns max_tokens on thinking and returns finish_reason=length with empty content.
     reasoning: { enabled: false, effort: 'none' as const },
   };
-  if (typeof window !== 'undefined' && window.ai?.chatCompletions) {
+  if (getBackend().ai?.chatCompletions) {
     const cerebras = new ChatModelProvider('openrouter', CARD_GENERATION_MODEL);
     return cerebras.complete(payload);
   }

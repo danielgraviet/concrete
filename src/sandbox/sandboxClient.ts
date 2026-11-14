@@ -1,4 +1,5 @@
 /** Renderer-side access to the code-execution bridge (runner lives in Electron main). */
+import { getBackend } from '../backend';
 
 export type SandboxImage = {
   id: string;
@@ -52,9 +53,10 @@ export function isRunnableLanguage(language: string | null | undefined): boolean
 }
 
 export async function getSandboxStatus(providerId?: string): Promise<SandboxStatus> {
-  if (typeof window === 'undefined' || !window.sandbox?.status) return UNAVAILABLE;
+  const sandbox = getBackend().sandbox;
+  if (!sandbox?.status) return UNAVAILABLE;
   try {
-    return await window.sandbox.status(providerId);
+    return await sandbox.status(providerId);
   } catch {
     return UNAVAILABLE;
   }
@@ -64,19 +66,21 @@ export async function runSandboxCode(
   request: SandboxRunRequest,
   providerId?: string,
 ): Promise<SandboxRunResult> {
-  if (typeof window === 'undefined' || !window.sandbox?.run) {
+  const sandbox = getBackend().sandbox;
+  if (!sandbox?.run) {
     return {
       ok: false, stdout: '', stderr: '', exitCode: null, timedOut: false, durationMs: 0,
       error: UNAVAILABLE.detail,
     };
   }
-  return window.sandbox.run({ ...request, providerId });
+  return sandbox.run({ ...request, providerId });
 }
 
 /** Progress messages for long setup steps (e.g. building the data-science image). */
 export function onSandboxProgress(callback: (message: string) => void): () => void {
-  if (typeof window === 'undefined' || !window.sandbox?.onProgress) return () => {};
-  return window.sandbox.onProgress((event) => callback(event.message));
+  const sandbox = getBackend().sandbox;
+  if (!sandbox?.onProgress) return () => {};
+  return sandbox.onProgress((event) => callback(event.message));
 }
 
 export type SandboxKeyStatus = SandboxKeyStatusPayload;
@@ -87,9 +91,10 @@ export const DAYTONA_KEYS_URL = 'https://app.daytona.io/dashboard/keys';
 const NO_KEY: SandboxKeyStatus = { configured: false, keySuffix: null, origin: null };
 
 export async function getSandboxKeyStatus(): Promise<SandboxKeyStatus> {
-  if (typeof window === 'undefined' || !window.sandbox?.keyStatus) return NO_KEY;
+  const sandbox = getBackend().sandbox;
+  if (!sandbox?.keyStatus) return NO_KEY;
   try {
-    return await window.sandbox.keyStatus();
+    return await sandbox.keyStatus();
   } catch {
     return NO_KEY;
   }
@@ -97,18 +102,20 @@ export async function getSandboxKeyStatus(): Promise<SandboxKeyStatus> {
 
 /** Save the Daytona API key ('' removes it). Stored by main, never readable back. */
 export async function setSandboxApiKey(apiKey: string): Promise<SandboxKeyStatus> {
-  if (typeof window === 'undefined' || !window.sandbox?.setApiKey) {
+  const sandbox = getBackend().sandbox;
+  if (!sandbox?.setApiKey) {
     throw new Error(UNAVAILABLE.detail);
   }
-  return window.sandbox.setApiKey(apiKey);
+  return sandbox.setApiKey(apiKey);
 }
 
 export async function prepareSandboxImage(
   tier: string,
   providerId?: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  if (typeof window === 'undefined' || !window.sandbox?.prepare) {
+  const sandbox = getBackend().sandbox;
+  if (!sandbox?.prepare) {
     return { ok: false, error: UNAVAILABLE.detail };
   }
-  return window.sandbox.prepare({ providerId, tier });
+  return sandbox.prepare({ providerId, tier });
 }

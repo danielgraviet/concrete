@@ -21,6 +21,7 @@ import {
   openRouterModelLabel,
 } from './openRouterModels';
 import { claudeModelLabel } from './claudeModels';
+import { getBackend } from '../backend';
 
 export {
   OPENROUTER_MODEL_DEFAULT,
@@ -63,12 +64,13 @@ function followUpText(followUp: { question: string; answer: string } | undefined
 }
 
 function requireAiBridge() {
-  if (typeof window === 'undefined' || !window.ai?.chatCompletions) {
+  const ai = getBackend().ai;
+  if (!ai?.chatCompletions) {
     throw new Error(
       'Live AI is only available in the Electron app (AI bridge missing). Restart Electron after updating.',
     );
   }
-  return window.ai;
+  return ai;
 }
 
 /**

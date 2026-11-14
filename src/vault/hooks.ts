@@ -9,6 +9,7 @@ import {
 import { VaultService } from './VaultService';
 import type { VaultWatchEvent } from './types';
 import { filterWatchByRoot, subscribeVaultWatch } from './watch';
+import { getBackend } from '../backend';
 
 /**
  * Thin vault binding: open/list CRUD helpers + live file/folder lists.
@@ -55,7 +56,7 @@ export function useVault(initialFiles: string[] = [], initialFolders: string[] =
 
   /** Open the default on-disk vault (Documents/Concrete). */
   const openDefault = useCallback(async () => {
-    if (typeof window === 'undefined' || typeof window.vault?.ensureDefault !== 'function') {
+    if (typeof getBackend().vault?.ensureDefault !== 'function') {
       return null;
     }
     const result = await VaultService.ensureDefault();
@@ -67,8 +68,9 @@ export function useVault(initialFiles: string[] = [], initialFolders: string[] =
   }, []);
 
   const restore = useCallback(async () => {
-    if (typeof window === 'undefined' || typeof window.vault?.restore !== 'function') return null;
-    const result = await window.vault.restore();
+    const vault = getBackend().vault;
+    if (typeof vault?.restore !== 'function') return null;
+    const result = await vault.restore();
     if (!result) return null;
     setRoot(result.root);
     setFiles(visibleFiles(result.files));
@@ -106,7 +108,7 @@ export function useVault(initialFiles: string[] = [], initialFolders: string[] =
   const mkdir = useCallback(async (name: string) => {
     const currentRoot = rootRef.current;
     if (!currentRoot) throw new Error('No vault open');
-    if (typeof window.vault?.mkdir !== 'function') {
+    if (typeof getBackend().vault?.mkdir !== 'function') {
       throw new Error('Folder create requires an Electron restart (mkdir IPC missing)');
     }
     const created = await VaultService.mkdir(currentRoot, name);

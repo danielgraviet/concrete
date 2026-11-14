@@ -3,6 +3,7 @@ import { planMigrations } from './reconcile';
 import { newSched, type Scheduler } from './scheduler';
 import { studyDay } from './studyDay';
 import type { DayStats, Rating, ReviewCard, SrsFile, StoredCard } from './types';
+import { getBackend } from '../backend';
 
 const STATE_FILE = '.vault/srs.json';
 const LOG_FILE = '.vault/srs-log.jsonl';
@@ -35,7 +36,7 @@ type DataAdapter = {
 };
 
 function adapterFor(root: string): DataAdapter {
-  const api = typeof window !== 'undefined' ? window.vault : undefined;
+  const api = getBackend().vault;
   if (root && api?.readData && api.writeData && api.appendData) {
     const { readData, writeData, appendData } = api;
     return {

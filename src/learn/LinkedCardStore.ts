@@ -1,4 +1,5 @@
 import { cleanLinkedInput, type LinkedCard, type LinkedCardInput } from './LinkedCards';
+import { getBackend } from '../backend';
 
 export const LINKED_CARDS_FILE = '.vault/cards.json';
 
@@ -15,7 +16,7 @@ type Adapter = {
 };
 
 function adapterFor(root: string, name: string): Adapter {
-  const api = typeof window !== 'undefined' ? window.vault : undefined;
+  const api = getBackend().vault;
   if (root && api?.readData && api.writeData) {
     const { readData, writeData } = api;
     return {
