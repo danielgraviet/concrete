@@ -8,6 +8,7 @@ import {
   useSyncExternalStore,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from 'react';
 import { Button, Flex, IconButton, Text } from '@radix-ui/themes';
 import {
@@ -251,6 +252,8 @@ function loadLayout(): LayoutState {
 }
 
 function resolveAiProvider(settings: AppSettings) {
+  // Web has one live provider (the Concrete AI proxy, which picks the model).
+  if (getBackend().target === 'web') return new ChatModelProvider('claude');
   switch (settings.providerId) {
     case 'openrouter':
       return new ChatModelProvider('openrouter', settings.openRouterModelId);
@@ -271,7 +274,7 @@ function isAlreadyExistsError(error: unknown): boolean {
   return code === 'EEXIST' || /EEXIST|already exists/i.test(message);
 }
 
-export default function App() {
+export default function App({ accountSlot }: { accountSlot?: ReactNode } = {}) {
   const vault = useVault(demoNotes, demoFolders);
   const [selected, setSelected] = useState('Welcome.md');
   const [openTabs, setOpenTabs] = useState<string[]>(['Welcome.md']);
@@ -756,7 +759,8 @@ export default function App() {
     // Leave the mock for the first live backend that is ready: an OpenRouter
     // key, then a Claude Code or Codex login or API key.
     void (async () => {
-      if (settingsStore.get().providerId !== 'mock') return;
+      // Web always uses the proxy (see resolveAiProvider); nothing to pick.
+      if (getBackend().target === 'web' || settingsStore.get().providerId !== 'mock') return;
       try {
         for (const backend of ['openrouter', 'claude', 'codex'] as const) {
           const status = await getBackend().ai?.status(backend);
@@ -2511,10 +2515,11 @@ export default function App() {
         <footer className="statusbar">
           <span>{controller.content.length} characters</span>
           <span>•</span>
-          <span>{root ? 'Saved to disk' : 'In-memory demo'}</span>
+          <span>{root ? (getBackend().target === 'web' ? 'Saved to cloud' : 'Saved to disk') : 'In-memory demo'}</span>
           {!isOnline ? <span className="airplane-mode-status" role="status" aria-label="Airplane mode: offline"><span aria-hidden="true">✈</span> Airplane mode</span> : null}
           <span className="status-spacer" />
           {layout.focusMode ? <span>Focus mode · Esc to exit</span> : <span>{saved ? 'Saved' : 'Editing'}</span>}
+          {accountSlot}
         </footer>
       </main>
 
