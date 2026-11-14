@@ -21,6 +21,7 @@ import { RubricDashboard } from './RubricDashboard';
 import type { GradeReport } from '../quiz/types';
 import { getBackend } from '../backend';
 import { visibleSettingsSections, type SettingsSection } from './sections';
+import { WebAiSection } from './WebAiSection';
 
 // Charts load only when the AI Activity tab is opened.
 const TelemetryView = lazy(() =>
@@ -73,6 +74,7 @@ export function SettingsPanel({
   const [section, setSection] = useState<SettingsSection>('appearance');
   const [rubricDashboard, setRubricDashboard] = useState(false);
   const capabilities = getBackend().capabilities;
+  const isWeb = getBackend().target === 'web';
 
   useEffect(() => store.subscribe(setSettings), [store]);
 
@@ -82,7 +84,7 @@ export function SettingsPanel({
     setAiStatus(null);
     setKeyStatus(null);
     const ai = getBackend().ai;
-    if (!backend || !ai?.status) return;
+    if (isWeb || !backend || !ai?.status) return;
     let cancelled = false;
     void ai.status(backend).then((status) => {
       if (!cancelled) setAiStatus(status);
@@ -90,7 +92,7 @@ export function SettingsPanel({
     return () => {
       cancelled = true;
     };
-  }, [backend]);
+  }, [backend, isWeb]);
 
   useEffect(() => {
     void getBackend().sandbox?.providers().then(setSandboxProviders).catch(() => setSandboxProviders([]));
@@ -477,6 +479,10 @@ export function SettingsPanel({
         <Text size="2" weight="medium">
           Tutor AI
         </Text>
+        {isWeb ? (
+          <WebAiSection active={section === 'ai'} />
+        ) : (
+        <>
         <Select.Root
           value={settings.providerId}
           onValueChange={(value) => store.setProviderId(value)}
@@ -592,6 +598,8 @@ export function SettingsPanel({
             </Select.Content>
           </Select.Root>
         ) : null}
+        </>
+        )}
       </Flex>
 
       <Flex direction="column" gap="2" className={`mv-settings-group ${section === 'agent' ? 'active' : ''}`}>
