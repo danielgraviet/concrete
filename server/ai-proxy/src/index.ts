@@ -4,6 +4,7 @@ import { createFirebaseVerifier } from "./auth";
 import { BurstLimiter } from "./burst";
 import { loadConfig, type Env } from "./config";
 import { D1QuotaStore } from "./quota";
+import { D1StorageStore } from "./storage";
 
 export type { Env } from "./config";
 
@@ -20,6 +21,7 @@ export default {
       verifyToken: createFirebaseVerifier(config.firebaseProjectId),
       quota: new D1QuotaStore(env.DB),
       model,
+      ...(env.FILES ? { files: { bucket: env.FILES, storage: new D1StorageStore(env.DB) } } : {}),
       burst,
       waitUntil: (p) => ctx.waitUntil(p),
       log: (entry) => console.log(JSON.stringify(entry)),

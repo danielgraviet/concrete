@@ -29,6 +29,9 @@ export function createElectronBackend(): Backend {
         && typeof vault.importNotion === 'function'
         && typeof vault.importFile === 'function';
     },
+    get fileImport() {
+      return typeof bridges()?.vault?.importFile === 'function';
+    },
     get nativePdfExport() {
       return typeof bridges()?.vault?.exportNotePdf === 'function';
     },

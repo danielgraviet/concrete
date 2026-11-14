@@ -15,6 +15,8 @@ import { InMemoryCloudRepository } from '../cloud/memory/InMemoryCloudRepository
 import { cloudRootFor, createCloudVault, type CloudVault } from './cloudVault';
 import { DEMO_USER, seedDemoWorkspace } from './demoSeed';
 import { isFirebaseConfiguredInEnv } from './firebaseEnv';
+import { getFilesClient } from './filesClient';
+import { InMemoryFiles } from './memoryFiles';
 import { setWebIdTokenSource } from './index';
 
 export type WebSessionMode = 'firebase' | 'demo';
@@ -83,6 +85,9 @@ export async function initWebBackend(options: InitWebBackendOptions = {}): Promi
   }
 
   setWebIdTokenSource(() => auth.getIdToken());
+  // Images/PDFs: R2 via the proxy Worker when signed in to Firebase (none when
+  // VITE_AI_PROXY_URL is unset); an in-memory store in demo mode.
+  const files = mode === 'firebase' ? getFilesClient() ?? undefined : new InMemoryFiles();
 
   const saveErrorListeners = new Set<SaveErrorListener>();
   let vault: CloudVault | null = null;
@@ -110,6 +115,7 @@ export async function initWebBackend(options: InitWebBackendOptions = {}): Promi
       vault = createCloudVault({
         repo,
         getWorkspaceId: () => uid,
+        files,
         onSaveError: (path, error) => {
           if (!saveErrorListeners.size) console.warn(`[cloud] could not save "${path}"`, error);
           for (const listener of [...saveErrorListeners]) listener(path, error);

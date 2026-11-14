@@ -22,6 +22,10 @@ MAX_TOKENS_CAP = "8000"
 QUOTA_MONTHLY = "100"
 # Optional comma-separated Firebase uids exempt from the monthly quota (e.g. the owner).
 QUOTA_ALLOWLIST_UIDS = ""
+# Largest single image/PDF upload to /v1/files, in MB.
+MAX_FILE_MB = "20"
+# Total file storage per user (R2 bytes), in MB. Separate from the AI quota.
+STORAGE_QUOTA_MB = "100"
 
 [[d1_databases]]
 binding = "DB"
@@ -29,6 +33,12 @@ database_name = "concrete-ai-quota"
 # Paste the id printed by `npx wrangler d1 create concrete-ai-quota`.
 database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "migrations"
+
+# Images and PDFs for the web app. Create once: `npx wrangler r2 bucket create concrete-files`.
+# Without this binding the /v1/files and /v1/storage routes answer 503 files_unavailable.
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "concrete-files"
 
 [observability]
 enabled = true

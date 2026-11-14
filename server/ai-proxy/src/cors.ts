@@ -7,7 +7,7 @@ export function corsHeaders(origin: string | null, allowed: string[]): Record<st
   if (!origin || !isOriginAllowed(origin, allowed)) return { Vary: "Origin" };
   return {
     "Access-Control-Allow-Origin": origin,
-    "Access-Control-Expose-Headers": "content-type",
+    "Access-Control-Expose-Headers": "content-type, content-length",
     Vary: "Origin",
   };
 }
@@ -21,7 +21,7 @@ export function preflight(req: Request, allowed: string[]): Response {
     status: 204,
     headers: {
       ...corsHeaders(origin, allowed),
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
       "Access-Control-Allow-Headers": "authorization, content-type",
       "Access-Control-Max-Age": "86400",
     },

@@ -1,6 +1,6 @@
 # Concrete AI proxy
 
-A Cloudflare Worker that sits between the Concrete web app and the Claude API. The browser can't hold an Anthropic API key, so this Worker does four things:
+A Cloudflare Worker that sits between the Concrete web app and the Claude API. It also stores the web app's images and PDFs in Cloudflare R2 (see [File storage](#file-storage)). The browser can't hold an Anthropic API key, so for AI this Worker does four things:
 
 1. Holds `ANTHROPIC_API_KEY` as a Worker secret.
 2. Checks that each caller is a signed-in Firebase user. It verifies the Firebase ID token with `jose` against Google's public keys (RS256, `iss`/`aud` = your project, `exp`/`iat`/`sub`).
@@ -67,6 +67,36 @@ Error bodies also carry a short generic `message`. Upstream bodies and headers a
 
 `{ "used": 3, "limit": 100, "resetsAt": "2026-12-01T00:00:00.000Z" }`. For allowlisted uids, `limit` is `-1`, meaning unlimited.
 
+### File storage
+
+Images and PDFs for the web app live in the R2 bucket bound as `FILES`, keyed `users/<uid>/<vault-relative path>`. The uid always comes from the verified token, never from the client, so a user can only reach their own files. These routes never touch the AI quota or the burst limiter. Without the `FILES` binding they answer `503 {"error":"files_unavailable"}`.
+
+Paths are vault-relative (`Stats/.attachments/plot.png`, `Papers/Lecture 1.pdf`) and sent URL-encoded as one segment (`encodeURIComponent`). A path gets `400 bad_path` when it is empty or absolute, contains `\` or control characters, has an empty, `.` or `..` segment, or is longer than 1024 characters.
+
+| Route | What it does |
+|---|---|
+| `PUT /v1/files/<path>` | Raw body. `content-type` must match the extension: `image/png`, `image/jpeg` (`.jpg`/`.jpeg`), `image/gif`, `image/webp`, `image/svg+xml`, `application/pdf`. With `?ifAbsent=1`, an existing file gets `409 already_exists` instead of an overwrite. Returns `{path, size, contentType, uploaded}`. |
+| `GET /v1/files/<path>` | Streams the bytes with the stored `content-type`, `cache-control: private`, `x-content-type-options: nosniff`. SVGs also get `content-security-policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` and `content-disposition: attachment`, so an uploaded SVG can't run script on the Worker origin. |
+| `DELETE /v1/files/<path>` | Deletes the file. With `?recursive=1` and no file at `<path>`, deletes everything under `<path>/` (up to 1000 per call; repeat while `truncated`). Returns `{deleted, truncated}`. |
+| `GET /v1/files?prefix=` | Lists `{files: [{path, size, contentType, uploaded}], truncated}` (up to 10,000). |
+| `POST /v1/files/move` | `{from, to}`. Moves one file (the new extension must keep the same type), or every file under the folder `from/` to `to/` (100 per call; repeat while `truncated`). Returns `{moved, truncated}`. |
+| `GET /v1/storage` | `{usedBytes, limitBytes}` |
+
+Limits:
+
+- **`MAX_FILE_MB`** (default 20) per upload. Larger uploads get `413 {"error":"too_large","limitBytes":…}`. Disallowed or mismatched types get `415 unsupported_type`.
+- **`STORAGE_QUOTA_MB`** (default 100) per user. Uploads over it get `413 {"error":"storage_quota_exceeded","usedBytes":…,"limitBytes":…}`. Usage lives in D1 (table `storage_usage`, migration `0002`):
+  - An overwrite charges only the size difference.
+  - A delete gives the bytes back.
+  - A move that replaces a file gives back the replaced file's size.
+  - Bytes are reserved atomically before the upload and refunded if R2 fails. Two concurrent overwrites of the same path can skew the counter slightly, but it never goes below zero.
+
+R2's free tier covers 10 GB of storage, 1M Class A operations and 10M Class B operations a month. What each action costs:
+
+- An upload is 1 head (Class B) plus 1 put (Class A).
+- A list is 1 Class A operation per 1000 objects. The web app lists once per vault load.
+- A move is about 4 operations per file.
+
 ### `GET /health`
 
 `{ "ok": true }`. Needs no auth.
@@ -91,7 +121,10 @@ Error bodies also carry a short generic `message`. Upstream bodies and headers a
 | `MAX_TOKENS_CAP` | var | `8000` | |
 | `QUOTA_MONTHLY` | var | `100` | Requests per user per month |
 | `QUOTA_ALLOWLIST_UIDS` | var | (empty) | Comma-separated uids exempt from the quota |
-| `DB` | D1 binding | – | Database `concrete-ai-quota` |
+| `MAX_FILE_MB` | var | `20` | Largest single image/PDF upload |
+| `STORAGE_QUOTA_MB` | var | `100` | File storage per user |
+| `DB` | D1 binding | – | Database `concrete-ai-quota` (AI usage and storage usage) |
+| `FILES` | R2 binding | – | Bucket `concrete-files`. Optional: without it, the file routes answer 503. |
 
 The proxy never sends `temperature`/`top_p`/`top_k`, `budget_tokens`, or assistant prefill. It sends top-level `cache_control: {type: "ephemeral"}` so that repeated note context is billed at the cache-read rate.
 
@@ -119,16 +152,17 @@ Run these from `server/ai-proxy/`.
 
 1. **Log in to Cloudflare:** `npx wrangler login`
 2. **Create the D1 database:** `npx wrangler d1 create concrete-ai-quota`. Paste the printed `database_id` into `wrangler.toml` under `[[d1_databases]]`.
-3. **Apply the migration to the remote DB:** `npm run db:migrate:remote` (runs `wrangler d1 migrations apply concrete-ai-quota --remote`)
-4. **Set the vars** in `wrangler.toml` `[vars]`:
+3. **Apply the migrations to the remote DB:** `npm run db:migrate:remote` (runs `wrangler d1 migrations apply concrete-ai-quota --remote`). This applies `0001_usage.sql` and `0002_storage.sql`. Run it again whenever you pull new migrations.
+4. **Create the R2 bucket for images and PDFs:** `npx wrangler r2 bucket create concrete-files`. The `[[r2_buckets]]` binding (`FILES` → `concrete-files`) is already in `wrangler.toml`. R2 is included in the free plan (10 GB), but Cloudflare may ask you to enable R2 once in the dashboard first.
+5. **Set the vars** in `wrangler.toml` `[vars]`:
    - `FIREBASE_PROJECT_ID` = your Firebase project id
    - `ALLOWED_ORIGINS` = your production web origin(s), comma-separated
    - `QUOTA_ALLOWLIST_UIDS` = your own Firebase uid (optional)
-   - review `MODEL`, `EFFORT`, `MAX_TOKENS_CAP`, `QUOTA_MONTHLY`
-5. **Set the API key secret:** `npx wrangler secret put ANTHROPIC_API_KEY`. Use a key from a dedicated Anthropic workspace if you can, so its spend is easy to see.
-6. **Deploy:** `npx wrangler deploy`. Note the `https://concrete-ai-proxy.<subdomain>.workers.dev` URL and point the web app at it.
-7. **Smoke test:** `curl https://<worker-url>/health` should return `{"ok":true}`. Then sign in on the web app and generate a quiz.
-8. **Watch it:** `npx wrangler tail`, or the Workers dashboard's Logs view (observability is enabled). Each chat logs uid, operation, usage and stop reason, but never content.
+   - review `MODEL`, `EFFORT`, `MAX_TOKENS_CAP`, `QUOTA_MONTHLY`, `MAX_FILE_MB`, `STORAGE_QUOTA_MB`
+6. **Set the API key secret:** `npx wrangler secret put ANTHROPIC_API_KEY`. Use a key from a dedicated Anthropic workspace if you can, so its spend is easy to see.
+7. **Deploy:** `npx wrangler deploy`. Note the `https://concrete-ai-proxy.<subdomain>.workers.dev` URL and point the web app at it.
+8. **Smoke test:** `curl https://<worker-url>/health` should return `{"ok":true}`. Then sign in on the web app and generate a quiz. Paste an image into a note and import a PDF to check file storage.
+9. **Watch it:** `npx wrangler tail`, or the Workers dashboard's Logs view (observability is enabled). Each chat logs uid, operation, usage and stop reason, but never content.
 
 To check usage: `npx wrangler d1 execute concrete-ai-quota --remote --command "SELECT * FROM usage ORDER BY used DESC LIMIT 20"`.
 

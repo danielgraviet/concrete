@@ -14,6 +14,7 @@ function fakeBackend(): Backend {
       revealInFolder: false,
       openWithOsApp: false,
       diskImport: false,
+      fileImport: false,
       nativePdfExport: false,
       localTelemetry: false,
       sandbox: false,

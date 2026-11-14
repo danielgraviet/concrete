@@ -49,6 +49,7 @@ const NO_CAPABILITIES: BackendCapabilities = {
   revealInFolder: false,
   openWithOsApp: false,
   diskImport: false,
+  fileImport: false,
   nativePdfExport: false,
   localTelemetry: false,
   sandbox: false,
@@ -56,15 +57,22 @@ const NO_CAPABILITIES: BackendCapabilities = {
 };
 
 /**
- * Web backend: AI via the proxy Worker when configured; no vault yet (the
- * browser demo mode renders, same as a desktop renderer with no bridges).
- * Every desktop-only capability is off.
+ * Web backend: AI via the proxy Worker when configured; the session mounts a
+ * cloud vault on `vault` after sign-in. Every desktop-only capability is off.
+ * `fileImport` follows the mounted vault: the cloud vault only exposes
+ * `readPdf` (and a working `importFile`) when file storage is configured.
  */
 export function createWebBackend(): Backend {
   const client = getAiProxyClient();
-  return {
+  const backend: Backend = {
     target: 'web',
     ...(client ? { ai: createWebAi(client) } : {}),
-    capabilities: { ...NO_CAPABILITIES },
+    capabilities: {
+      ...NO_CAPABILITIES,
+      get fileImport() {
+        return typeof backend.vault?.readPdf === 'function';
+      },
+    },
   };
+  return backend;
 }

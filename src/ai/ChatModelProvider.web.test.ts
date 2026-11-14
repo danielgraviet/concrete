@@ -8,6 +8,7 @@ const caps: Backend['capabilities'] = {
   revealInFolder: false,
   openWithOsApp: false,
   diskImport: false,
+  fileImport: false,
   nativePdfExport: false,
   localTelemetry: false,
   sandbox: false,

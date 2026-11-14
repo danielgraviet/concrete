@@ -1202,7 +1202,7 @@ export default function App({ accountSlot }: { accountSlot?: ReactNode } = {}) {
     const name = await askText(
       noteTargetFolder ? `New note in ${noteTargetFolder}` : 'New note name',
       '',
-      canUseDiskVault(root) && getBackend().capabilities.diskImport
+      canUseDiskVault(root) && getBackend().capabilities.fileImport
         ? { extraAction: { label: 'Import file…', onClick: () => void importFileFromSidebar() } }
         : {},
     );

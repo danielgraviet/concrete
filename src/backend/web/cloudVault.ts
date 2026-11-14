@@ -29,11 +29,21 @@
  * each note once). `exportWorkspace` would fetch bodies in the same pass but
  * also downloads every `.vault/` key, including the append-only review log the
  * app never reads, so it is not used. Pass `liveSync: false` to skip the watch.
+ *
+ * Images and PDFs (when `files` is set) live in R2 behind the proxy Worker,
+ * at the same vault-relative paths the desktop uses on disk: pasted images in
+ * `<note dir>/.attachments/`, imported PDFs in the chosen folder. Each tree
+ * load (`open` / `list`) makes ONE extra `GET /v1/files` call (one R2 list
+ * operation per 1000 stored files) to fill `pdfFiles`. Image previews are
+ * fetched once per session and cached in memory as data URLs. Folder renames
+ * and deletes also move/delete the files under the folder (best effort).
  */
 
 import type { CloudRepository, CloudWatchEvent, Unsubscribe, WorkspaceId } from '../cloud/CloudRepository';
 import { NotFoundError, PayloadTooLargeError } from '../cloud/errors';
 import type { VaultBackend } from '../types';
+import { FilesError, type CloudFiles } from './filesClient';
+import { extractPdfPagesInBrowser, MAX_PDF_PAGES } from './pdfText';
 
 export const DEFAULT_FLUSH_DELAY_MS = 2500;
 export const DEFAULT_MAX_WAIT_MS = 15_000;
@@ -54,6 +64,15 @@ export interface CloudVaultOptions {
   liveSync?: boolean;
   /** Listen for page hide/unload to flush (default: when `window` exists). */
   installPageListeners?: boolean;
+  /**
+   * Image/PDF storage. Without it, saveImage / readImageDataUrl / readPdf are
+   * omitted and importFile / extractPdfText reject (the UI hides them).
+   */
+  files?: CloudFiles;
+  /** File picker for `importFile` (default: a hidden `<input type=file>`). */
+  pickFile?: (accept: string) => Promise<File | null>;
+  /** PDF text extraction (default: pdfjs-dist in the browser). */
+  extractPdfPages?: (bytes: Uint8Array, maxPages: number) => Promise<{ pages: string[]; totalPages: number }>;
 }
 
 export type CloudVault = VaultBackend & {
@@ -91,6 +110,115 @@ function notAvailable(): Promise<never> {
   return Promise.reject(new Error(NOT_ON_WEB));
 }
 
+// ── Files helpers (mirror electron/main.cjs saveImage / readImageDataUrl) ──
+
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const IMAGE_CACHE_MAX = 64;
+const IMAGE_MIME: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+};
+const IMAGE_EXT_BY_MIME: Record<string, string> = {
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/gif': '.gif',
+  'image/webp': '.webp',
+  'image/svg+xml': '.svg',
+};
+
+function extname(path: string): string {
+  const base = path.slice(path.lastIndexOf('/') + 1);
+  const dot = base.lastIndexOf('.');
+  return dot > 0 ? base.slice(dot).toLowerCase() : '';
+}
+
+function dirname(path: string): string {
+  const slash = path.lastIndexOf('/');
+  return slash > 0 ? path.slice(0, slash) : '';
+}
+
+function isPdfPath(path: string): boolean {
+  return extname(path) === '.pdf';
+}
+
+function isNotePath(path: string): boolean {
+  return extname(path) === '.md';
+}
+
+/** Collapse `.` / `..` segments; null when the path escapes the vault root. */
+export function normalizeVaultPath(path: string): string | null {
+  const out: string[] = [];
+  for (const part of path.split('/')) {
+    if (!part || part === '.') continue;
+    if (part === '..') {
+      if (!out.length) return null;
+      out.pop();
+    } else out.push(part);
+  }
+  return out.length ? out.join('/') : null;
+}
+
+function baseName(name: string): string {
+  return String(name || '').split(/[\\/]/).pop() ?? '';
+}
+
+function sanitizeImageStem(name: string): string {
+  const base = baseName(name);
+  const ext = extname(base);
+  const stem = ext ? base.slice(0, -ext.length) : base;
+  const cleaned = stem.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+  return cleaned || 'image';
+}
+
+function sanitizePdfStem(name: string): string {
+  const stem = baseName(name).replace(/\.pdf$/i, '');
+  // eslint-disable-next-line no-control-regex
+  const cleaned = stem.replace(/[\u0000-\u001f\u007f]+/g, '').trim();
+  return cleaned && cleaned !== '.' && cleaned !== '..' ? cleaned : 'Document';
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
+}
+
+function toDataUrl(bytes: Uint8Array, mime: string): string {
+  return `data:${mime};base64,${bytesToBase64(bytes)}`;
+}
+
+function isExists(error: unknown): boolean {
+  return error instanceof FilesError && error.code === 'already_exists';
+}
+
+/** Hidden `<input type=file>`; resolves null when the picker is cancelled. */
+function pickFileInBrowser(accept: string): Promise<File | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = accept;
+    input.style.display = 'none';
+    let settled = false;
+    const done = (file: File | null) => {
+      if (settled) return;
+      settled = true;
+      input.remove();
+      resolve(file);
+    };
+    input.addEventListener('change', () => done(input.files?.[0] ?? null), { once: true });
+    input.addEventListener('cancel', () => done(null), { once: true });
+    document.body.appendChild(input);
+    input.click();
+  });
+}
+
 export function createCloudVault(options: CloudVaultOptions): CloudVault {
   const { repo, getWorkspaceId, onSaveError } = options;
   const flushDelayMs = options.flushDelayMs ?? DEFAULT_FLUSH_DELAY_MS;
@@ -120,6 +248,69 @@ export function createCloudVault(options: CloudVaultOptions): CloudVault {
 
   const ws = () => getWorkspaceId();
   const root = () => cloudRootFor(ws());
+
+  const files = options.files;
+  /** PDF paths from the last tree load, kept current by import/rename/delete. */
+  let pdfPaths = new Set<string>();
+  /** Session cache of image previews: vault path → data URL ('' = missing). */
+  const imageCache = new Map<string, Promise<string>>();
+
+  function logFileError(what: string, error: unknown): void {
+    console.warn(`[cloud] ${what} failed`, error);
+  }
+
+  function forgetFilesUnder(path: string): void {
+    for (const key of [...imageCache.keys()]) if (isUnder(key, path)) imageCache.delete(key);
+  }
+
+  function cacheImage(path: string, value: Promise<string>): void {
+    imageCache.delete(path);
+    imageCache.set(path, value);
+    while (imageCache.size > IMAGE_CACHE_MAX) {
+      const oldest = imageCache.keys().next().value;
+      if (oldest === undefined) break;
+      imageCache.delete(oldest);
+    }
+  }
+
+  async function listPdfs(): Promise<string[]> {
+    if (!files) return [];
+    try {
+      return (await files.list()).map((f) => f.path).filter(isPdfPath);
+    } catch (error) {
+      logFileError('listing PDFs', error);
+      return [...pdfPaths];
+    }
+  }
+
+  /** Best-effort file move alongside a folder rename; never throws. */
+  async function moveFilesUnder(from: string, to: string): Promise<void> {
+    if (!files) return;
+    try {
+      await files.move(from, to);
+    } catch (error) {
+      logFileError(`moving files under "${from}"`, error);
+    }
+    pdfPaths = new Set([...pdfPaths].map((p) => (isUnder(p, from) ? to + p.slice(from.length) : p)));
+    forgetFilesUnder(from);
+  }
+
+  /** Best-effort file delete alongside a folder delete; never throws. */
+  async function removeFilesUnder(path: string): Promise<void> {
+    if (!files) return;
+    try {
+      await files.remove(path, { recursive: true });
+    } catch (error) {
+      logFileError(`deleting files under "${path}"`, error);
+    }
+    pdfPaths = new Set([...pdfPaths].filter((p) => !isUnder(p, path)));
+    forgetFilesUnder(path);
+  }
+
+  function hasPdfsUnder(path: string): boolean {
+    for (const p of pdfPaths) if (isUnder(p, path)) return true;
+    return false;
+  }
 
   // ── Buffer ───────────────────────────────────────────────────────────────
 
@@ -325,18 +516,138 @@ export function createCloudVault(options: CloudVaultOptions): CloudVault {
   // ── Vault API ────────────────────────────────────────────────────────────
 
   async function list(): Promise<VaultListResult> {
-    const tree = await repo.listTree(ws());
-    const files = tree.notes.map((note) => note.path);
+    const [tree, pdfs] = await Promise.all([repo.listTree(ws()), listPdfs()]);
+    const notes = tree.notes.map((note) => note.path);
     // Notes written locally but not flushed yet still belong in the tree.
-    for (const path of pendingNotes.keys()) if (!files.includes(path)) files.push(path);
-    files.sort((a, b) => a.localeCompare(b));
-    return { files, pdfFiles: [], folders: tree.folders };
+    for (const path of pendingNotes.keys()) if (!notes.includes(path)) notes.push(path);
+    notes.sort((a, b) => a.localeCompare(b));
+    pdfPaths = new Set(pdfs);
+    const pdfFiles = [...pdfPaths].sort((a, b) => a.localeCompare(b));
+    // A PDF's folders show in the tree even when they hold no notes.
+    const folders = new Set(tree.folders);
+    const before = folders.size;
+    for (const pdf of pdfFiles) {
+      for (let dir = dirname(pdf); dir; dir = dirname(dir)) folders.add(dir);
+    }
+    const folderList = folders.size === before ? tree.folders : [...folders].sort((a, b) => a.localeCompare(b));
+    return { files: notes, pdfFiles, folders: folderList };
   }
 
   async function openVault(): Promise<VaultOpenResult> {
     const result = { root: root(), ...(await list()) };
     startWatch();
     return result;
+  }
+
+  // ── Files (images + PDFs) ────────────────────────────────────────────────
+
+  async function saveImage(
+    _root: string,
+    notePath: string,
+    bytes: Uint8Array,
+    mime: string,
+    suggestedName = '',
+  ): Promise<string> {
+    if (!files) return notAvailable();
+    if (!(bytes instanceof Uint8Array)) throw new Error('Invalid image data');
+    if (bytes.length > MAX_IMAGE_BYTES) throw new Error('Image is larger than 8 MB.');
+    const extFromName = extname(String(suggestedName || ''));
+    const ext = IMAGE_EXT_BY_MIME[mime] || (IMAGE_MIME[extFromName] ? extFromName : null);
+    if (!ext) throw new Error('Unsupported image type.');
+    const contentType = IMAGE_MIME[ext];
+    const noteDir = dirname(String(notePath || ''));
+    const attachments = noteDir ? `${noteDir}/.attachments` : '.attachments';
+    const stem = sanitizeImageStem(suggestedName);
+    // One list call finds a free name; ifAbsent guards against races.
+    const taken = new Set<string>();
+    try {
+      for (const f of await files.list(`${attachments}/`)) taken.add(f.path);
+    } catch (error) {
+      logFileError('listing attachments', error);
+    }
+    for (let n = 1; n < 10_000; n += 1) {
+      const name = n === 1 ? `${stem}${ext}` : `${stem}-${n}${ext}`;
+      const path = `${attachments}/${name}`;
+      if (taken.has(path)) continue;
+      try {
+        await files.put(path, bytes, contentType, { ifAbsent: true });
+      } catch (error) {
+        if (isExists(error)) continue;
+        throw error;
+      }
+      cacheImage(path, Promise.resolve(toDataUrl(bytes, contentType)));
+      return `.attachments/${name}`;
+    }
+    throw new Error('Could not find a free name for this image.');
+  }
+
+  async function readImageDataUrl(_root: string, notePath: string, src: string): Promise<string> {
+    if (!files || typeof src !== 'string' || /^(https?:|data:)/i.test(src)) return '';
+    const noteDir = dirname(String(notePath || ''));
+    let decoded = src.trim().replace(/^<|>$/g, '');
+    try {
+      decoded = decodeURIComponent(decoded);
+    } catch {
+      // Keep the raw path when it is not percent-encoded.
+    }
+    const path = normalizeVaultPath(noteDir ? `${noteDir}/${decoded}` : decoded);
+    if (!path) return '';
+    const cached = imageCache.get(path);
+    if (cached) return cached;
+    const mime = IMAGE_MIME[extname(path)] || 'application/octet-stream';
+    const loading: Promise<string> = files.getBytes(path).then(
+      (bytes) => (bytes.length > MAX_IMAGE_BYTES ? '' : toDataUrl(bytes, mime)),
+      (error: unknown) => {
+        // Stale references are normal: cache the miss. Retry other failures later.
+        if (!(error instanceof FilesError && error.code === 'not_found')) {
+          if (imageCache.get(path) === loading) imageCache.delete(path);
+          logFileError(`loading image "${path}"`, error);
+        }
+        return '';
+      },
+    );
+    cacheImage(path, loading);
+    return loading;
+  }
+
+  async function readPdf(_root: string, name: string): Promise<Uint8Array> {
+    if (!files) return notAvailable();
+    if (typeof name !== 'string' || !isPdfPath(name)) throw new Error('Not a PDF file');
+    return files.getBytes(name);
+  }
+
+  async function extractPdfText(_root: string, name: string): Promise<{ pages: string[]; totalPages: number }> {
+    if (!files) return notAvailable();
+    if (!isPdfPath(name)) throw new Error('Only .pdf files are allowed');
+    const bytes = await files.getBytes(name);
+    return (options.extractPdfPages ?? extractPdfPagesInBrowser)(bytes, MAX_PDF_PAGES);
+  }
+
+  /** Upload a PDF picked in the browser into `folder`; never overwrites ("Notes 2.pdf"). */
+  async function importFile(_root: string, folder: string): Promise<string | null> {
+    if (!files) return notAvailable();
+    const file = await (options.pickFile ?? pickFileInBrowser)('.pdf,application/pdf');
+    if (!file) return null;
+    if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') {
+      throw new Error('Only PDF files can be imported on the web.');
+    }
+    const dir = folder ? normalizeVaultPath(folder) : '';
+    if (dir === null) throw new Error('Invalid folder');
+    const stem = sanitizePdfStem(file.name);
+    for (let n = 1; n < 10_000; n += 1) {
+      const name = n === 1 ? `${stem}.pdf` : `${stem} ${n}.pdf`;
+      const path = dir ? `${dir}/${name}` : name;
+      if (pdfPaths.has(path)) continue;
+      try {
+        await files.put(path, file, 'application/pdf', { ifAbsent: true });
+      } catch (error) {
+        if (isExists(error)) continue;
+        throw error;
+      }
+      pdfPaths.add(path);
+      return path;
+    }
+    throw new Error('Could not find a free name for this PDF.');
   }
 
   const vault: CloudVault = {
@@ -380,22 +691,58 @@ export function createCloudVault(options: CloudVaultOptions): CloudVault {
     },
 
     async rename(_root, from, to) {
+      if (isPdfPath(from)) {
+        if (!files) return notAvailable();
+        const raw = String(to || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+        const target = normalizeVaultPath(isPdfPath(raw) ? raw : `${raw}.pdf`);
+        if (!target || !isPdfPath(target)) throw new Error('Invalid destination path');
+        if (target === from) return from;
+        if (pdfPaths.has(target)) throw new Error(`"${target}" already exists`);
+        await files.move(from, target);
+        pdfPaths.delete(from);
+        pdfPaths.add(target);
+        return target;
+      }
+      const isFolder = !isNotePath(from);
       await flushNotesUnder(from);
-      const next = await repo.rename(ws(), from, to);
+      let next: string;
+      try {
+        next = await repo.rename(ws(), from, to);
+      } catch (error) {
+        // A folder that only holds PDFs has no notes to rename.
+        const target = normalizeVaultPath(String(to || ''));
+        if (!(isFolder && error instanceof NotFoundError && target && hasPdfsUnder(from))) throw error;
+        next = target;
+      }
       for (const [key, body] of [...noteCache]) {
         if (!isUnder(key, from)) continue;
         noteCache.delete(key);
         noteCache.set(next + key.slice(from.length), body);
       }
+      // Attachments and PDFs under a renamed folder follow it.
+      if (isFolder) await moveFilesUnder(from, next);
       return next;
     },
 
     async delete(_root, name) {
+      if (isPdfPath(name)) {
+        if (!files) return notAvailable();
+        await files.remove(name);
+        pdfPaths.delete(name);
+        return true;
+      }
+      const isFolder = !isNotePath(name);
       // Buffered edits to a note we are deleting are moot.
       take((kind, key) => kind === 'note' && isUnder(key, name));
       await chain;
-      await repo.remove(ws(), name);
+      try {
+        await repo.remove(ws(), name);
+      } catch (error) {
+        // A folder that only holds PDFs has no notes to remove.
+        if (!(isFolder && error instanceof NotFoundError && hasPdfsUnder(name))) throw error;
+      }
       for (const key of [...noteCache.keys()]) if (isUnder(key, name)) noteCache.delete(key);
+      if (isFolder) await removeFilesUnder(name);
       return true;
     },
 
@@ -472,10 +819,13 @@ export function createCloudVault(options: CloudVaultOptions): CloudVault {
     importNotion: notAvailable,
     openPath: notAvailable,
     revealInFolder: notAvailable,
-    importFile: notAvailable,
-    extractPdfText: notAvailable,
-    // Omitted on purpose: readPdf, exportNotePdf, takePdfExport, pdfExportReady,
-    // and (until image storage exists) saveImage / readImageDataUrl.
+    // Omitted on purpose: exportNotePdf, takePdfExport, pdfExportReady.
+
+    // Need file storage. Without it readPdf is absent, which turns
+    // `capabilities.fileImport` off on web.
+    importFile: files ? importFile : notAvailable,
+    extractPdfText: files ? extractPdfText : notAvailable,
+    ...(files ? { saveImage, readImageDataUrl, readPdf } : {}),
 
     flushAll,
     hasPendingWrites: () => hasBuffered() || inflightCount > 0,

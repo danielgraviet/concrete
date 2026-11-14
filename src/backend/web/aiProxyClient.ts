@@ -192,15 +192,56 @@ function isAbort(err: unknown): boolean {
   return err instanceof Error && err.name === 'AbortError';
 }
 
+export type ProxyRequestInit = RequestInit & {
+  auth?: boolean;
+  /** Turns a non-2xx status + parsed JSON body (or null) into the error to throw. */
+  errorFromBody?: (status: number, body: unknown) => Error;
+  /** Builds transport errors (unauthorized, network_error, aborted). */
+  makeError?: (code: AiProxyErrorCode, status: number, detail?: string) => Error;
+};
+
+export type ProxyRequest = (path: string, init: ProxyRequestInit) => Promise<Response>;
+
+/**
+ * Authenticated fetch against the proxy Worker: injects the bearer token,
+ * maps network/abort failures and non-2xx bodies to typed errors. Shared by
+ * the AI client and the files client.
+ */
+export function createProxyRequest(options: AiProxyClientOptions): ProxyRequest {
+  const baseUrl = options.baseUrl.replace(/\/+$/, '');
+  const getIdToken = options.getIdToken;
+  const fetchImpl = options.fetch ?? ((...args: Parameters<typeof fetch>) => globalThis.fetch(...args));
+  return async (path, init) => {
+    const { auth, errorFromBody: fromBody = errorFromBody, makeError, ...rest } = init;
+    const fail = makeError ?? ((code, status, detail) => new AiProxyError(code, status, { detail }));
+    const headers: Record<string, string> = { ...(rest.headers as Record<string, string> | undefined) };
+    if (auth !== false) {
+      const token = await getIdToken().catch(() => null);
+      if (!token) throw fail('unauthorized', 401);
+      headers.Authorization = `Bearer ${token}`;
+    }
+    let res: Response;
+    try {
+      res = await fetchImpl(`${baseUrl}${path}`, { ...rest, headers });
+    } catch (err) {
+      if (isAbort(err) || rest.signal?.aborted) throw fail('aborted', 0);
+      throw fail('network_error', 0, err instanceof Error ? err.message : String(err));
+    }
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      throw fromBody(res.status, body);
+    }
+    return res;
+  };
+}
+
 export class AiProxyClient {
-  private readonly baseUrl: string;
   private readonly getIdToken: () => Promise<string | null>;
-  private readonly fetchImpl: typeof fetch;
+  private readonly request: ProxyRequest;
 
   constructor(options: AiProxyClientOptions) {
-    this.baseUrl = options.baseUrl.replace(/\/+$/, '');
     this.getIdToken = options.getIdToken;
-    this.fetchImpl = options.fetch ?? ((...args) => globalThis.fetch(...args));
+    this.request = createProxyRequest(options);
   }
 
   /** True when a token source currently yields a token (i.e. a user is signed in). */
@@ -210,27 +251,6 @@ export class AiProxyClient {
     } catch {
       return false;
     }
-  }
-
-  private async request(path: string, init: RequestInit & { auth?: boolean }): Promise<Response> {
-    const headers: Record<string, string> = { ...(init.headers as Record<string, string> | undefined) };
-    if (init.auth !== false) {
-      const token = await this.getIdToken().catch(() => null);
-      if (!token) throw new AiProxyError('unauthorized', 401);
-      headers.Authorization = `Bearer ${token}`;
-    }
-    let res: Response;
-    try {
-      res = await this.fetchImpl(`${this.baseUrl}${path}`, { ...init, headers });
-    } catch (err) {
-      if (isAbort(err) || init.signal?.aborted) throw new AiProxyError('aborted', 0);
-      throw new AiProxyError('network_error', 0, { detail: err instanceof Error ? err.message : String(err) });
-    }
-    if (!res.ok) {
-      const body = await res.json().catch(() => null);
-      throw errorFromBody(res.status, body);
-    }
-    return res;
   }
 
   async chat(req: AiProxyChatRequest, opts: { signal?: AbortSignal } = {}): Promise<AiProxyChatResult> {

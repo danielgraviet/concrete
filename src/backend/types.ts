@@ -25,8 +25,13 @@ export interface BackendCapabilities {
   revealInFolder: boolean;
   /** Open a vault file with the OS default app (`vault.openPath`). */
   openWithOsApp: boolean;
-  /** Native file pickers: importObsidian / importNotion / importFile. */
+  /** Native folder imports: importObsidian / importNotion (desktop only). */
   diskImport: boolean;
+  /**
+   * "Import file…" into the vault (`vault.importFile`): a native picker on
+   * desktop, a browser picker + cloud file storage (PDFs) on web.
+   */
+  fileImport: boolean;
   /** Print a note to PDF via the hidden Electron window (`vault.exportNotePdf`). */
   nativePdfExport: boolean;
   /** Local activity / trajectories / telemetry pages (`ai.activity`, `ai.telemetry`, …). */

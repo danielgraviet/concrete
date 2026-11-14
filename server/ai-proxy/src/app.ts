@@ -4,6 +4,8 @@ import { BurstLimiter } from "./burst";
 import type { Config } from "./config";
 import { corsHeaders, preflight } from "./cors";
 import { mapUpstreamError, REFUSED, type MappedError } from "./errors";
+import { filesRouteMethods, handleFiles, type FilesDeps } from "./files";
+import { json, type Cors } from "./http";
 import { BadRequest, clampMaxTokens, parseChatRequest, splitMessages } from "./messages";
 import { periodFor, resetsAtFor, UNLIMITED, type QuotaInfo, type QuotaStore } from "./quota";
 
@@ -25,19 +27,12 @@ export interface Deps {
   verifyToken: TokenVerifier;
   quota: QuotaStore;
   model: ModelClient;
+  /** R2 bucket + storage accounting for `/v1/files`; absent when the FILES binding is missing. */
+  files?: FilesDeps;
   burst?: BurstLimiter;
   now?: () => Date;
   waitUntil?: (p: Promise<unknown>) => void;
   log?: (entry: Record<string, unknown>) => void;
-}
-
-type Cors = Record<string, string>;
-
-function json(status: number, body: unknown, cors: Cors): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json; charset=utf-8", ...cors },
-  });
 }
 
 function errorJson(err: MappedError, cors: Cors): Response {
@@ -64,10 +59,15 @@ export async function handleRequest(req: Request, deps: Deps): Promise<Response>
       return req.method === "GET" ? json(200, { ok: true }, cors) : json(405, { error: "method_not_allowed" }, cors);
     }
 
+    const fileMethods = filesRouteMethods(url.pathname);
     const route =
-      url.pathname === "/v1/chat" ? "chat" : url.pathname === "/v1/quota" ? "quota" : null;
+      url.pathname === "/v1/chat" ? "chat" : url.pathname === "/v1/quota" ? "quota" : fileMethods ? "files" : null;
     if (!route) return json(404, { error: "not_found" }, cors);
-    if ((route === "chat" && req.method !== "POST") || (route === "quota" && req.method !== "GET")) {
+    if (
+      (route === "chat" && req.method !== "POST") ||
+      (route === "quota" && req.method !== "GET") ||
+      (route === "files" && !fileMethods!.includes(req.method))
+    ) {
       return json(405, { error: "method_not_allowed" }, cors);
     }
 
@@ -79,6 +79,12 @@ export async function handleRequest(req: Request, deps: Deps): Promise<Response>
     } catch (err) {
       if (err instanceof AuthError) return json(401, { error: "unauthorized" }, cors);
       throw err;
+    }
+
+    // File routes never touch the AI quota or burst limiter.
+    if (route === "files") {
+      if (!deps.files) return json(503, { error: "files_unavailable" }, cors);
+      return await handleFiles(req, url, { uid, config, files: deps.files, cors });
     }
 
     const now = deps.now?.() ?? new Date();

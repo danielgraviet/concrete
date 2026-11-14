@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
@@ -7,11 +7,15 @@ import type { Deps, ModelClient, ModelStream } from "../src/app";
 import { AuthError, type TokenVerifier } from "../src/auth";
 import { loadConfig, type Env } from "../src/config";
 import { D1QuotaStore } from "../src/quota";
+import { D1StorageStore } from "../src/storage";
 
-/** Minimal D1 stand-in backed by node:sqlite, with the real migration applied. */
+/** Minimal D1 stand-in backed by node:sqlite, with the real migrations applied. */
 export function makeD1(): { d1: D1Database; sqlite: DatabaseSync } {
   const sqlite = new DatabaseSync(":memory:");
-  sqlite.exec(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../migrations/0001_usage.sql"), "utf8"));
+  const dir = join(dirname(fileURLToPath(import.meta.url)), "../migrations");
+  for (const file of readdirSync(dir).filter((f) => f.endsWith(".sql")).sort()) {
+    sqlite.exec(readFileSync(join(dir, file), "utf8"));
+  }
   const stmt = (sql: string, args: unknown[]) => ({
     bind: (...a: unknown[]) => stmt(sql, a),
     first: async () => (sqlite.prepare(sql).get(...(args as never[])) as unknown) ?? null,
@@ -93,8 +97,78 @@ export function serverError() {
   return Anthropic.APIError.generate(500, { type: "error", error: { message: "raw upstream body" } }, "boom", new Headers());
 }
 
-export function makeDeps(opts: { env?: Partial<Env>; turn?: FakeTurn; now?: Date } = {}) {
+interface FakeObject {
+  bytes: Uint8Array;
+  contentType?: string;
+  uploaded: Date;
+}
+
+/** In-memory stand-in for the subset of R2Bucket the files routes use. */
+export function makeR2() {
+  const store = new Map<string, FakeObject>();
+  const ops: string[] = [];
+  const meta = (key: string, v: FakeObject) => ({
+    key,
+    size: v.bytes.byteLength,
+    uploaded: v.uploaded,
+    httpMetadata: { contentType: v.contentType },
+  });
+  const bucket = {
+    async head(key: string) {
+      ops.push(`head ${key}`);
+      const v = store.get(key);
+      return v ? meta(key, v) : null;
+    },
+    async get(key: string) {
+      ops.push(`get ${key}`);
+      const v = store.get(key);
+      if (!v) return null;
+      return {
+        ...meta(key, v),
+        body: new Blob([v.bytes]).stream(),
+        arrayBuffer: async () => v.bytes.slice().buffer,
+      };
+    },
+    async put(key: string, value: ArrayBuffer, opts?: { httpMetadata?: { contentType?: string } }) {
+      ops.push(`put ${key}`);
+      const v = { bytes: new Uint8Array(value).slice(), contentType: opts?.httpMetadata?.contentType, uploaded: new Date("2026-11-14T00:00:00Z") };
+      store.set(key, v);
+      return meta(key, v);
+    },
+    async delete(keys: string | string[]) {
+      for (const k of Array.isArray(keys) ? keys : [keys]) {
+        ops.push(`delete ${k}`);
+        store.delete(k);
+      }
+    },
+    async list(o: { prefix?: string; cursor?: string; limit?: number } = {}) {
+      ops.push(`list ${o.prefix ?? ""}`);
+      const keys = [...store.keys()].filter((k) => k.startsWith(o.prefix ?? "")).sort();
+      const start = o.cursor ? Number(o.cursor) : 0;
+      const limit = o.limit ?? 1000;
+      const slice = keys.slice(start, start + limit);
+      const truncated = start + limit < keys.length;
+      return {
+        objects: slice.map((k) => meta(k, store.get(k)!)),
+        delimitedPrefixes: [],
+        truncated,
+        ...(truncated ? { cursor: String(start + limit) } : {}),
+      };
+    },
+  };
+  return { bucket: bucket as unknown as R2Bucket, store, ops };
+}
+
+export function storageUsedFor(sqlite: DatabaseSync, uid: string): number {
+  const row = sqlite.prepare("SELECT used_bytes FROM storage_usage WHERE uid = ?").get(uid) as
+    | { used_bytes: number }
+    | undefined;
+  return row?.used_bytes ?? 0;
+}
+
+export function makeDeps(opts: { env?: Partial<Env>; turn?: FakeTurn; now?: Date; files?: boolean } = {}) {
   const { d1, sqlite } = makeD1();
+  const r2 = makeR2();
   const model = fakeModel(opts.turn);
   const logs: Record<string, unknown>[] = [];
   const pending: Promise<unknown>[] = [];
@@ -109,11 +183,12 @@ export function makeDeps(opts: { env?: Partial<Env>; turn?: FakeTurn; now?: Date
     verifyToken: fakeVerifier,
     quota: new D1QuotaStore(d1),
     model: model.client,
+    ...(opts.files === false ? {} : { files: { bucket: r2.bucket, storage: new D1StorageStore(d1) } }),
     now: opts.now ? () => opts.now! : undefined,
     waitUntil: (p) => pending.push(p),
     log: (e) => logs.push(e),
   };
-  return { deps, model, sqlite, logs, settle: () => Promise.all(pending) };
+  return { deps, model, sqlite, r2, logs, settle: () => Promise.all(pending) };
 }
 
 export function usedFor(sqlite: DatabaseSync, uid: string): number {
