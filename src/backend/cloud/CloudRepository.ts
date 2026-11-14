@@ -7,7 +7,7 @@
  * (`firebase/FirebaseCloudRepository`); a Postgres/HTTP implementation can
  * replace it without touching the app.
  *
- * The API mirrors the desktop vault bridge (`window.vault`): notes are
+ * The API mirrors the desktop vault preload bridge: notes are
  * addressed by vault-relative paths like `Stats/Bayes.md`, folders by paths
  * like `Stats/Charts`, and app data (`.vault/srs.json`, `.vault/srs-log.jsonl`,
  * ...) by key. Everything is scoped to a workspace id — for now the signed-in
