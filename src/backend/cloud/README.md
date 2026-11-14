@@ -54,7 +54,7 @@ Firestore caps a document at 1 MiB. The repository rejects writes over **900 KB*
 
 **Resolved:** review state is now sharded (`.vault/srs-v2-manifest.json` + 64 `srs-v2-shard-XX.json` files, see `src/learn/srsShards.ts`), so every shard stays well under the limit even at ~50k cards. A load costs ~65 reads; a typical review save costs 2 writes (one shard + manifest).
 
-**Still open:** `.vault/cards.json` (LinkedCardStore) is one whole-file array of full card content (~0.3–1.5 KB per card) and hits the limit at roughly 600–3,000 app-made cards; it needs the same treatment.
+Linked cards are sharded the same way (`.vault/cards-v2-manifest.json` + 64 `cards-v2-shard-XX.json`, see `src/learn/cardShards.ts`).
 
 ## Free-tier budget (Spark plan)
 
