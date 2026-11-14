@@ -54,6 +54,29 @@ export function getWebSession(): WebSession | null {
   return session;
 }
 
+/** Vendor-free view of the current account, for features like sharing. */
+export interface WebAccount {
+  repo: CloudRepository;
+  auth: AuthProvider;
+  /** Signed-in user (uid = workspace id), or null. */
+  user: CloudUser | null;
+  /** Flush buffered vault writes so the repository has the latest content. */
+  flush(): Promise<void>;
+}
+
+export function getWebAccount(): WebAccount | null {
+  const current = session;
+  if (!current) return null;
+  return {
+    repo: current.repo,
+    auth: current.auth,
+    user: current.auth.currentUser(),
+    flush: async () => {
+      await current.currentVault()?.flushAll();
+    },
+  };
+}
+
 /** Reset for tests. */
 export function resetWebSessionForTesting(): void {
   session?.currentVault()?.dispose();

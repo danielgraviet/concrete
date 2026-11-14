@@ -26,6 +26,7 @@ import {
   FileTextIcon,
   GearIcon,
   PlusCircledIcon,
+  Share1Icon,
   TrashIcon,
   UpdateIcon,
 } from '@radix-ui/react-icons';
@@ -126,6 +127,8 @@ import { BrandLogo } from './branding/BrandLogo';
 import { getSandboxStatus } from './sandbox';
 import { verifyCodeQuestions } from './quiz/verifyCode';
 import type { AgentProviderId, AppSettings } from './settings';
+// Type-only: share UI lives in src/web/share and is injected by the web entry.
+import type { RequestShare, ShareTarget } from './web/share/types';
 import { ProductTour } from './onboarding';
 import { getBackend } from './backend';
 
@@ -274,7 +277,7 @@ function isAlreadyExistsError(error: unknown): boolean {
   return code === 'EEXIST' || /EEXIST|already exists/i.test(message);
 }
 
-export default function App({ accountSlot }: { accountSlot?: ReactNode } = {}) {
+export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode; onShare?: RequestShare } = {}) {
   const vault = useVault(demoNotes, demoFolders);
   const [selected, setSelected] = useState('Welcome.md');
   const [openTabs, setOpenTabs] = useState<string[]>(['Welcome.md']);
@@ -1471,6 +1474,18 @@ export default function App({ accountSlot }: { accountSlot?: ReactNode } = {}) {
     controller.loadContent(body);
   };
 
+  /** Web only: save pending edits, then open the share dialog. */
+  const requestShare = onShare
+    ? async (target: ShareTarget) => {
+        if (controller.isDirty) await controller.persistence.flush();
+        onShare(target);
+      }
+    : undefined;
+  const shareTreeItem = requestShare
+    ? (path: string, kind: TreeItemKind) =>
+        void requestShare(kind === 'folder' ? { kind: 'folder', path } : isQuizPath(path) ? { kind: 'quiz', path } : { kind: 'note', path })
+    : undefined;
+
   const startReview = async (deck: Deck) => {
     if (controller.isDirty) await controller.persistence.flush();
     // Pick up edits to the open note that the debounce hasn't indexed yet.
@@ -2164,6 +2179,11 @@ export default function App({ accountSlot }: { accountSlot?: ReactNode } = {}) {
             onStart={(deck) => void startReview(deck)}
             onCreate={openQuickCreate}
             onClose={() => setSidebarOpen(false)}
+            onShare={
+              requestShare
+                ? (deck) => void requestShare({ kind: 'deck', deck, cards: review.cards, linkedCards: review.linked.all() })
+                : undefined
+            }
           />
         ) : (
           <>
@@ -2247,6 +2267,7 @@ export default function App({ accountSlot }: { accountSlot?: ReactNode } = {}) {
               onRename={renameTreeItem}
               onDelete={(path, kind) => void deleteTreeItem({ path, kind })}
               onExportPdf={getBackend().capabilities.nativePdfExport ? (path) => void exportNotePdf(path) : undefined}
+              onShare={shareTreeItem}
             />
           </>
         )}
@@ -2322,6 +2343,20 @@ export default function App({ accountSlot }: { accountSlot?: ReactNode } = {}) {
                 )}
               </IconButton>
             )}
+            {shareTreeItem && !reviewing && selected && /\.md$/i.test(selected) ? (
+              <IconButton
+                type="button"
+                size="2"
+                variant="ghost"
+                color="gray"
+                highContrast
+                aria-label={isQuizPath(selected) ? 'Share quiz' : 'Share note'}
+                title={isQuizPath(selected) ? 'Share quiz…' : 'Share note…'}
+                onClick={() => shareTreeItem(selected, 'file')}
+              >
+                <Share1Icon width={16} height={16} />
+              </IconButton>
+            ) : null}
             {!reviewing && isQuizPath(selected) ? <QuizReviewToggle system={review} path={selected} /> : null}
             {!reviewing && !isQuizPath(selected) && selected ? (
               <Button

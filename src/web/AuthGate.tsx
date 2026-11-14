@@ -1,10 +1,12 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 import { Avatar, Button, Callout, DropdownMenu, Flex, Spinner, Text } from '@radix-ui/themes';
 import { BrandLogo } from '../branding/BrandLogo';
 import { settingsStore } from '../settings';
 import type { CloudUser } from '../backend/cloud/AuthProvider';
 import type { WebSession } from '../backend/web/session';
 import './web.css';
+
+const MySharesDialog = lazy(() => import('./share/MySharesDialog').then((m) => ({ default: m.MySharesDialog })));
 
 type AuthState = { status: 'restoring' } | { status: 'signed-out' } | { status: 'signed-in'; user: CloudUser };
 
@@ -134,6 +136,7 @@ export function AuthGate({
 
 function AccountMenu({ user, session }: { user: CloudUser; session: WebSession }) {
   const [busy, setBusy] = useState(false);
+  const [sharesOpen, setSharesOpen] = useState(false);
   const signOut = async () => {
     setBusy(true);
     try {
@@ -144,31 +147,40 @@ function AccountMenu({ user, session }: { user: CloudUser; session: WebSession }
     }
   };
   return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger>
-        <button type="button" className="web-account-trigger" aria-label="Account" disabled={busy}>
-          <Avatar
-            size="1"
-            radius="full"
-            src={user.photoURL ?? undefined}
-            fallback={initials(user)}
-            className="web-account-avatar"
-          />
-          <span>{user.displayName || user.email || 'Account'}</span>
-        </button>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Content size="1" align="end">
-        {user.email ? (
-          <DropdownMenu.Label>
-            <Flex direction="column">
-              <Text size="1" color="gray">
-                {user.email}
-              </Text>
-            </Flex>
-          </DropdownMenu.Label>
-        ) : null}
-        <DropdownMenu.Item onSelect={() => void signOut()}>Sign out</DropdownMenu.Item>
-      </DropdownMenu.Content>
-    </DropdownMenu.Root>
+    <>
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger>
+          <button type="button" className="web-account-trigger" aria-label="Account" disabled={busy}>
+            <Avatar
+              size="1"
+              radius="full"
+              src={user.photoURL ?? undefined}
+              fallback={initials(user)}
+              className="web-account-avatar"
+            />
+            <span>{user.displayName || user.email || 'Account'}</span>
+          </button>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Content size="1" align="end">
+          {user.email ? (
+            <DropdownMenu.Label>
+              <Flex direction="column">
+                <Text size="1" color="gray">
+                  {user.email}
+                </Text>
+              </Flex>
+            </DropdownMenu.Label>
+          ) : null}
+          <DropdownMenu.Item onSelect={() => setSharesOpen(true)}>My shares</DropdownMenu.Item>
+          <DropdownMenu.Separator />
+          <DropdownMenu.Item onSelect={() => void signOut()}>Sign out</DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Root>
+      {sharesOpen ? (
+        <Suspense fallback={null}>
+          <MySharesDialog open={sharesOpen} onOpenChange={setSharesOpen} />
+        </Suspense>
+      ) : null}
+    </>
   );
 }
