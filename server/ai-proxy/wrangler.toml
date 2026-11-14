@@ -10,7 +10,7 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 # Firebase project the web app signs users into. Tokens must have iss/aud for this project.
-FIREBASE_PROJECT_ID = "REPLACE_WITH_FIREBASE_PROJECT_ID"
+FIREBASE_PROJECT_ID = "concrete-e17d0"
 # Comma-separated list of web origins allowed to call the proxy ("*" allows any; avoid in prod).
 ALLOWED_ORIGINS = "http://localhost:5173"
 # Sent to OpenRouter as HTTP-Referer (app attribution). Usually your production web origin.
