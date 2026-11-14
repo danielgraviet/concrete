@@ -38,3 +38,4 @@ docs/install-video-script.md
 # Firebase emulator logs
 firestore-debug.log
 firebase-debug.log
+.firebaserc
