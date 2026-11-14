@@ -31,6 +31,7 @@ import {
   UpdateIcon,
 } from '@radix-ui/react-icons';
 import { WysiwygEditor, useEditorController, type WysiwygEditorHandle } from './editor';
+import { registerPageExitFlush } from './editor/pageExitFlush';
 import { normalizePastedMathMarkdown, preferOneLineDisplayMath } from './editor/math';
 import { noteExportTitle } from './export/prepareNoteMarkdown';
 import type { ChatInsertTarget } from './ai/chat/StudyChatPane';
@@ -908,6 +909,12 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
 
   contentRef.current = controller.content;
   markSavedRef.current = controller.markSaved;
+
+  // Closing/hiding the tab inside the autosave debounce must not drop the
+  // edit: hand it to the vault synchronously (on web the cloud vault journals
+  // it to localStorage in that call). On desktop this only saves sooner.
+  const persistence = controller.persistence;
+  useEffect(() => registerPageExitFlush(() => void persistence.flush()), [persistence]);
 
   // Keep open tabs pinned even when selection changes without a contents rewrite.
   useEffect(() => {

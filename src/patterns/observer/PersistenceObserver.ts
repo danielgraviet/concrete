@@ -20,6 +20,7 @@ export class PersistenceObserver
   private timer: ReturnType<typeof setTimeout> | null = null;
   private pendingSave: SaveFn | null = null;
   private saving = false;
+  private flushAfterSave = false;
 
   constructor(options: PersistenceObserverOptions = {}) {
     super();
@@ -46,15 +47,24 @@ export class PersistenceObserver
     this.notify({ type: 'save-cancelled' });
   }
 
-  /** Run the pending save immediately (if any). */
+  /**
+   * Run the pending save immediately (if any). The save function is called
+   * synchronously, so a flush from a page-exit handler reaches the vault
+   * before the handler returns. While a save is running, the pending one is
+   * kept and runs when it finishes (it used to be dropped).
+   */
   async flush(): Promise<void> {
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
     }
     const fn = this.pendingSave;
+    if (!fn) return;
+    if (this.saving) {
+      this.flushAfterSave = true;
+      return;
+    }
     this.pendingSave = null;
-    if (!fn || this.saving) return;
 
     this.saving = true;
     this.notify({ type: 'save-started' });
@@ -66,6 +76,10 @@ export class PersistenceObserver
       this.notify({ type: 'save-completed', ok: false, error: message });
     } finally {
       this.saving = false;
+      if (this.flushAfterSave) {
+        this.flushAfterSave = false;
+        if (this.pendingSave) void this.flush();
+      }
     }
   }
 

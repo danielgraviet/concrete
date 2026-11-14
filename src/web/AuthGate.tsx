@@ -4,6 +4,7 @@ import { BrandLogo } from '../branding/BrandLogo';
 import { settingsStore } from '../settings';
 import type { CloudUser } from '../backend/cloud/AuthProvider';
 import type { WebSession } from '../backend/web/session';
+import { runPageExitFlushes } from '../editor/pageExitFlush';
 import './web.css';
 
 const MySharesDialog = lazy(() => import('./share/MySharesDialog').then((m) => ({ default: m.MySharesDialog })));
@@ -45,6 +46,7 @@ export function AuthGate({
   const [signingIn, setSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(
     () =>
@@ -57,10 +59,26 @@ export function AuthGate({
 
   useEffect(() => session.onSaveError((path, err) => setSaveError(`Could not save "${path}": ${err.message}`)), [session]);
 
-  // Warn before closing the tab while writes are still buffered.
+  useEffect(
+    () =>
+      session.onRecovered((copies) => {
+        const names = copies.map((c) => `"${c.copyPath}"`).join(', ');
+        setNotice(
+          copies.length === 1
+            ? `"${copies[0].path}" was changed elsewhere after your last unsaved edit, so that edit was saved as ${names}.`
+            : `Some notes were changed elsewhere after your last unsaved edits, so those edits were saved as ${names}.`,
+        );
+      }),
+    [session],
+  );
+
+  // Buffered writes are journaled to localStorage and replayed on the next
+  // visit, so only warn before closing when something could not be journaled
+  // (no localStorage, quota full, entry too large).
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!session.currentVault()?.hasPendingWrites()) return;
+      runPageExitFlushes(); // pending editor autosave → vault (journaled) first
+      if (!session.currentVault()?.hasUnjournaledWrites()) return;
       event.preventDefault();
       event.returnValue = '';
     };
@@ -122,6 +140,14 @@ export function AuthGate({
         <div className="web-save-error" role="alert">
           <span>{saveError}</span>
           <button type="button" onClick={() => setSaveError(null)} aria-label="Dismiss">
+            ×
+          </button>
+        </div>
+      ) : null}
+      {notice && !saveError ? (
+        <div className="web-save-error web-notice" role="status">
+          <span>{notice}</span>
+          <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss">
             ×
           </button>
         </div>

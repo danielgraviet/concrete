@@ -77,6 +77,12 @@
   font-size: 12px;
 }
 
+.web-notice {
+  background: var(--amber-3, #fff7e0);
+  color: var(--amber-11, #8a5a00);
+  border-color: var(--amber-6, #f0d58a);
+}
+
 .web-save-error button {
   border: 0;
   background: transparent;

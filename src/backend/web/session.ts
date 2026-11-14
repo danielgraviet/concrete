@@ -12,16 +12,18 @@ import type { Backend } from '../types';
 import { FakeAuthProvider, type AuthProvider, type CloudUser } from '../cloud/AuthProvider';
 import type { CloudRepository } from '../cloud/CloudRepository';
 import { InMemoryCloudRepository } from '../cloud/memory/InMemoryCloudRepository';
-import { cloudRootFor, createCloudVault, type CloudVault } from './cloudVault';
+import { cloudRootFor, createCloudVault, type CloudVault, type RecoveredCopy } from './cloudVault';
 import { DEMO_USER, seedDemoWorkspace } from './demoSeed';
 import { isFirebaseConfiguredInEnv } from './firebaseEnv';
 import { getFilesClient } from './filesClient';
 import { InMemoryFiles } from './memoryFiles';
 import { setWebIdTokenSource } from './index';
+import { browserJournalStorage, createWriteJournal, type JournalStorage } from './writeJournal';
 
 export type WebSessionMode = 'firebase' | 'demo';
 
 export type SaveErrorListener = (path: string, error: Error) => void;
+export type RecoveredListener = (copies: RecoveredCopy[]) => void;
 
 export interface WebSession {
   mode: WebSessionMode;
@@ -33,6 +35,8 @@ export interface WebSession {
   /** Flush buffered writes, then sign out and unmount the vault. */
   signOut(): Promise<void>;
   onSaveError(listener: SaveErrorListener): () => void;
+  /** Unsaved edits from a closed tab conflicted with newer remote notes and were saved as copies. */
+  onRecovered(listener: RecoveredListener): () => void;
 }
 
 type FirebaseModule = {
@@ -46,6 +50,11 @@ export interface InitWebBackendOptions {
   loadFirebase?: () => Promise<FirebaseModule>;
   /** Defaults to `getBackend()`. */
   backend?: Backend;
+  /**
+   * Write-ahead journal storage. Defaults to localStorage in Firebase mode and
+   * none in demo mode (demo notes are reseeded on every load). Null disables it.
+   */
+  journalStorage?: JournalStorage | null;
 }
 
 let session: WebSession | null = null;
@@ -112,7 +121,15 @@ export async function initWebBackend(options: InitWebBackendOptions = {}): Promi
   // VITE_AI_PROXY_URL is unset); an in-memory store in demo mode.
   const files = mode === 'firebase' ? getFilesClient() ?? undefined : new InMemoryFiles();
 
+  const journalStorage =
+    options.journalStorage !== undefined ? options.journalStorage : mode === 'firebase' ? browserJournalStorage() : null;
+  if (mode === 'firebase' && !journalStorage) {
+    console.warn('[cloud] localStorage is unavailable; unsaved edits are lost if the tab closes before they sync.');
+  }
+
   const saveErrorListeners = new Set<SaveErrorListener>();
+  const recoveredListeners = new Set<RecoveredListener>();
+  let unseenCopies: RecoveredCopy[] = [];
   let vault: CloudVault | null = null;
   let vaultUid: string | null = null;
 
@@ -139,6 +156,12 @@ export async function initWebBackend(options: InitWebBackendOptions = {}): Promi
         repo,
         getWorkspaceId: () => uid,
         files,
+        journal: journalStorage ? createWriteJournal({ storage: journalStorage, uid }) : null,
+        onRecovered: (copies) => {
+          // Replay runs on open, possibly before the shell subscribed: hold the notice.
+          if (!recoveredListeners.size) unseenCopies.push(...copies);
+          for (const listener of [...recoveredListeners]) listener(copies);
+        },
         onSaveError: (path, error) => {
           if (!saveErrorListeners.size) console.warn(`[cloud] could not save "${path}"`, error);
           for (const listener of [...saveErrorListeners]) listener(path, error);
@@ -160,6 +183,17 @@ export async function initWebBackend(options: InitWebBackendOptions = {}): Promi
       saveErrorListeners.add(listener);
       return () => {
         saveErrorListeners.delete(listener);
+      };
+    },
+    onRecovered(listener) {
+      recoveredListeners.add(listener);
+      if (unseenCopies.length) {
+        const copies = unseenCopies;
+        unseenCopies = [];
+        listener(copies);
+      }
+      return () => {
+        recoveredListeners.delete(listener);
       };
     },
   };
