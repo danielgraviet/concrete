@@ -39,3 +39,6 @@ docs/install-video-script.md
 firestore-debug.log
 firebase-debug.log
 .firebaserc
+
+# Vercel CLI link
+.vercel

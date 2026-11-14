@@ -3,6 +3,9 @@ main = "src/index.ts"
 compatibility_date = "2026-11-01"
 compatibility_flags = ["nodejs_compat"]
 
+# Public URL: Cloudflare creates the DNS record for this custom domain on deploy.
+routes = [{ pattern = "api.useconcrete.app", custom_domain = true }]
+
 # Secret (never put it here):
 #   OPENROUTER_API_KEY  -> `npx wrangler secret put OPENROUTER_API_KEY`
 #   Use a dedicated OpenRouter key with a $20/month credit limit (see README "Spend cap").
@@ -12,9 +15,9 @@ compatibility_flags = ["nodejs_compat"]
 # Firebase project the web app signs users into. Tokens must have iss/aud for this project.
 FIREBASE_PROJECT_ID = "concrete-e17d0"
 # Comma-separated list of web origins allowed to call the proxy ("*" allows any; avoid in prod).
-ALLOWED_ORIGINS = "http://localhost:5173"
+ALLOWED_ORIGINS = "https://app.useconcrete.app,http://localhost:5173"
 # Sent to OpenRouter as HTTP-Referer (app attribution). Usually your production web origin.
-APP_URL = ""
+APP_URL = "https://app.useconcrete.app"
 # OpenRouter model used when the client sends none, or one not in ALLOWED_MODELS.
 DEFAULT_MODEL = "deepseek/deepseek-v4-flash-0731"
 # Comma-separated OpenRouter model ids clients may choose. Keep in sync with
@@ -35,7 +38,7 @@ STORAGE_QUOTA_MB = "100"
 binding = "DB"
 database_name = "concrete-ai-quota"
 # Paste the id printed by `npx wrangler d1 create concrete-ai-quota`.
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "83bbf331-a926-4eab-8361-a3fd8dab0a5a"
 migrations_dir = "migrations"
 
 # Images and PDFs for the web app. Create once: `npx wrangler r2 bucket create concrete-files`.
