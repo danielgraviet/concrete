@@ -1,0 +1,34 @@
+name = "concrete-ai-proxy"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Secret (never put it here):
+#   ANTHROPIC_API_KEY   -> `npx wrangler secret put ANTHROPIC_API_KEY`
+# For local `wrangler dev`, put it in .dev.vars (gitignored):  ANTHROPIC_API_KEY=sk-ant-...
+
+[vars]
+# Firebase project the web app signs users into. Tokens must have iss/aud for this project.
+FIREBASE_PROJECT_ID = "REPLACE_WITH_FIREBASE_PROJECT_ID"
+# Comma-separated list of web origins allowed to call the proxy ("*" allows any; avoid in prod).
+ALLOWED_ORIGINS = "http://localhost:5173"
+# Model used for every request. Client-supplied `model` is logged and ignored.
+MODEL = "claude-haiku-5-5"
+# output_config.effort: low | medium | high | xhigh | max
+EFFORT = "low"
+# Server-side ceiling for max_tokens; larger client values are clamped.
+MAX_TOKENS_CAP = "8000"
+# Requests per user per UTC month.
+QUOTA_MONTHLY = "100"
+# Optional comma-separated Firebase uids exempt from the monthly quota (e.g. the owner).
+QUOTA_ALLOWLIST_UIDS = ""
+
+[[d1_databases]]
+binding = "DB"
+database_name = "concrete-ai-quota"
+# Paste the id printed by `npx wrangler d1 create concrete-ai-quota`.
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[observability]
+enabled = true
