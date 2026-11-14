@@ -1,27 +1,8 @@
 import { createElectronBackend } from './electron';
-import type { Backend, BackendCapabilities } from './types';
+import { createWebBackend } from './web';
+import type { Backend } from './types';
 
 export type * from './types';
-
-const NO_CAPABILITIES: BackendCapabilities = {
-  localAgents: false,
-  revealInFolder: false,
-  openWithOsApp: false,
-  diskImport: false,
-  nativePdfExport: false,
-  localTelemetry: false,
-  sandbox: false,
-  apiKeySettings: false,
-};
-
-/**
- * Placeholder web backend: every service missing, every capability off.
- * Chosen over throwing so a `VITE_TARGET=web` build still renders the browser
- * demo mode (the same path the desktop renderer takes when bridges are absent).
- */
-function createWebBackend(): Backend {
-  return { target: 'web', capabilities: { ...NO_CAPABILITIES } };
-}
 
 function createBackend(): Backend {
   const target = import.meta.env?.VITE_TARGET ?? 'desktop';

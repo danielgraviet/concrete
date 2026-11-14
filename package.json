@@ -9,7 +9,10 @@
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "dev:web": "vite --config vite.web.config.ts",
     "build": "tsc && vite build",
+    "build:web": "tsc && vite build --config vite.web.config.ts",
+    "preview:web": "vite preview --config vite.web.config.ts",
     "build:analyze": "ANALYZE=1 npm run build",
     "clean": "rm -rf release dist docs/bundle-stats.html node_modules/.vite",
     "perf:baseline": "node scripts/perf-baseline.mjs",

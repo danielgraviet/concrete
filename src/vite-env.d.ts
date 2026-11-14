@@ -8,6 +8,8 @@ declare module '*.svg?url' {
 interface ImportMetaEnv {
   /** Build target: 'desktop' (Electron, default) or 'web'. Selects the backend in `src/backend`. */
   readonly VITE_TARGET?: 'desktop' | 'web';
+  /** Web build only: base URL of the Concrete AI proxy Worker (`server/ai-proxy`). */
+  readonly VITE_AI_PROXY_URL?: string;
 }
 
 type VaultWatchType = 'add' | 'change' | 'unlink' | 'addDir' | 'unlinkDir';
