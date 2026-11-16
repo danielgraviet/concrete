@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Button, ContextMenu, IconButton, Text } from '@radix-ui/themes';
 import { Cross1Icon, PlusIcon } from '@radix-ui/react-icons';
 import { ALL_DECK, deckFilter, deckKey, listDecks, type Deck } from './decks';
@@ -28,6 +28,7 @@ type Props = {
 
 /** Deck list: all cards, then every folder that has cards. */
 export function ReviewSidebar({ system, onStart, onClose, onCreate, onShare }: Props) {
+  const [openFolders, setOpenFolders] = useState<Set<string>>(() => new Set());
   const { cards, store, settings, revision } = system;
 
   const rows = useMemo(() => {
@@ -77,7 +78,7 @@ export function ReviewSidebar({ system, onStart, onClose, onCreate, onShare }: P
           </div>
         ) : (
           <div className="srs-decks">
-            {rows.map(({ deck, total, counts }) => {
+            {rows.filter(({ deck }) => deck.kind === 'all').map(({ deck, total, counts }) => {
               const waiting = counts.newCount + counts.learning + counts.review;
               const row = (
                 <button
@@ -100,6 +101,24 @@ export function ReviewSidebar({ system, onStart, onClose, onCreate, onShare }: P
                   </ContextMenu.Content>
                 </ContextMenu.Root>
               );
+            })}
+            {rows.filter(({ deck }) => deck.kind === 'folder').map(({ deck, total, counts }) => {
+              if (deck.kind !== 'folder') return null;
+              const parent = deck.folder.includes('/') ? deck.folder.slice(0, deck.folder.lastIndexOf('/')) : '';
+              const visible = !parent || openFolders.has(parent);
+              if (!visible) return null;
+              const hasChildren = rows.some(({ deck: candidate }) => candidate.kind === 'folder' && candidate.folder.startsWith(`${deck.folder}/`) && !candidate.folder.slice(deck.folder.length + 1).includes('/'));
+              const waiting = counts.newCount + counts.learning + counts.review;
+              const row = (
+                <div className="srs-deck-row" key={deckKey(deck)} style={{ paddingLeft: deck.folder.split('/').length > 1 ? 12 : 0 }}>
+                  {hasChildren ? <button type="button" className="srs-folder-toggle" aria-label={`${openFolders.has(deck.folder) ? 'Collapse' : 'Expand'} ${deck.label}`} onClick={() => setOpenFolders((current) => { const next = new Set(current); if (next.has(deck.folder)) next.delete(deck.folder); else next.add(deck.folder); return next; })}>{openFolders.has(deck.folder) ? '▾' : '▸'}</button> : <span className="srs-folder-toggle-placeholder" />}
+                  <button type="button" className={`srs-deck ${waiting ? '' : 'srs-deck-idle'}`} title={`${total} card${total === 1 ? '' : 's'}`} onClick={() => onStart(deck)}>
+                    <span className="srs-deck-label">{deck.label.split('/').pop()}</span><CountPills counts={counts} />
+                  </button>
+                </div>
+              );
+              if (!onShare || total === 0) return row;
+              return <ContextMenu.Root key={deckKey(deck)}><ContextMenu.Trigger>{row}</ContextMenu.Trigger><ContextMenu.Content size="1" variant="soft"><ContextMenu.Item onSelect={() => onShare(deck)}>Share deck…</ContextMenu.Item></ContextMenu.Content></ContextMenu.Root>;
             })}
           </div>
         )}
