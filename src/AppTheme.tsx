@@ -7,6 +7,7 @@ import {
   settingsStore,
   type ThemePackId,
 } from './settings';
+import { getBackend } from './backend';
 
 type Props = {
   children: ReactNode;
@@ -26,7 +27,7 @@ export function AppTheme({ children }: Props) {
   }, []);
 
   useEffect(() => {
-    const api = window.ai;
+    const api = getBackend().ai;
     if (!api?.onSetTheme) return undefined;
     return api.onSetTheme((payload) => {
       const next = payload?.themePack;

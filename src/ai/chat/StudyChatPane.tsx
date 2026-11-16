@@ -24,6 +24,7 @@ import { ChatSessionList } from './ChatSessionList';
 import { asBlockquote, chatHistory } from './history';
 import type { ChatSessionStore } from './sessionStore';
 import type { StudyChatMessage, StudyChatMode } from './threadStore';
+import { getBackend } from '../../backend';
 
 export type ChatInsertTarget = 'cursor' | 'end';
 
@@ -263,7 +264,7 @@ export function StudyChatPane({
         ? 'Agent is off. Enable Codex or Claude (BYO) in Settings → Agent.'
         : !vaultRoot
           ? `Open a vault first so ${agentLabel} has a folder to edit.`
-          : typeof window.ai?.agentRun !== 'function'
+          : !getBackend().capabilities.localAgents
             ? 'Agent bridge missing. Fully restart Electron after updating.'
             : null;
       const userMsg = { role: 'user' as const, text: prompt, ...(path ? { notePath: path } : {}) };
@@ -286,12 +287,12 @@ export function StudyChatPane({
         });
       };
       appendLog(path ? 'Preparing note…' : 'Starting agent…', 'progress');
-      const stopProgress = window.ai?.onAgentProgress?.((event) => appendLog(event.text, event.kind));
+      const stopProgress = getBackend().ai?.onAgentProgress?.((event) => appendLog(event.text, event.kind));
 
       try {
         await onBeforeAgentRun?.();
         const tutor = client.getProvider();
-        const result = await window.ai!.agentRun({
+        const result = await getBackend().ai!.agentRun({
           vaultRoot,
           notePath: path || null,
           prompt,
@@ -338,8 +339,10 @@ export function StudyChatPane({
     ],
   );
 
+  // Agent mode (and @agent/@excalidraw, which route through it) needs a local agent runner.
+  const localAgents = getBackend().capabilities.localAgents;
   const send = (raw: string) =>
-    mode === 'agent' || /(?:^|\s)@(agent|excalidraw)\b/i.test(raw)
+    localAgents && (mode === 'agent' || /(?:^|\s)@(agent|excalidraw)\b/i.test(raw))
       ? sendAgent(raw)
       : sendChat(raw);
 
@@ -357,7 +360,7 @@ export function StudyChatPane({
   }, [seedPrompt, busy, onSeedConsumed, sendChat]);
 
   const stop = () => {
-    if (mode === 'agent') void window.ai?.agentCancel?.();
+    if (mode === 'agent') void getBackend().ai?.agentCancel?.();
     else abortRef.current?.abort();
   };
 
@@ -385,11 +388,11 @@ export function StudyChatPane({
   const insertDisabledReason = canInsert ? undefined : 'Open a Markdown note to insert';
   const mentionMatch = /(?:^|\s)@([\w-]*)$/.exec(input);
   const mentionQuery = mentionMatch?.[1]?.toLowerCase() ?? null;
-  const mentionSuggestions = mentionQuery === null ? [] : [
+  const mentionSuggestions = mentionQuery === null || !localAgents ? [] : [
     ...('excalidraw'.startsWith(mentionQuery) ? [{ key: 'excalidraw', title: 'Excalidraw', detail: 'Create or edit a diagram in this Markdown note', badge: 'MCP' }] : []),
     ...('agent'.startsWith(mentionQuery) ? [{ key: 'agent', title: 'Agent', detail: 'Ask the agent to edit files or use app tools', badge: 'Agent' }] : []),
   ];
-  const usesExcalidraw = /(?:^|\s)@excalidraw\b/i.test(input);
+  const usesExcalidraw = localAgents && /(?:^|\s)@excalidraw\b/i.test(input);
 
   const selectMention = (mention: 'agent' | 'excalidraw') => {
     if (!mentionMatch) return;
@@ -519,15 +522,19 @@ export function StudyChatPane({
                     {msg.pdfPaths.map((pdfPath) => (
                       <div key={pdfPath}>
                         <span>{pdfPath}</span>
-                        <button type="button" onClick={() => void window.vault?.openPath(vaultRoot, pdfPath)}>
-                          Open PDF
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void window.vault?.revealInFolder(vaultRoot, pdfPath)}
-                        >
-                          Reveal in Finder
-                        </button>
+                        {getBackend().capabilities.openWithOsApp ? (
+                          <button type="button" onClick={() => void getBackend().vault?.openPath(vaultRoot, pdfPath)}>
+                            Open PDF
+                          </button>
+                        ) : null}
+                        {getBackend().capabilities.revealInFolder ? (
+                          <button
+                            type="button"
+                            onClick={() => void getBackend().vault?.revealInFolder(vaultRoot, pdfPath)}
+                          >
+                            Reveal in Finder
+                          </button>
+                        ) : null}
                       </div>
                     ))}
                   </div>
@@ -640,7 +647,7 @@ export function StudyChatPane({
             onChange={(event) => {
               const nextInput = event.target.value;
               setInput(nextInput);
-              setMode(/(?:^|\s)@(agent|excalidraw)\b/i.test(nextInput) ? 'agent' : 'chat');
+              setMode(localAgents && /(?:^|\s)@(agent|excalidraw)\b/i.test(nextInput) ? 'agent' : 'chat');
             }}
             onKeyDown={(event) => {
               if (mentionSuggestions.length > 0 && (event.key === 'Enter' || event.key === 'Tab')) {

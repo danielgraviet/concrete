@@ -16,11 +16,14 @@ import { quizDocumentFromModelText } from './quizDocumentFromModelText';
 import { truncateNoteContext } from './systemPrompt';
 import { normalize as normalizeAnswer, stubGradeQuiz } from './quizStubs';
 import {
+  OPENROUTER_MODEL_DEFAULT,
   OPENROUTER_MODEL_DEEPSEEK_V4_FLASH,
   OPENROUTER_MODEL_LUNA,
   openRouterModelLabel,
 } from './openRouterModels';
 import { claudeModelLabel } from './claudeModels';
+import { getBackend } from '../backend';
+import { isAiProxyError } from './aiErrors';
 
 export {
   OPENROUTER_MODEL_DEFAULT,
@@ -62,13 +65,40 @@ function followUpText(followUp: { question: string; answer: string } | undefined
     : '';
 }
 
+/** Provider name shown on the web build, where AI always runs on OpenRouter via the proxy. */
+export const WEB_PROVIDER_LABEL = 'OpenRouter';
+
+/** Web label, e.g. "OpenRouter · DeepSeek V4 Flash". */
+export function webProviderLabel(model: string | undefined): string {
+  return `${WEB_PROVIDER_LABEL} · ${openRouterModelLabel(model || OPENROUTER_MODEL_DEFAULT)}`;
+}
+
+function isWebTarget(): boolean {
+  return getBackend().target === 'web';
+}
+
 function requireAiBridge() {
-  if (typeof window === 'undefined' || !window.ai?.chatCompletions) {
+  const backend = getBackend();
+  const ai = backend.ai;
+  if (!ai?.chatCompletions) {
+    // Web: the AI backend is only absent when VITE_AI_PROXY_URL is unset.
     throw new Error(
-      'Live AI is only available in the Electron app (AI bridge missing). Restart Electron after updating.',
+      backend.target === 'web'
+        ? "AI isn't configured for this site yet."
+        : 'Live AI is only available in the Electron app (AI bridge missing). Restart Electron after updating.',
     );
   }
-  return window.ai;
+  return ai;
+}
+
+/**
+ * Proxy errors (quota, sign-in, rate limit, out of credits, refusal, ...) are
+ * final: retrying on a fallback model would fail the same way, spend another
+ * quota unit, and could replace the friendly message with a different one.
+ * Parse failures and empty completions still fall back (web included).
+ */
+function rethrowIfProxyError(error: unknown): void {
+  if (isAiProxyError(error)) throw error;
 }
 
 /**
@@ -87,8 +117,9 @@ export class ChatModelProvider implements AiProvider {
   constructor(backend: ChatBackendId, model?: string) {
     this.id = backend;
     this.model = model;
-    this.label =
-      backend === 'openrouter'
+    this.label = isWebTarget()
+      ? webProviderLabel(model)
+      : backend === 'openrouter'
         ? `OpenRouter (${openRouterModelLabel(model ?? '')})`
         : backend === 'claude'
           ? `Claude (${claudeModelLabel(model ?? '')})`
@@ -210,6 +241,7 @@ export class ChatModelProvider implements AiProvider {
     } catch (primaryError) {
       // DeepSeek V4 Flash can occasionally return an empty completion. Retry
       // the same quiz request on Luna.
+      rethrowIfProxyError(primaryError);
       if (this.model !== OPENROUTER_MODEL_DEEPSEEK_V4_FLASH) throw primaryError;
       usedFallback = true;
       result = await ai.chatCompletions({
@@ -261,7 +293,8 @@ export class ChatModelProvider implements AiProvider {
           metadata,
         })
         ?.catch(() => {});
-      throw new Error(`${message} The raw model reply is saved under Settings → AI Activity.`);
+      // Web has no local activity log (recordActivity is a no-op, the page is hidden).
+      throw new Error(isWebTarget() ? message : `${message} The raw model reply is saved under Settings → AI Activity.`);
     }
   }
 
@@ -287,6 +320,7 @@ Ideas not covered yet: ${request.missing.length ? request.missing.join('; ') : '
         operation: 'quiz_followup_generation',
       });
     } catch (error) {
+      rethrowIfProxyError(error);
       const message = error instanceof Error ? error.message : String(error);
       if (!message.includes('empty completion') || this.model !== OPENROUTER_MODEL_DEEPSEEK_V4_FLASH) throw error;
       result = await ai.chatCompletions({
@@ -402,6 +436,7 @@ ${sections.join('\n\n---\n\n')}`;
     } catch (error) {
       // A provider can occasionally return an empty completion even though the
       // request itself was valid. Retry grading once on Luna.
+      rethrowIfProxyError(error);
       const message = error instanceof Error ? error.message : String(error);
       if (!message.includes('empty completion') || this.model !== OPENROUTER_MODEL_DEEPSEEK_V4_FLASH) throw error;
       usedFallback = true;

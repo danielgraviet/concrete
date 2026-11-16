@@ -1,0 +1,346 @@
+/* Share dialog, "My shares" and the public /s/:id viewer (web only). */
+
+.share-link-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.my-shares {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.my-share-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 6px;
+  border-radius: var(--radius-2, 4px);
+}
+
+.my-share-row:hover {
+  background: var(--mv-surface, var(--gray-2));
+}
+
+.my-share-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.my-share-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Viewer ─────────────────────────────────────────────────────────────── */
+
+.share-page {
+  height: 100vh;
+  overflow-y: auto;
+  background: var(--mv-bg, var(--color-background));
+  color: var(--mv-text, var(--gray-12));
+}
+
+.share-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--mv-border, var(--gray-6));
+  background: var(--mv-bg, var(--color-background));
+}
+
+.share-brand {
+  display: inline-flex;
+  color: inherit;
+}
+
+.share-logo {
+  display: block;
+  height: 26px;
+  width: auto;
+}
+
+.share-header-spacer {
+  flex: 1;
+}
+
+.share-main {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 32px 24px 96px;
+}
+
+.share-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.share-title {
+  margin: 10px 0 24px;
+  font-size: 28px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.share-subtitle {
+  margin: 0 0 12px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.share-section {
+  margin-top: 40px;
+  padding-top: 24px;
+  border-top: 1px solid var(--mv-border, var(--gray-6));
+}
+
+.share-muted {
+  color: var(--mv-muted, var(--gray-11));
+}
+
+.share-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 48px 0;
+}
+
+.share-empty p {
+  margin: 0;
+}
+
+.share-markdown {
+  font-size: 15px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.share-markdown img {
+  max-width: 100%;
+}
+
+.share-markdown table {
+  border-collapse: collapse;
+}
+
+.share-markdown th,
+.share-markdown td {
+  border: 1px solid var(--mv-border, var(--gray-6));
+  padding: 4px 8px;
+}
+
+.share-markdown blockquote {
+  margin: 0;
+  padding-left: 14px;
+  border-left: 3px solid var(--mv-border, var(--gray-6));
+  color: var(--mv-muted, var(--gray-11));
+}
+
+.share-markdown code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+}
+
+.share-markdown-fallback {
+  white-space: pre-wrap;
+  font: inherit;
+}
+
+.share-inert-link {
+  text-decoration: underline dotted;
+}
+
+.share-mermaid {
+  margin: 12px 0;
+  overflow-x: auto;
+}
+
+.share-folder {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) 1fr;
+  gap: 28px;
+  align-items: start;
+}
+
+.share-folder-list {
+  position: sticky;
+  top: 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.share-folder-list button {
+  border: 0;
+  background: transparent;
+  color: var(--mv-muted, var(--gray-11));
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: var(--radius-2, 4px);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-folder-list button:hover {
+  background: var(--mv-surface, var(--gray-2));
+  color: var(--mv-text, var(--gray-12));
+}
+
+.share-folder-list button.selected {
+  background: var(--mv-surface-2, var(--gray-3));
+  color: var(--mv-text, var(--gray-12));
+}
+
+.share-folder-note {
+  min-width: 0;
+}
+
+.share-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.share-card {
+  position: relative;
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--mv-border, var(--gray-6));
+  border-radius: var(--radius-3, 8px);
+  background: var(--mv-surface, var(--gray-2));
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.share-card:hover,
+.share-card:focus-visible {
+  border-color: var(--accent-8, var(--gray-8));
+  outline: none;
+}
+
+.share-card.flipped {
+  background: var(--mv-surface-2, var(--gray-3));
+}
+
+.share-card-side,
+.share-card-hint {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mv-muted, var(--gray-11));
+}
+
+.share-card-hint {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+}
+
+.share-card-body {
+  font-size: 14px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.share-card-body > :first-child {
+  margin-top: 0;
+}
+
+.share-card-body > :last-child {
+  margin-bottom: 0;
+}
+
+.share-question {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--mv-border, var(--gray-6));
+}
+
+.share-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.share-option {
+  border: 1px solid var(--mv-border, var(--gray-6));
+  border-radius: var(--radius-2, 6px);
+  background: var(--mv-surface, var(--gray-2));
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.share-option:disabled {
+  cursor: default;
+}
+
+.share-option.correct {
+  border-color: var(--green-8);
+  background: var(--green-3);
+}
+
+.share-option.wrong {
+  border-color: var(--red-8);
+  background: var(--red-3);
+}
+
+.share-answer {
+  margin-top: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-2, 6px);
+  background: var(--mv-surface, var(--gray-2));
+  font-size: 14px;
+}
+
+.share-keypoints {
+  margin: 6px 0;
+  padding-left: 20px;
+}
+
+@media (max-width: 640px) {
+  .share-header {
+    padding: 10px 16px;
+  }
+
+  .share-main {
+    padding: 24px 16px 72px;
+  }
+
+  .share-folder {
+    grid-template-columns: 1fr;
+  }
+
+  .share-folder-list {
+    position: static;
+  }
+}

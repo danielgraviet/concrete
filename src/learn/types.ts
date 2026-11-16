@@ -1,4 +1,4 @@
-/** Spaced-repetition domain types. Card content lives in markdown; review state in `.vault/srs.json`. */
+/** Spaced-repetition domain types. Card content lives in markdown; review state in `.vault/srs-v2-*.json` (see srsShards.ts). */
 
 import type { McqQuestion } from '../quiz/types';
 

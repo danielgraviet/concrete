@@ -1,4 +1,5 @@
 import { legacyThreadFile, parseLegacyThread, persistable, type StudyChatMessage } from './threadStore';
+import { getBackend } from '../../backend';
 
 /**
  * Vault-wide Study Chat sessions. A session follows the user from note to
@@ -49,12 +50,12 @@ export function sessionFile(id: string): string {
 
 export function vaultChatIO(root: string): ChatDataIO {
   return {
-    read: async (name) => (await window.vault?.readData?.(root, name)) ?? null,
+    read: async (name) => (await getBackend().vault?.readData?.(root, name)) ?? null,
     write: async (name, content) => {
-      await window.vault?.writeData?.(root, name, content);
+      await getBackend().vault?.writeData?.(root, name, content);
     },
     remove: async (name) => {
-      await window.vault?.deleteData?.(root, name);
+      await getBackend().vault?.deleteData?.(root, name);
     },
   };
 }

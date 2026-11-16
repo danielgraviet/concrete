@@ -7,6 +7,7 @@ import wordmarkUrl from '../../docs/design/cinderblock-concrete-text-belwo.svg?u
 import { ensureKatexCss } from '../editor/math/ensureKatexCss';
 import { noteExportTitle, prepareNoteMarkdown } from './prepareNoteMarkdown';
 import './pdfExport.css';
+import { getBackend } from '../backend';
 
 type ExportJob = {
   root: string;
@@ -16,7 +17,7 @@ type ExportJob = {
 };
 
 async function inlineLocalImages(job: ExportJob): Promise<string> {
-  const readImage = window.vault?.readImageDataUrl;
+  const readImage = getBackend().vault?.readImageDataUrl;
   if (!readImage) return job.markdown;
   let markdown = job.markdown;
   const images = [...markdown.matchAll(/!\[([^\]]*)\]\(([^)\s]+)\)/g)];
@@ -42,9 +43,9 @@ export function PdfExportPage() {
     document.documentElement.classList.add('pdf-exporting');
     let cancel = false;
     void (async () => {
-      const pending = await window.vault?.takePdfExport?.();
+      const pending = await getBackend().vault?.takePdfExport?.();
       if (!pending || cancel) {
-        window.vault?.pdfExportReady?.();
+        getBackend().vault?.pdfExportReady?.();
         return;
       }
       const markdown = prepareNoteMarkdown(await inlineLocalImages({
@@ -88,7 +89,7 @@ export function PdfExportPage() {
           requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
         });
       } finally {
-        if (!cancel) window.vault?.pdfExportReady?.();
+        if (!cancel) getBackend().vault?.pdfExportReady?.();
       }
     })();
     return () => {

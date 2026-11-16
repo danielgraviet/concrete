@@ -1,4 +1,5 @@
 import type { VaultWatchEvent } from './types';
+import { getBackend } from '../backend';
 
 export type VaultWatchCallback = (event: VaultWatchEvent) => void;
 
@@ -7,14 +8,15 @@ export type VaultWatchCallback = (event: VaultWatchEvent) => void;
  * Returns an unsubscribe function (also callable via `offWatch`).
  */
 export function subscribeVaultWatch(callback: VaultWatchCallback): () => void {
-  if (typeof window === 'undefined' || !window.vault?.onWatch) {
+  const vault = getBackend().vault;
+  if (!vault?.onWatch) {
     return () => {};
   }
-  return window.vault.onWatch(callback);
+  return vault.onWatch(callback);
 }
 
 export function unsubscribeVaultWatch(callback: VaultWatchCallback): void {
-  window.vault?.offWatch?.(callback);
+  getBackend().vault?.offWatch?.(callback);
 }
 
 /** Filter watch events to a specific vault root (resolved path). */

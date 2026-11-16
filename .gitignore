@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 dist/
+dist-web/
 release/
 out/
 
@@ -33,3 +34,11 @@ docs/bundle-stats.html
 # Video recording scripts (local only)
 docs/demo-video-script.md
 docs/install-video-script.md
+
+# Firebase emulator logs
+firestore-debug.log
+firebase-debug.log
+.firebaserc
+
+# Vercel CLI link
+.vercel

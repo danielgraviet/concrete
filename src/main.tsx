@@ -11,14 +11,21 @@ installSystemClipboardSync();
 
 const exportingPdf = new URLSearchParams(window.location.search).get('export') === 'pdf';
 
-createRoot(document.getElementById('root')!).render(
-  exportingPdf ? (
-    <PdfExportPage />
-  ) : (
-    <StrictMode>
-      <AppTheme>
-        <App />
-      </AppTheme>
-    </StrictMode>
-  ),
-);
+const root = createRoot(document.getElementById('root')!);
+
+if (import.meta.env.VITE_TARGET === 'web' && !exportingPdf) {
+  // Web: sign-in + cloud vault (Firebase is loaded lazily, only when configured).
+  void import('./web/startWeb').then(({ startWeb }) => startWeb(root, App));
+} else {
+  root.render(
+    exportingPdf ? (
+      <PdfExportPage />
+    ) : (
+      <StrictMode>
+        <AppTheme>
+          <App />
+        </AppTheme>
+      </StrictMode>
+    ),
+  );
+}

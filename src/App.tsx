@@ -8,6 +8,7 @@ import {
   useSyncExternalStore,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from 'react';
 import { Button, Flex, IconButton, Text } from '@radix-ui/themes';
 import {
@@ -25,10 +26,12 @@ import {
   FileTextIcon,
   GearIcon,
   PlusCircledIcon,
+  Share1Icon,
   TrashIcon,
   UpdateIcon,
 } from '@radix-ui/react-icons';
 import { WysiwygEditor, useEditorController, type WysiwygEditorHandle } from './editor';
+import { registerPageExitFlush } from './editor/pageExitFlush';
 import { normalizePastedMathMarkdown, preferOneLineDisplayMath } from './editor/math';
 import { noteExportTitle } from './export/prepareNoteMarkdown';
 import type { ChatInsertTarget } from './ai/chat/StudyChatPane';
@@ -103,6 +106,7 @@ import {
   ChatModelProvider,
   truncateNoteContext,
 } from './ai';
+import { resolveOpenRouterModelId } from './ai/openRouterModels';
 import {
   isQuizPath,
   nextQuizTitle,
@@ -125,7 +129,10 @@ import { BrandLogo } from './branding/BrandLogo';
 import { getSandboxStatus } from './sandbox';
 import { verifyCodeQuestions } from './quiz/verifyCode';
 import type { AgentProviderId, AppSettings } from './settings';
+// Type-only: share UI lives in src/web/share and is injected by the web entry.
+import type { RequestShare, ShareTarget } from './web/share/types';
 import { ProductTour } from './onboarding';
+import { getBackend } from './backend';
 
 const SettingsPanel = lazy(() =>
   import('./settings/SettingsPanel').then((m) => ({ default: m.SettingsPanel })),
@@ -250,6 +257,11 @@ function loadLayout(): LayoutState {
 }
 
 function resolveAiProvider(settings: AppSettings) {
+  // Web has one live provider: OpenRouter through the AI proxy Worker, with the
+  // model picked in Settings (the Worker enforces its allowlist).
+  if (getBackend().target === 'web') {
+    return new ChatModelProvider('openrouter', resolveOpenRouterModelId(settings.openRouterModelId));
+  }
   switch (settings.providerId) {
     case 'openrouter':
       return new ChatModelProvider('openrouter', settings.openRouterModelId);
@@ -270,7 +282,7 @@ function isAlreadyExistsError(error: unknown): boolean {
   return code === 'EEXIST' || /EEXIST|already exists/i.test(message);
 }
 
-export default function App() {
+export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode; onShare?: RequestShare } = {}) {
   const vault = useVault(demoNotes, demoFolders);
   const [selected, setSelected] = useState('Welcome.md');
   const [openTabs, setOpenTabs] = useState<string[]>(['Welcome.md']);
@@ -701,7 +713,7 @@ export default function App() {
     // Opening the app counts as use; further interactions catch days when the
     // app stays open across midnight. The store deduplicates each local day.
     recordActivity();
-    void window.ai?.telemetry?.().then((spans) => {
+    void getBackend().ai?.telemetry?.().then((spans) => {
       const dates = spans
         .filter((span) => Number.isFinite(span.startedAt))
         .map((span) => {
@@ -755,10 +767,11 @@ export default function App() {
     // Leave the mock for the first live backend that is ready: an OpenRouter
     // key, then a Claude Code or Codex login or API key.
     void (async () => {
-      if (settingsStore.get().providerId !== 'mock') return;
+      // Web always uses the proxy (see resolveAiProvider); nothing to pick.
+      if (getBackend().target === 'web' || settingsStore.get().providerId !== 'mock') return;
       try {
         for (const backend of ['openrouter', 'claude', 'codex'] as const) {
-          const status = await window.ai?.status(backend);
+          const status = await getBackend().ai?.status(backend);
           if (!status?.configured) continue;
           if (settingsStore.get().providerId === 'mock') settingsStore.setProviderId(backend);
           return;
@@ -802,10 +815,10 @@ export default function App() {
     const restore = () => {
       const opening = firstRun
         ? vault.openDefault()
-        : (window.vault?.restore ? vault.restore() : Promise.resolve(null));
+        : (getBackend().vault?.restore ? vault.restore() : Promise.resolve(null));
       void opening.then(async (result) => {
         if (cancelled || !result) {
-          void window.perf?.mark('renderer-interactive');
+          void getBackend().perf?.mark('renderer-interactive');
           return;
         }
         let seededPath = '';
@@ -856,7 +869,7 @@ export default function App() {
         setOpenTabs(preferred ? [preferred] : []);
         setPreviewTab(null);
         persistSelectionRef.current = true;
-        void window.perf?.mark('renderer-interactive');
+        void getBackend().perf?.mark('renderer-interactive');
       });
     };
     const idleId = window.setTimeout(restore, 0);
@@ -896,6 +909,12 @@ export default function App() {
 
   contentRef.current = controller.content;
   markSavedRef.current = controller.markSaved;
+
+  // Closing/hiding the tab inside the autosave debounce must not drop the
+  // edit: hand it to the vault synchronously (on web the cloud vault journals
+  // it to localStorage in that call). On desktop this only saves sooner.
+  const persistence = controller.persistence;
+  useEffect(() => registerPageExitFlush(() => void persistence.flush()), [persistence]);
 
   // Keep open tabs pinned even when selection changes without a contents rewrite.
   useEffect(() => {
@@ -1197,7 +1216,7 @@ export default function App() {
     const name = await askText(
       noteTargetFolder ? `New note in ${noteTargetFolder}` : 'New note name',
       '',
-      canUseDiskVault(root)
+      canUseDiskVault(root) && getBackend().capabilities.fileImport
         ? { extraAction: { label: 'Import file…', onClick: () => void importFileFromSidebar() } }
         : {},
     );
@@ -1465,6 +1484,18 @@ export default function App() {
     setTreeFocus({ kind: 'file', path });
     controller.loadContent(body);
   };
+
+  /** Web only: save pending edits, then open the share dialog. */
+  const requestShare = onShare
+    ? async (target: ShareTarget) => {
+        if (controller.isDirty) await controller.persistence.flush();
+        onShare(target);
+      }
+    : undefined;
+  const shareTreeItem = requestShare
+    ? (path: string, kind: TreeItemKind) =>
+        void requestShare(kind === 'folder' ? { kind: 'folder', path } : isQuizPath(path) ? { kind: 'quiz', path } : { kind: 'note', path })
+    : undefined;
 
   const startReview = async (deck: Deck) => {
     if (controller.isDirty) await controller.persistence.flush();
@@ -2159,6 +2190,11 @@ export default function App() {
             onStart={(deck) => void startReview(deck)}
             onCreate={openQuickCreate}
             onClose={() => setSidebarOpen(false)}
+            onShare={
+              requestShare
+                ? (deck) => void requestShare({ kind: 'deck', deck, cards: review.cards, linkedCards: review.linked.all() })
+                : undefined
+            }
           />
         ) : (
           <>
@@ -2241,7 +2277,8 @@ export default function App() {
               }}
               onRename={renameTreeItem}
               onDelete={(path, kind) => void deleteTreeItem({ path, kind })}
-              onExportPdf={window.vault?.exportNotePdf ? (path) => void exportNotePdf(path) : undefined}
+              onExportPdf={getBackend().capabilities.nativePdfExport ? (path) => void exportNotePdf(path) : undefined}
+              onShare={shareTreeItem}
             />
           </>
         )}
@@ -2317,6 +2354,20 @@ export default function App() {
                 )}
               </IconButton>
             )}
+            {shareTreeItem && !reviewing && selected && /\.md$/i.test(selected) ? (
+              <IconButton
+                type="button"
+                size="2"
+                variant="ghost"
+                color="gray"
+                highContrast
+                aria-label={isQuizPath(selected) ? 'Share quiz' : 'Share note'}
+                title={isQuizPath(selected) ? 'Share quiz…' : 'Share note…'}
+                onClick={() => shareTreeItem(selected, 'file')}
+              >
+                <Share1Icon width={16} height={16} />
+              </IconButton>
+            ) : null}
             {!reviewing && isQuizPath(selected) ? <QuizReviewToggle system={review} path={selected} /> : null}
             {!reviewing && !isQuizPath(selected) && selected ? (
               <Button
@@ -2510,10 +2561,11 @@ export default function App() {
         <footer className="statusbar">
           <span>{controller.content.length} characters</span>
           <span>•</span>
-          <span>{root ? 'Saved to disk' : 'In-memory demo'}</span>
+          <span>{root ? (getBackend().target === 'web' ? 'Saved to cloud' : 'Saved to disk') : 'In-memory demo'}</span>
           {!isOnline ? <span className="airplane-mode-status" role="status" aria-label="Airplane mode: offline"><span aria-hidden="true">✈</span> Airplane mode</span> : null}
           <span className="status-spacer" />
           {layout.focusMode ? <span>Focus mode · Esc to exit</span> : <span>{saved ? 'Saved' : 'Editing'}</span>}
+          {accountSlot}
         </footer>
       </main>
 
@@ -2740,8 +2792,8 @@ export default function App() {
               responses: rubricCalibrationSamples.map((sample) => sample.response),
               rubric,
             })}
-            onImportObsidian={() => { void importObsidianVault().then((imported) => { if (imported) setOverlay(null); }); }}
-            onImportNotion={() => { void importNotionExport().then((imported) => { if (imported) setOverlay(null); }); }}
+            onImportObsidian={getBackend().capabilities.diskImport ? () => { void importObsidianVault().then((imported) => { if (imported) setOverlay(null); }); } : undefined}
+            onImportNotion={getBackend().capabilities.diskImport ? () => { void importNotionExport().then((imported) => { if (imported) setOverlay(null); }); } : undefined}
             onReplayOnboarding={() => {
               setOverlay(null);
               setOnboardingStep(0);

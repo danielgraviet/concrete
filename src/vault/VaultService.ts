@@ -1,24 +1,26 @@
 import type { VaultImportResult, VaultListResult, VaultOpenResult, VaultWatchEvent } from './types';
 import { subscribeVaultWatch, type VaultWatchCallback } from './watch';
+import { getBackend } from '../backend';
 
 function requireVault() {
-  if (typeof window === 'undefined' || !window.vault) {
+  const vault = getBackend().vault;
+  if (!vault) {
     throw new Error('Vault API is only available in the Electron renderer');
   }
-  return window.vault;
+  return vault;
 }
 
 /** True when a vault root is open and the Electron bridge is present. */
 export function canUseDiskVault(root: string | null | undefined): root is string {
-  return Boolean(root && typeof window !== 'undefined' && window.vault);
+  return Boolean(root && getBackend().vault);
 }
 
 /** True when `vault.mkdir` is available (requires Electron restart after upgrade). */
 export function canMkdir(): boolean {
-  return typeof window !== 'undefined' && typeof window.vault?.mkdir === 'function';
+  return typeof getBackend().vault?.mkdir === 'function';
 }
 
-/** Typed wrapper around `window.vault` IPC bridge. */
+/** Typed wrapper around the backend vault (the Electron `vault` IPC bridge on desktop). */
 export const VaultService = {
   open(): Promise<VaultOpenResult | null> {
     return requireVault().open();

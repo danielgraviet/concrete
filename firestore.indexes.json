@@ -1,0 +1,8 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    { "collectionGroup": "notes", "fieldPath": "body", "ttl": false, "indexes": [] },
+    { "collectionGroup": "data", "fieldPath": "text", "ttl": false, "indexes": [] },
+    { "collectionGroup": "shares", "fieldPath": "payload", "ttl": false, "indexes": [] }
+  ]
+}
