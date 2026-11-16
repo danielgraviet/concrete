@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { ContextMenu, IconButton, Text } from '@radix-ui/themes';
+import { Button, ContextMenu, Dialog, IconButton, Text } from '@radix-ui/themes';
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -27,6 +27,7 @@ const PinnedNotesContext = createContext<{
 }>({ paths: new Set(), toggle: () => undefined });
 /** "Share…" in the context menus; absent when sharing is unavailable (desktop). */
 const ShareContext = createContext<((path: string, kind: TreeItemKind) => void) | undefined>(undefined);
+const MoveContext = createContext<((path: string) => void) | undefined>(undefined);
 
 type FileTreeViewProps = {
   files: string[];
@@ -47,6 +48,7 @@ type FileTreeViewProps = {
   onSelectFolder: (path: string) => void;
   onRename: (path: string, kind: TreeItemKind, nextName: string) => void | Promise<void>;
   onDelete: (path: string, kind: TreeItemKind) => void | Promise<void>;
+  onMove: (path: string, folder: string) => void | Promise<void>;
   /** Present for markdown files. Omitted when PDF export is unavailable. */
   onExportPdf?: (path: string) => void | Promise<void>;
   /** Adds "Share…" to note and folder menus (web only). */
@@ -328,8 +330,10 @@ function TreeNode({
   const pinnedNotes = useContext(PinnedNotesContext);
   const isPinned = pinnedNotes.paths.has(node.path);
   const onShare = useContext(ShareContext);
+  const openMove = useContext(MoveContext);
 
   return (
+    <div className="tree-file-container">
     <ContextMenu.Root>
       <ContextMenu.Trigger>
         <button
@@ -404,6 +408,7 @@ function TreeNode({
             {isPinned ? 'Unpin from top' : 'Pin to top'}
           </ContextMenu.Item>
         ) : null}
+        {openMove ? <ContextMenu.Item onSelect={() => openMove(node.path)}>Move to…</ContextMenu.Item> : null}
         {onShare && /\.md$/i.test(node.name) ? (
           <ContextMenu.Item onSelect={() => onShare(node.path, 'file')}>Share…</ContextMenu.Item>
         ) : null}
@@ -416,6 +421,8 @@ function TreeNode({
         </ContextMenu.Item>
       </ContextMenu.Content>
     </ContextMenu.Root>
+    {isSelected && openMove ? <button type="button" className="tree-move-button" onClick={() => openMove(node.path)}>Move to…</button> : null}
+    </div>
   );
 }
 
@@ -447,6 +454,7 @@ export function FileTreeView({
   onSelectFolder,
   onRename,
   onDelete,
+  onMove,
   onExportPdf,
   onShare,
 }: FileTreeViewProps) {
@@ -458,6 +466,8 @@ export function FileTreeView({
   }, [files, folders, filterPaths, pinnedPathSet]);
 
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [movingPath, setMovingPath] = useState<string | null>(null);
+  const [moveFolder, setMoveFolder] = useState('');
   const [renaming, setRenaming] = useState<{ path: string; kind: TreeItemKind } | null>(
     null,
   );
@@ -511,6 +521,7 @@ export function FileTreeView({
     setRenaming(null);
     void onRename(path, kind, nextName);
   };
+  const openMove = (path: string) => { setMovingPath(path); setMoveFolder(''); };
 
   return (
     <div
@@ -530,6 +541,7 @@ export function FileTreeView({
       }}
     >
       <ShareContext.Provider value={onShare}>
+      <MoveContext.Provider value={openMove}>
       <BadgesContext.Provider value={badges}>
         <PinnedNotesContext.Provider value={{ paths: pinnedPathSet, toggle: onTogglePin ?? (() => undefined) }}>
         {tree.children.map((child) => (
@@ -552,8 +564,25 @@ export function FileTreeView({
           />
         ))}
         </PinnedNotesContext.Provider>
+      </MoveContext.Provider>
       </BadgesContext.Provider>
       </ShareContext.Provider>
+      <Dialog.Root open={Boolean(movingPath)} onOpenChange={(open) => { if (!open) setMovingPath(null); }}>
+        <Dialog.Content maxWidth="420px" aria-describedby={undefined}>
+          <Dialog.Title>Move file</Dialog.Title>
+          <Dialog.Description size="2" mb="3">Choose a destination folder.</Dialog.Description>
+          <label className="tree-move-label">Destination
+            <select value={moveFolder} onChange={(event) => setMoveFolder(event.target.value)}>
+              <option value="">Vault root</option>
+              {[...folders].sort((a, b) => a.localeCompare(b)).map((folder) => <option key={folder} value={folder}>{folder}</option>)}
+            </select>
+          </label>
+          <div className="tree-move-actions">
+            <Button variant="soft" onClick={() => setMovingPath(null)}>Cancel</Button>
+            <Button onClick={() => { if (movingPath) void onMove(movingPath, moveFolder); setMovingPath(null); }}>Move</Button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Root>
     </div>
   );
 }
