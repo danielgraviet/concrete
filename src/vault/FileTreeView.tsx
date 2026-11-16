@@ -564,8 +564,8 @@ export function FileTreeView({
           />
         ))}
         </PinnedNotesContext.Provider>
-      </MoveContext.Provider>
       </BadgesContext.Provider>
+      </MoveContext.Provider>
       </ShareContext.Provider>
       <Dialog.Root open={Boolean(movingPath)} onOpenChange={(open) => { if (!open) setMovingPath(null); }}>
         <Dialog.Content maxWidth="420px" aria-describedby={undefined}>
