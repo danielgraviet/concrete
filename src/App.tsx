@@ -2277,6 +2277,10 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
               }}
               onRename={renameTreeItem}
               onDelete={(path, kind) => void deleteTreeItem({ path, kind })}
+              onMove={(path, folder) => {
+                const name = path.split('/').pop() ?? path;
+                void renameTreeItem(path, 'file', folder ? `${folder}/${name}` : `@root/${name}`);
+              }}
               onExportPdf={getBackend().capabilities.nativePdfExport ? (path) => void exportNotePdf(path) : undefined}
               onShare={shareTreeItem}
             />

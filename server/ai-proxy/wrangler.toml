@@ -3,8 +3,8 @@ main = "src/index.ts"
 compatibility_date = "2026-11-01"
 compatibility_flags = ["nodejs_compat"]
 
-# Public URL: Cloudflare creates the DNS record for this custom domain on deploy.
-routes = [{ pattern = "api.useconcrete.app", custom_domain = true, zone_name = "useconcrete.app" }]
+# Use the current Cloudflare account's generated URL: https://<name>.<subdomain>.workers.dev
+workers_dev = true
 
 # Secret (never put it here):
 #   OPENROUTER_API_KEY  -> `npx wrangler secret put OPENROUTER_API_KEY`

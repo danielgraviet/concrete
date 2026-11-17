@@ -42,3 +42,4 @@ firebase-debug.log
 
 # Vercel CLI link
 .vercel
+.env*
