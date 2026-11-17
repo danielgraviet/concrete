@@ -25,6 +25,7 @@ import { asBlockquote, chatHistory } from './history';
 import type { ChatSessionStore } from './sessionStore';
 import type { StudyChatMessage, StudyChatMode } from './threadStore';
 import { getBackend } from '../../backend';
+import type { VaultListResult } from '../../vault/types';
 
 export type ChatInsertTarget = 'cursor' | 'end';
 
@@ -82,6 +83,126 @@ function noteTitle(path: string): string {
   return base.replace(/\.md$/i, '') || 'Untitled';
 }
 
+type VaultAgentAction = { type: string; path?: string; from?: string; to?: string; content?: string };
+
+type VaultAgentPlan = { done: boolean; actions?: VaultAgentAction[]; response?: string };
+
+function vaultAgentPath(path: unknown): string {
+  if (typeof path !== 'string') throw new Error('Path must be text.');
+  const clean = path.trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+  if (!clean || clean.split('/').some((part) => !part || part === '.' || part === '..')) {
+    throw new Error('Use a non-empty path inside the vault.');
+  }
+  return clean;
+}
+
+function parseVaultAgentPlan(raw: string): VaultAgentPlan {
+  const json = raw.match(/\{[\s\S]*\}/)?.[0];
+  if (!json) throw new Error('The web agent returned an invalid action plan.');
+  const value = JSON.parse(json) as Partial<VaultAgentPlan>;
+  if (typeof value.done !== 'boolean' || (value.actions !== undefined && !Array.isArray(value.actions))) {
+    throw new Error('The web agent returned an invalid action plan.');
+  }
+  return value as VaultAgentPlan;
+}
+
+const WEB_AGENT_SYSTEM = `You are the helpful assistant in a user's online Markdown vault. Answer ordinary questions directly. When the user asks to organize, create, move, rename, or otherwise change vault files, use the available actions to do that work. Infer whether they want an action from their request; do not require a special command or mention. For ordinary questions or hypotheticals that do not ask for a change, return a direct answer with done:true and no actions. Reply with exactly one JSON object and no markdown: {"done":boolean,"actions":[],"response":"..."}. Available tool calls: {"type":"list","path":"optional folder"} lists vault folders, Markdown files, and PDFs; {"type":"read","path":"vault relative file"} reads a Markdown or PDF; {"type":"mkdir","path":"folder"} creates a folder; {"type":"move","from":"existing path","to":"new path"} moves a note, quiz, PDF, or folder; {"type":"create","path":"new .md path","content":"markdown"} creates a Markdown note. You can list/read first, then use another turn to act. Preserve all existing content, quizzes, PDFs, and folders while organizing. Never invent mappings; inspect filenames and note contents when needed. Never overwrite, delete, or move anything outside the user's requested scope. Avoid moving a folder into itself. If the request is unclear, ask a question in response and return done:true with no actions. Use done:true after work is complete, with a concise response.`;
+
+async function runWebVaultAgent(args: {
+  client: AiClient;
+  root: string;
+  history: Array<{ role: 'user' | 'assistant'; content: string }>;
+  noteContext?: { path: string; content: string };
+  signal: AbortSignal;
+  onProgress: (text: string) => void;
+}): Promise<{ response: string; changed: string[] }> {
+  const vault = getBackend().vault;
+  if (!vault) throw new Error('Open a signed-in online vault to use file tools.');
+  let tree: VaultListResult = await vault.list(args.root);
+  const results: string[] = [];
+  const changed: string[] = [];
+  const listText = (path = '') => {
+    const prefix = path ? `${path}/` : '';
+    return JSON.stringify({
+      folders: tree.folders.filter((item) => !prefix || item === path || item.startsWith(prefix)),
+      files: tree.files.filter((item) => !prefix || item.startsWith(prefix)),
+      pdfFiles: tree.pdfFiles.filter((item) => !prefix || item.startsWith(prefix)),
+    });
+  };
+  const known = () => new Set([...tree.files, ...tree.pdfFiles, ...tree.folders]);
+  for (let turn = 0; turn < 10; turn += 1) {
+    if (args.signal.aborted) throw new DOMException('Stopped', 'AbortError');
+    const userMessages = args.history.filter((m) => m.role === 'user');
+    const userContent = JSON.stringify({
+      userRequest: userMessages[userMessages.length - 1]?.content ?? '',
+      conversation: args.history,
+      ...(args.noteContext ? { openNote: args.noteContext } : {}),
+      currentVaultTree: JSON.parse(listText()),
+      priorToolResults: results,
+      instructions: 'Choose at most 8 actions in this turn. Use list/read to inspect before changing anything. Return done:false when more inspection or action turns are needed.',
+    });
+    const raw = await args.client.chat({
+      system: WEB_AGENT_SYSTEM,
+      messages: [{ role: 'user', content: userContent }],
+      signal: args.signal,
+      maxTokens: 1800,
+      operation: 'web_vault_agent_plan',
+    });
+    const plan = parseVaultAgentPlan(raw);
+    if (plan.done) return { response: plan.response?.trim() || 'Done.', changed };
+    const actions = plan.actions ?? [];
+    if (!actions.length) throw new Error('The web agent did not provide an action or a response.');
+    if (actions.length > 8 || changed.length >= 20) throw new Error('The web agent reached its safe action limit.');
+    for (const action of actions) {
+      if (args.signal.aborted) throw new DOMException('Stopped', 'AbortError');
+      const type = action.type;
+      let result = '';
+      if (type === 'list') {
+        const path = action.path ? vaultAgentPath(action.path) : '';
+        result = listText(path);
+      } else if (type === 'read') {
+        const path = vaultAgentPath(action.path);
+        if (tree.files.includes(path)) result = (await vault.read(args.root, path)).slice(0, 12000);
+        else if (tree.pdfFiles.includes(path) && vault.extractPdfText) result = (await vault.extractPdfText(args.root, path)).pages.join('\n').slice(0, 12000);
+        else throw new Error(`Can't read ${path}; it is not an available Markdown or PDF file.`);
+      } else if (type === 'mkdir') {
+        const path = vaultAgentPath(action.path);
+        if (known().has(path)) throw new Error(`Destination already exists: ${path}`);
+        await vault.mkdir(args.root, path);
+        changed.push(path);
+        tree = await vault.list(args.root);
+        result = `Created folder ${path}`;
+      } else if (type === 'move') {
+        const from = vaultAgentPath(action.from);
+        const to = vaultAgentPath(action.to);
+        const existing = known();
+        if (!existing.has(from)) throw new Error(`Source no longer exists: ${from}`);
+        if ([...existing].some((path) => path === to || path.startsWith(`${to}/`)) || from === to || to.startsWith(`${from}/`)) {
+          throw new Error(`Move destination is occupied or unsafe: ${to}`);
+        }
+        await vault.rename(args.root, from, to);
+        changed.push(`${from} → ${to}`);
+        tree = await vault.list(args.root);
+        result = `Moved ${from} to ${to}`;
+      } else if (type === 'create') {
+        const path = vaultAgentPath(action.path);
+        if (!path.toLowerCase().endsWith('.md')) throw new Error('New notes must use the .md extension.');
+        if (known().has(path)) throw new Error(`Destination already exists: ${path}`);
+        const created = await vault.create(args.root, path);
+        await vault.write(args.root, created, typeof action.content === 'string' ? action.content : '');
+        changed.push(created);
+        tree = await vault.list(args.root);
+        result = `Created note ${created}`;
+      } else {
+        throw new Error(`Unsupported web agent action: ${String(type)}`);
+      }
+      results.push(`${type}: ${result.slice(0, 12000)}`);
+      args.onProgress(type === 'read' || type === 'list' ? 'Reviewing vault files…' : 'Organizing vault files…');
+    }
+  }
+  throw new Error('The web agent reached its planning limit before finishing.');
+}
+
 /**
  * Split-pane study chat beside the note. Replies stream in, render math, and
  * go into the note with one click (whole reply or a single block).
@@ -106,7 +227,7 @@ export function StudyChatPane({
   onAfterAgentRun,
 }: Props) {
   const agentEnabled = agentProviderId !== 'off';
-  const agentLabel = agentProviderId === 'claude' ? 'Claude' : 'Codex';
+  const agentLabel = getBackend().target === 'web' ? 'Vault agent' : agentProviderId === 'claude' ? 'Claude' : 'Codex';
   const [mode, setMode] = useState<StudyChatMode>('chat');
   const [input, setInput] = useState('');
   const [quote, setQuote] = useState<string | null>(null);
@@ -260,13 +381,16 @@ export function StudyChatPane({
       setInput('');
       stickToBottomRef.current = true;
 
-      const blocked = !agentEnabled
-        ? 'Agent is off. Enable Codex or Claude (BYO) in Settings → Agent.'
-        : !vaultRoot
-          ? `Open a vault first so ${agentLabel} has a folder to edit.`
-          : !getBackend().capabilities.localAgents
-            ? 'Agent bridge missing. Fully restart Electron after updating.'
-            : null;
+      const isWebVaultAgent = getBackend().target === 'web';
+      const blocked = isWebVaultAgent
+        ? !vaultRoot || !getBackend().vault ? 'Open your online vault before asking the agent to organize files.' : null
+        : !agentEnabled
+          ? 'Agent is off. Enable Codex or Claude (BYO) in Settings → Agent.'
+          : !vaultRoot
+            ? `Open a vault first so ${agentLabel} has a folder to edit.`
+            : !getBackend().capabilities.localAgents
+              ? 'Agent bridge missing. Fully restart Electron after updating.'
+              : null;
       const userMsg = { role: 'user' as const, text: prompt, ...(path ? { notePath: path } : {}) };
       if (blocked || !vaultRoot) {
         push(userMsg, { role: 'assistant', text: blocked ?? '' });
@@ -290,6 +414,24 @@ export function StudyChatPane({
       const stopProgress = getBackend().ai?.onAgentProgress?.((event) => appendLog(event.text, event.kind));
 
       try {
+        if (getBackend().target === 'web') {
+          const abort = new AbortController();
+          abortRef.current = abort;
+          appendLog('Thinking…', 'progress');
+          const outcome = await runWebVaultAgent({
+            client,
+            root: vaultRoot,
+            history: sessions.messages(sessionId)
+              .filter((message) => message.role === 'user' || message.role === 'assistant')
+              .map((message) => ({ role: message.role as 'user' | 'assistant', content: message.text })),
+            noteContext: includeNote && path ? { path, content: noteContent } : undefined,
+            signal: abort.signal,
+            onProgress: (message) => appendLog(message, 'progress'),
+          });
+          const changed = outcome.changed.length ? `\n\nChanged: ${outcome.changed.join(', ')}` : '';
+          push({ role: 'assistant', text: `${outcome.response}${changed}` });
+          return;
+        }
         await onBeforeAgentRun?.();
         const tutor = client.getProvider();
         const result = await getBackend().ai!.agentRun({
@@ -316,6 +458,7 @@ export function StudyChatPane({
       } catch (err) {
         push({ role: 'assistant', text: err instanceof Error ? err.message : 'Agent failed', error: true });
       } finally {
+        abortRef.current = null;
         stopProgress?.();
         setBusy(false);
         setMode('chat');
@@ -329,7 +472,9 @@ export function StudyChatPane({
       agentModelId,
       busy,
       client,
+      includeNote,
       notePath,
+      noteContent,
       onAfterAgentRun,
       onBeforeAgentRun,
       persist,
@@ -339,10 +484,11 @@ export function StudyChatPane({
     ],
   );
 
-  // Agent mode (and @agent/@excalidraw, which route through it) needs a local agent runner.
+  // Desktop uses its local runner; web mode uses authenticated cloud-vault tools.
   const localAgents = getBackend().capabilities.localAgents;
+  const webVaultAgent = getBackend().target === 'web' && Boolean(vaultRoot && getBackend().vault);
   const send = (raw: string) =>
-    localAgents && (mode === 'agent' || /(?:^|\s)@(agent|excalidraw)\b/i.test(raw))
+    (webVaultAgent || (localAgents && (mode === 'agent' || /(?:^|\s)@(agent|excalidraw)\b/i.test(raw))))
       ? sendAgent(raw)
       : sendChat(raw);
 
@@ -355,12 +501,12 @@ export function StudyChatPane({
     if (seedRef.current === seedPrompt || busy) return;
     seedRef.current = seedPrompt;
     setMode('chat');
-    void sendChat(seedPrompt);
+    void send(seedPrompt);
     onSeedConsumed?.();
-  }, [seedPrompt, busy, onSeedConsumed, sendChat]);
+  }, [seedPrompt, busy, onSeedConsumed, send]);
 
   const stop = () => {
-    if (mode === 'agent') void getBackend().ai?.agentCancel?.();
+    if (mode === 'agent' && getBackend().target !== 'web') void getBackend().ai?.agentCancel?.();
     else abortRef.current?.abort();
   };
 
@@ -388,9 +534,9 @@ export function StudyChatPane({
   const insertDisabledReason = canInsert ? undefined : 'Open a Markdown note to insert';
   const mentionMatch = /(?:^|\s)@([\w-]*)$/.exec(input);
   const mentionQuery = mentionMatch?.[1]?.toLowerCase() ?? null;
-  const mentionSuggestions = mentionQuery === null || !localAgents ? [] : [
-    ...('excalidraw'.startsWith(mentionQuery) ? [{ key: 'excalidraw', title: 'Excalidraw', detail: 'Create or edit a diagram in this Markdown note', badge: 'MCP' }] : []),
-    ...('agent'.startsWith(mentionQuery) ? [{ key: 'agent', title: 'Agent', detail: 'Ask the agent to edit files or use app tools', badge: 'Agent' }] : []),
+  const mentionSuggestions = mentionQuery === null || (!localAgents && !webVaultAgent) ? [] : [
+    ...(localAgents && 'excalidraw'.startsWith(mentionQuery) ? [{ key: 'excalidraw', title: 'Excalidraw', detail: 'Create or edit a diagram in this Markdown note', badge: 'MCP' }] : []),
+    ...('agent'.startsWith(mentionQuery) ? [{ key: 'agent', title: 'Agent', detail: webVaultAgent ? 'Organize and create files in your online vault' : 'Ask the agent to edit files or use app tools', badge: 'Agent' }] : []),
   ];
   const usesExcalidraw = localAgents && /(?:^|\s)@excalidraw\b/i.test(input);
 
@@ -647,7 +793,7 @@ export function StudyChatPane({
             onChange={(event) => {
               const nextInput = event.target.value;
               setInput(nextInput);
-              setMode(localAgents && /(?:^|\s)@(agent|excalidraw)\b/i.test(nextInput) ? 'agent' : 'chat');
+              setMode((localAgents || webVaultAgent) && /(?:^|\s)@(agent|excalidraw)\b/i.test(nextInput) ? 'agent' : 'chat');
             }}
             onKeyDown={(event) => {
               if (mentionSuggestions.length > 0 && (event.key === 'Enter' || event.key === 'Tab')) {
