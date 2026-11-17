@@ -150,9 +150,8 @@ async function runWebVaultAgent(args: {
     });
     const plan = parseVaultAgentPlan(raw);
     if (plan.done) return { response: plan.response?.trim() || 'Done.', changed };
-    const actions = plan.actions ?? [];
+    const actions = (plan.actions ?? []).slice(0, 8);
     if (!actions.length) throw new Error('The web agent did not provide an action or a response.');
-    if (actions.length > 8 || changed.length >= 20) throw new Error('The web agent reached its safe action limit.');
     for (const action of actions) {
       if (args.signal.aborted) throw new DOMException('Stopped', 'AbortError');
       const type = action.type;

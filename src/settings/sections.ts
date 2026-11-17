@@ -21,7 +21,7 @@ const SECTIONS: ReadonlyArray<readonly [SettingsSection, string]> = [
   ['activity', 'AI Activity'],
 ];
 
-/** Settings tabs this platform can back: Agent needs local agents, AI Activity needs local telemetry. */
+/** Settings tabs this platform can back: Agent needs a runner; AI Activity needs a telemetry store. */
 export function visibleSettingsSections(
   capabilities: Pick<BackendCapabilities, 'localAgents' | 'localTelemetry'>,
 ): ReadonlyArray<readonly [SettingsSection, string]> {

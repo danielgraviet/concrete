@@ -36,7 +36,7 @@ export interface BackendCapabilities {
   fileImport?: boolean;
   /** Print a note to PDF via the hidden Electron window (`vault.exportNotePdf`). */
   nativePdfExport: boolean;
-  /** Local activity / trajectories / telemetry pages (`ai.activity`, `ai.telemetry`, …). */
+  /** AI Activity pages (`ai.activity`, `ai.telemetry`, …) have a backing store. */
   localTelemetry: boolean;
   /** Code execution sandbox (`sandbox`). */
   sandbox: boolean;
