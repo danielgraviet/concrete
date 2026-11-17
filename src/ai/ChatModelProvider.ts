@@ -293,8 +293,8 @@ export class ChatModelProvider implements AiProvider {
           metadata,
         })
         ?.catch(() => {});
-      // Web has no local activity log (recordActivity is a no-op, the page is hidden).
-      throw new Error(isWebTarget() ? message : `${message} The raw model reply is saved under Settings → AI Activity.`);
+      // Web keeps activity in account-scoped browser storage; desktop uses its local activity file.
+      throw new Error(`${message} The raw model reply is saved under Settings → AI Activity.`);
     }
   }
 

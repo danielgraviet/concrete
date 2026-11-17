@@ -66,9 +66,10 @@ export function createWebBackend(): Backend {
   const client = getAiProxyClient();
   const backend: Backend = {
     target: 'web',
-    ...(client ? { ai: createWebAi(client) } : {}),
+    ...(client ? { ai: createWebAi(client, () => backend.vault) } : {}),
     capabilities: {
       ...NO_CAPABILITIES,
+      localTelemetry: Boolean(client),
       get fileImport() {
         return typeof backend.vault?.readPdf === 'function';
       },
