@@ -2146,8 +2146,6 @@ div[class*="selectContainer"] [class*="selectItem"][data-state="checked"]{
 
 /* Quiz files */
 .tree-file-container{position:relative}
-.tree-move-button{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:1px solid var(--mv-border);border-radius:4px;background:var(--mv-surface-2);color:var(--mv-text);font:inherit;font-size:11px;padding:3px 6px;cursor:pointer}
-.tree-move-button:hover{background:var(--mv-surface-3)}
 .tree-move-label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--mv-muted)}
 .tree-move-label select{width:100%;border:1px solid var(--mv-border);border-radius:5px;background:var(--mv-surface-2);color:var(--mv-text);padding:8px;font:inherit}
 .tree-move-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}

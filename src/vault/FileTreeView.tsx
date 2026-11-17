@@ -421,7 +421,6 @@ function TreeNode({
         </ContextMenu.Item>
       </ContextMenu.Content>
     </ContextMenu.Root>
-    {isSelected && openMove ? <button type="button" className="tree-move-button" onClick={() => openMove(node.path)}>Move to…</button> : null}
     </div>
   );
 }
