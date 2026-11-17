@@ -97,13 +97,37 @@ function vaultAgentPath(path: unknown): string {
 }
 
 function parseVaultAgentPlan(raw: string): VaultAgentPlan {
-  const json = raw.match(/\{[\s\S]*\}/)?.[0];
-  if (!json) throw new Error('The web agent returned an invalid action plan.');
-  const value = JSON.parse(json) as Partial<VaultAgentPlan>;
-  if (typeof value.done !== 'boolean' || (value.actions !== undefined && !Array.isArray(value.actions))) {
-    throw new Error('The web agent returned an invalid action plan.');
+  // Models sometimes wrap the plan in prose or append a second response. Find
+  // a complete JSON object instead of greedily parsing from the first `{` to
+  // the last `}`, which fails when any extra text follows the plan.
+  for (let start = raw.indexOf('{'); start >= 0; start = raw.indexOf('{', start + 1)) {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let end = start; end < raw.length; end += 1) {
+      const char = raw[end];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') inString = false;
+        continue;
+      }
+      if (char === '"') inString = true;
+      else if (char === '{') depth += 1;
+      else if (char === '}' && --depth === 0) {
+        try {
+          const value = JSON.parse(raw.slice(start, end + 1)) as Partial<VaultAgentPlan>;
+          if (typeof value.done === 'boolean' && (value.actions === undefined || Array.isArray(value.actions))) {
+            return value as VaultAgentPlan;
+          }
+        } catch {
+          // Keep looking; a later object may be the actual action plan.
+        }
+        break;
+      }
+    }
   }
-  return value as VaultAgentPlan;
+  throw new Error('The web agent returned an invalid action plan.');
 }
 
 const WEB_AGENT_SYSTEM = `You are the helpful assistant in a user's online Markdown vault. Answer ordinary questions directly. When the user asks to organize, create, move, rename, or otherwise change vault files, use the available actions to do that work. Infer whether they want an action from their request; do not require a special command or mention. For ordinary questions or hypotheticals that do not ask for a change, return a direct answer with done:true and no actions. Reply with exactly one JSON object and no markdown: {"done":boolean,"actions":[],"response":"..."}. Available tool calls: {"type":"list","path":"optional folder"} lists vault folders, Markdown files, and PDFs; {"type":"read","path":"vault relative file"} reads a Markdown or PDF; {"type":"mkdir","path":"folder"} creates a folder; {"type":"move","from":"existing path","to":"new path"} moves a note, quiz, PDF, or folder; {"type":"create","path":"new .md path","content":"markdown"} creates a Markdown note. You can list/read first, then use another turn to act. Preserve all existing content, quizzes, PDFs, and folders while organizing. Never invent mappings; inspect filenames and note contents when needed. Never overwrite, delete, or move anything outside the user's requested scope. Avoid moving a folder into itself. If the request is unclear, ask a question in response and return done:true with no actions. Use done:true after work is complete, with a concise response.`;
@@ -174,8 +198,14 @@ async function runWebVaultAgent(args: {
       } else if (type === 'move') {
         const from = vaultAgentPath(action.from);
         const to = vaultAgentPath(action.to);
+        // Other tool calls or earlier agent runs may have moved this source
+        // after the model saw the tree. Refresh before deciding it is missing.
+        tree = await vault.list(args.root);
         const existing = known();
-        if (!existing.has(from)) throw new Error(`Source no longer exists: ${from}`);
+        if (!existing.has(from)) {
+          results.push(`move: Source no longer exists: ${from}. The vault was refreshed; check the current tree and continue with any remaining files.`);
+          continue;
+        }
         if ([...existing].some((path) => path === to || path.startsWith(`${to}/`)) || from === to || to.startsWith(`${from}/`)) {
           throw new Error(`Move destination is occupied or unsafe: ${to}`);
         }
