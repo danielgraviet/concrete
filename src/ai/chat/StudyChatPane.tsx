@@ -132,7 +132,7 @@ function parseVaultAgentPlan(raw: string): VaultAgentPlan {
 
 const WEB_AGENT_SYSTEM = `You are the helpful assistant in a user's online Markdown vault. Answer ordinary questions directly. When the user asks to organize, create, move, rename, or otherwise change vault files, use the available actions to do that work. Infer whether they want an action from their request; do not require a special command or mention. For ordinary questions or hypotheticals that do not ask for a change, return a direct answer with done:true and no actions. Reply with exactly one JSON object and no markdown: {"done":boolean,"actions":[],"response":"..."}. Available tool calls: {"type":"list","path":"optional folder"} lists vault folders, Markdown files, and PDFs; {"type":"read","path":"vault relative file"} reads a Markdown or PDF; {"type":"mkdir","path":"folder"} creates a folder; {"type":"move","from":"existing path","to":"new path"} moves a note, quiz, PDF, or folder; {"type":"create","path":"new .md path","content":"markdown"} creates a Markdown note. You can list/read first, then use another turn to act. Preserve all existing content, quizzes, PDFs, and folders while organizing. Never invent mappings; inspect filenames and note contents when needed. Never overwrite, delete, or move anything outside the user's requested scope. Avoid moving a folder into itself. If the request is unclear, ask a question in response and return done:true with no actions. Use done:true after work is complete, with a concise response.`;
 
-async function runWebVaultAgent(args: {
+export async function runWebVaultAgent(args: {
   client: AiClient;
   root: string;
   history: Array<{ role: 'user' | 'assistant'; content: string }>;
@@ -145,6 +145,7 @@ async function runWebVaultAgent(args: {
   let tree: VaultListResult = await vault.list(args.root);
   const results: string[] = [];
   const changed: string[] = [];
+  const uncompletedMoves: string[] = [];
   const listText = (path = '') => {
     const prefix = path ? `${path}/` : '';
     return JSON.stringify({
@@ -173,9 +174,11 @@ async function runWebVaultAgent(args: {
       operation: 'web_vault_agent_plan',
     });
     const plan = parseVaultAgentPlan(raw);
-    if (plan.done) return { response: plan.response?.trim() || 'Done.', changed };
     const actions = (plan.actions ?? []).slice(0, 8);
-    if (!actions.length) throw new Error('The web agent did not provide an action or a response.');
+    if (!actions.length) {
+      if (plan.done) return { response: plan.response?.trim() || 'Done.', changed };
+      throw new Error('The web agent did not provide an action or a response.');
+    }
     for (const action of actions) {
       if (args.signal.aborted) throw new DOMException('Stopped', 'AbortError');
       const type = action.type;
@@ -203,15 +206,27 @@ async function runWebVaultAgent(args: {
         tree = await vault.list(args.root);
         const existing = known();
         if (!existing.has(from)) {
-          results.push(`move: Source no longer exists: ${from}. The vault was refreshed; check the current tree and continue with any remaining files.`);
+          const alreadyAtDestination = existing.has(to) || [...existing].some((path) => path.startsWith(`${to}/`));
+          if (alreadyAtDestination) {
+            results.push(`move: ${from} was already moved to ${to}.`);
+          } else {
+            uncompletedMoves.push(`${from} → ${to}`);
+            results.push(`move: Source no longer exists: ${from}, and ${to} is not present. This move was not completed.`);
+          }
           continue;
         }
         if ([...existing].some((path) => path === to || path.startsWith(`${to}/`)) || from === to || to.startsWith(`${from}/`)) {
           throw new Error(`Move destination is occupied or unsafe: ${to}`);
         }
         await vault.rename(args.root, from, to);
-        changed.push(`${from} → ${to}`);
         tree = await vault.list(args.root);
+        const updated = known();
+        const destinationExists = updated.has(to) || [...updated].some((path) => path.startsWith(`${to}/`));
+        const sourceStillExists = updated.has(from) || [...updated].some((path) => path.startsWith(`${from}/`));
+        if (!destinationExists || sourceStillExists) {
+          throw new Error(`Move could not be verified: ${from} → ${to}`);
+        }
+        changed.push(`${from} → ${to}`);
         result = `Moved ${from} to ${to}`;
       } else if (type === 'create') {
         const path = vaultAgentPath(action.path);
@@ -227,6 +242,12 @@ async function runWebVaultAgent(args: {
       }
       results.push(`${type}: ${result.slice(0, 12000)}`);
       args.onProgress(type === 'read' || type === 'list' ? 'Reviewing vault files…' : 'Organizing vault files…');
+    }
+    if (plan.done) {
+      const response = uncompletedMoves.length
+        ? `Some moves could not be completed: ${uncompletedMoves.join('; ')}.`
+        : plan.response?.trim() || 'Done.';
+      return { response, changed };
     }
   }
   throw new Error('The web agent reached its planning limit before finishing.');
