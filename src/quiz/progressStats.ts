@@ -44,9 +44,6 @@ export type ProgressSummary = {
   kpis: ProgressKpis;
   trend: TrendPoint[];
   skills: SkillStat[];
-  /** Weeks as columns (Sun→Sat), oldest first; cells after today are omitted. */
-  activity: ActivityCell[][];
-  streak: number;
 };
 
 const TREND_LIMIT = 30;
@@ -74,7 +71,7 @@ function dayKey(date: Date): string {
 }
 
 /** Everything the progress visuals need, for an already-scoped list of attempts. */
-export function summarizeAttempts(attempts: QuizAttempt[], now = new Date(), activeDays: string[] = []): ProgressSummary {
+export function summarizeAttempts(attempts: QuizAttempt[]): ProgressSummary {
   const ordered = [...attempts].sort((a, b) => a.completedAt - b.completedAt);
   const percents = ordered.map((a) => a.percent);
   const latest = percents.length ? percents[percents.length - 1] : 0;
@@ -110,8 +107,13 @@ export function summarizeAttempts(attempts: QuizAttempt[], now = new Date(), act
     .map(([key, v]) => ({ key, label: v.label, percent: Math.round((v.score / v.max) * 100), questions: v.questions }))
     .sort((a, b) => a.percent - b.percent || b.questions - a.questions);
 
+  return { kpis, trend, skills };
+}
+
+/** Vault-wide learning activity. Missed days preserve the streak. */
+export function summarizeActivity(attempts: QuizAttempt[], activeDays: string[], now = new Date()) {
   const counts = new Map<string, number>();
-  for (const attempt of ordered) {
+  for (const attempt of attempts) {
     const key = dayKey(new Date(attempt.completedAt));
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
@@ -136,5 +138,5 @@ export function summarizeAttempts(attempts: QuizAttempt[], now = new Date(), act
   // Lenient streak: missed days do not reset it; every recorded active day adds one.
   const streak = [...counts.keys()].filter((key) => key <= dayKey(today)).length;
 
-  return { kpis, trend, skills, activity, streak };
+  return { activity, streak };
 }

@@ -1,3 +1,4 @@
+import type { DailyActivityStore } from './dailyActivity';
 import type { AiClient } from '../ai/AiClient';
 import { QuizGradeView } from './QuizGradeView';
 import { QuizQuestionCard } from './QuizQuestionCard';
@@ -15,12 +16,13 @@ type Props = {
   client: AiClient;
   onEdit: () => void;
   historyStore?: QuizHistoryStore;
+  activityStore?: DailyActivityStore;
   offlineMode?: boolean;
   onAddQuestionToFlashcards?: (questionId: string) => boolean;
   isQuestionInFlashcards?: (questionId: string) => boolean;
 };
 
-export function QuizTakeView({ markdown, documentPath, client, onEdit, historyStore, offlineMode = false, onAddQuestionToFlashcards, isQuestionInFlashcards }: Props) {
+export function QuizTakeView({ markdown, documentPath, client, onEdit, historyStore, activityStore, offlineMode = false, onAddQuestionToFlashcards, isQuestionInFlashcards }: Props) {
   const {
     quiz,
     presented,
@@ -61,7 +63,7 @@ export function QuizTakeView({ markdown, documentPath, client, onEdit, historySt
         <div className="quiz-grade-attempts">
           <QuizAttempts store={history} quizPath={documentPath} currentId={sessionSeed} canSubmitAiGrade={canSubmitAiGrade} onSubmitAiGrade={submitDeferredForAi} />
         </div>
-        {historyStore ? <ProgressPanel store={historyStore} folder={folderOf(documentPath)} /> : null}
+        {historyStore ? <ProgressPanel store={historyStore} activityStore={activityStore} folder={folderOf(documentPath)} /> : null}
       </>
     );
   }

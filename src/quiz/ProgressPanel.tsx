@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { QuizHistoryStore } from './history';
 import { ActivityHeatmap, SkillBars, StatTiles, TrendChart } from './ProgressCharts';
-import { attemptInFolder, summarizeAttempts } from './progressStats';
+import { attemptInFolder, summarizeActivity, summarizeAttempts } from './progressStats';
 import type { DailyActivityStore } from './dailyActivity';
 
 type Props = {
@@ -24,11 +24,11 @@ export function ProgressPanel({ store, activityStore, folder }: Props) {
 
   const all = store.getAll();
   const attempts = useMemo(() => all.filter((a) => attemptInFolder(a, folder)), [all, folder]);
-  const activeDays = activityStore?.getDays() ?? [];
-  const summary = useMemo(() => summarizeAttempts(attempts, new Date(), activeDays), [attempts, activeDays.join('|')]);
+  const summary = useMemo(() => summarizeAttempts(attempts), [attempts]);
   const today = new Date();
+  const { activity, streak } = summarizeActivity(all, activityStore?.getDays() ?? [], today);
   today.setHours(0, 0, 0, 0);
-  const activityByDay = new Map(summary.activity.flat().map((cell) => [cell.date.toDateString(), cell.count]));
+  const activityByDay = new Map(activity.flat().map((cell) => [cell.date.toDateString(), cell.count]));
   const recentDays = Array.from({ length: 30 }, (_, index) => {
     const date = new Date(today);
     date.setDate(today.getDate() - 29 + index);
@@ -40,8 +40,8 @@ export function ProgressPanel({ store, activityStore, folder }: Props) {
         <div className="mv-panel-label">YOUR ACTIVITY</div>
       </div>
 
-      <div className="pg-activity-streak" aria-label={`${summary.streak} day streak`}>
-        <strong>{summary.streak}</strong>
+      <div className="pg-activity-streak" title="Opening Concrete or completing a quiz counts once per day. Missed days keep your streak intact." aria-label={`${streak} day streak`}>
+        <strong>{streak}</strong>
         <span>day streak</span>
       </div>
       <h3 className="pg-title">Past 30 days</h3>
