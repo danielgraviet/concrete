@@ -1,3 +1,4 @@
+import type { DailyActivityStore } from './dailyActivity';
 import { useEffect, useState } from 'react';
 import type { AiClient } from '../ai/AiClient';
 import { QuizEditView } from './QuizEditView';
@@ -13,12 +14,13 @@ type Props = {
   onChange: (markdown: string) => void;
   onBlur?: () => void;
   historyStore?: QuizHistoryStore;
+  activityStore?: DailyActivityStore;
   offlineMode?: boolean;
   onAddQuestionToFlashcards?: (questionId: string) => boolean;
   isQuestionInFlashcards?: (questionId: string) => boolean;
 };
 
-export function QuizShell({ documentPath, markdown, client, onChange, onBlur, historyStore, offlineMode = false, onAddQuestionToFlashcards, isQuestionInFlashcards }: Props) {
+export function QuizShell({ documentPath, markdown, client, onChange, onBlur, historyStore, activityStore, offlineMode = false, onAddQuestionToFlashcards, isQuestionInFlashcards }: Props) {
   const [mode, setMode] = useState<Mode>('take');
   const [boundPath, setBoundPath] = useState(documentPath);
 
@@ -47,6 +49,7 @@ export function QuizShell({ documentPath, markdown, client, onChange, onBlur, hi
       client={client}
       onEdit={() => setMode('edit')}
       historyStore={historyStore}
+      activityStore={activityStore}
       offlineMode={offlineMode}
       onAddQuestionToFlashcards={onAddQuestionToFlashcards}
       isQuestionInFlashcards={isQuestionInFlashcards}

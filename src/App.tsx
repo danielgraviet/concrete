@@ -2462,6 +2462,7 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
             <QuizShell
               documentPath={selected}
               historyStore={quizHistory}
+              activityStore={dailyActivity}
               offlineMode={!isOnline}
               onAddQuestionToFlashcards={(questionId) => addQuizQuestionToFlashcards(selected, questionId)}
               isQuestionInFlashcards={(questionId) => isQuizQuestionInFlashcards(selected, questionId)}
