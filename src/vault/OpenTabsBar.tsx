@@ -83,20 +83,18 @@ export function OpenTabsBar({
               >
                 <span className="tab-title">{tabTitleFor(path)}</span>
                 {dirty ? <span className="dirty">•</span> : null}
-                {tabs.length > 1 ? (
-                  <span
-                    role="button"
-                    tabIndex={-1}
-                    className="tab-close"
-                    aria-label={`Close ${tabTitleFor(path)}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onClose(path);
-                    }}
-                  >
-                    <Cross1Icon width={10} height={10} />
-                  </span>
-                ) : null}
+                <span
+                  role="button"
+                  tabIndex={-1}
+                  className="tab-close"
+                  aria-label={`Close ${tabTitleFor(path)}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onClose(path);
+                  }}
+                >
+                  <Cross1Icon width={10} height={10} />
+                </span>
               </button>
             </ContextMenu.Trigger>
             <ContextMenu.Content size="1" variant="soft">
@@ -109,6 +107,7 @@ export function OpenTabsBar({
               >
                 Rename
               </ContextMenu.Item>
+              <ContextMenu.Item onSelect={() => onClose(path)}>Close tab</ContextMenu.Item>
             </ContextMenu.Content>
           </ContextMenu.Root>
         );
