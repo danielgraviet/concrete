@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { ArrowRightIcon, ClipboardIcon, FileTextIcon, MagnifyingGlassIcon, PlusIcon } from '@radix-ui/react-icons';
 import { Button, Flex } from '@radix-ui/themes';
 import type { DailyActivityStore } from '../quiz/dailyActivity';
@@ -6,20 +6,25 @@ import type { QuizHistoryStore } from '../quiz/history';
 import { isQuizPath } from '../quiz/paths';
 import { summarizeActivity } from '../quiz/progressStats';
 import { noteTitle, parentDir } from './fileTree';
+import { flameProgress, QUIZ_RANKS, rankProgress, SeenRankStore, type QuizRank } from './homeMilestones';
+import { RankBadge } from './RankBadge';
+import { StreakFlame } from './StreakFlame';
 
 type Props = {
   recentPaths: string[];
   availablePaths: ReadonlySet<string>;
   historyStore: QuizHistoryStore;
   activityStore: DailyActivityStore;
+  vaultRoot: string;
   onOpen: (path: string) => void;
   onCreate: () => void;
   onSearch: () => void;
 };
 
 const RECENT_LIMIT = 5;
+const RANK_UP_MS = 2600;
 
-export function VaultHome({ recentPaths, availablePaths, historyStore, activityStore, onOpen, onCreate, onSearch }: Props) {
+export function VaultHome({ recentPaths, availablePaths, historyStore, activityStore, vaultRoot, onOpen, onCreate, onSearch }: Props) {
   const heading = useRef<HTMLHeadingElement>(null);
   const [, refresh] = useState(0);
 
@@ -39,6 +44,22 @@ export function VaultHome({ recentPaths, availablePaths, historyStore, activityS
 
   const attempts = historyStore.getAll();
   const { streak } = summarizeActivity(attempts, activityStore.getDays());
+  const flame = flameProgress(streak);
+  const rank = rankProgress(attempts.length);
+  const seenRanks = useMemo(() => new SeenRankStore(vaultRoot), [vaultRoot]);
+  const [rankUpFrom, setRankUpFrom] = useState<number | null>(null);
+
+  useEffect(() => {
+    const previous = seenRanks.observe(rank.index);
+    if (previous !== null) setRankUpFrom(previous);
+  }, [seenRanks, rank.index]);
+
+  useEffect(() => {
+    if (rankUpFrom === null) return;
+    const timer = window.setTimeout(() => setRankUpFrom(null), RANK_UP_MS);
+    return () => window.clearTimeout(timer);
+  }, [rankUpFrom]);
+
   const recentFiles = recentPaths.filter((path) => availablePaths.has(path) && !isQuizPath(path)).slice(0, RECENT_LIMIT);
   const recentQuizzes = [...new Set([
     ...recentPaths.filter(isQuizPath),
@@ -63,8 +84,56 @@ export function VaultHome({ recentPaths, availablePaths, historyStore, activityS
       </header>
 
       <dl className="vault-home-stats">
-        <div><dt>Day streak</dt><dd>{streak}</dd></div>
-        <div><dt>Quiz attempts</dt><dd>{attempts.length}</dd></div>
+        <div
+          className={`vault-home-stat vault-home-stat-flame${flame.current.key === 'ember' ? ' is-cold' : ''}`}
+          style={{ '--chip': flame.current.chip, '--card-glow': flame.current.glow.replace(/[\d.]+\)$/, '.14)') } as CSSProperties}
+        >
+          <div className="vault-home-stat-art"><StreakFlame stage={flame.current} /></div>
+          <div className="vault-home-stat-text">
+            <dt>Day streak</dt>
+            <dd>
+              <span className="vault-home-stat-value">{streak}</span>
+              <span className="vault-home-tier"><span className="vault-home-tier-chip" />{flame.current.name}</span>
+              <span className="vault-home-next">
+                {flame.next ? `${flame.remaining} more ${flame.remaining === 1 ? 'day' : 'days'} to ${flame.next.name}` : 'Highest stage. Keep it burning.'}
+              </span>
+            </dd>
+          </div>
+        </div>
+        <div
+          className={`vault-home-stat vault-home-stat-rank${rank.current.key === 'sand' ? ' is-cold' : ''}`}
+          style={{ '--chip': rank.current.color, '--card-glow': `${rank.current.color}22` } as CSSProperties}
+        >
+          <div className="vault-home-stat-art">
+            {rankUpFrom !== null ? (
+              <RankUp from={QUIZ_RANKS[rankUpFrom]} to={rank.current} />
+            ) : (
+              <RankBadge rank={rank.current} progress={rank.progress} />
+            )}
+          </div>
+          <div className="vault-home-stat-text">
+            <dt>Quiz attempts</dt>
+            <dd>
+              <span className="vault-home-stat-value">{attempts.length}</span>
+              <span className="vault-home-tier"><span className="vault-home-tier-chip" />{rank.current.name}</span>
+              <span className="vault-home-next">
+                {rank.next ? `${attempts.length} / ${rank.next.min} to ${rank.next.name}` : 'Top rank reached'}
+              </span>
+              <span className="vault-home-shelf" aria-label={`Ranks unlocked: ${rank.index} of ${QUIZ_RANKS.length - 1}`} role="img">
+                {QUIZ_RANKS.slice(1).map((tier, i) => (
+                  <span
+                    key={tier.key}
+                    className={`vault-home-shelf-slot${i + 1 > rank.index ? ' is-locked' : ''}${i + 1 === rank.index ? ' is-current' : ''}`}
+                    title={`${tier.name}: ${tier.min} ${tier.min === 1 ? 'quiz' : 'quizzes'}`}
+                  >
+                    <RankBadge rank={tier} size={26} />
+                  </span>
+                ))}
+              </span>
+            </dd>
+          </div>
+          {rankUpFrom !== null ? <p className="sr-only" role="status">Rank up: {rank.current.name}</p> : null}
+        </div>
       </dl>
 
       <div className="vault-home-recents">
@@ -72,6 +141,33 @@ export function VaultHome({ recentPaths, availablePaths, historyStore, activityS
         <RecentList id="home-recent-quizzes" title="Recent quizzes" paths={recentQuizzes} empty="Open or take a quiz to see it here." onOpen={onOpen} quiz />
       </div>
     </section>
+  );
+}
+
+const SHARDS = Array.from({ length: 9 }, (_, i) => {
+  const angle = (i / 9) * Math.PI * 2 + 0.3;
+  return { x: Math.round(Math.cos(angle) * 70), y: Math.round(Math.sin(angle) * 70), r: (i * 97) % 360 };
+});
+
+/** One-time animation: the previous rank's badge cracks open to reveal the new one. */
+function RankUp({ from, to }: { from: QuizRank; to: QuizRank }) {
+  return (
+    <div className="rank-up" aria-hidden="true">
+      <div className="rank-up-burst" style={{ '--burst': to.color } as CSSProperties} />
+      <div className="rank-up-new"><RankBadge rank={to} /></div>
+      <div className="rank-up-half rank-up-left"><RankBadge rank={from} /></div>
+      <div className="rank-up-half rank-up-right"><RankBadge rank={from} /></div>
+      <svg className="rank-up-crack" viewBox="0 0 100 100" preserveAspectRatio="none">
+        <polyline pathLength={1} points="50,12 45,30 55,45 46,62 54,78 50,88" />
+      </svg>
+      {SHARDS.map((shard, i) => (
+        <span
+          key={i}
+          className="rank-up-shard"
+          style={{ '--shard': from.color, '--sx': `${shard.x}px`, '--sy': `${shard.y}px`, '--sr': `${shard.r}deg` } as CSSProperties}
+        />
+      ))}
+    </div>
   );
 }
 

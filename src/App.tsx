@@ -2497,6 +2497,7 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
               availablePaths={new Set([...files, ...pdfFiles].filter((path) => !isHiddenVaultFile(path)))}
               historyStore={quizHistory}
               activityStore={dailyActivity}
+              vaultRoot={root ?? ''}
               onOpen={select}
               onCreate={() => void create()}
               onSearch={() => setOverlay('search')}
