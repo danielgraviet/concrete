@@ -36,6 +36,7 @@ import { normalizePastedMathMarkdown, preferOneLineDisplayMath } from './editor/
 import { noteExportTitle } from './export/prepareNoteMarkdown';
 import type { ChatInsertTarget } from './ai/chat/StudyChatPane';
 import { useChatSessions } from './ai/chat/useChatSessions';
+import { VaultHome } from './vault/VaultHome';
 import {
   askText,
   canMkdir,
@@ -234,6 +235,15 @@ function readLastNote(): string {
   }
 }
 
+function readRecentFiles(vaultRoot: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(`mv:recent-files:${vaultRoot}`) ?? '[]');
+    return Array.isArray(parsed) ? parsed.filter((path): path is string => typeof path === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 type LayoutState = {
   sidebarOpen: boolean;
   rightOpen: boolean;
@@ -286,6 +296,7 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
   const vault = useVault(demoNotes, demoFolders);
   const [selected, setSelected] = useState('Welcome.md');
   const [openTabs, setOpenTabs] = useState<string[]>(['Welcome.md']);
+  const [recentFiles, setRecentFiles] = useState<{ vaultRoot: string; paths: string[] } | null>(null);
   const [previewTab, setPreviewTab] = useState<string | null>(null);
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
@@ -536,7 +547,7 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const meta = event.metaKey || event.ctrlKey;
-      if (meta && !event.shiftKey && event.key.toLowerCase() === 'f') {
+      if (meta && !event.shiftKey && event.key.toLowerCase() === 'f' && selectedRef.current) {
         event.preventDefault();
         setFindOpen(true);
         requestAnimationFrame(() => findInputRef.current?.focus());
@@ -806,6 +817,25 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
     }
   }, [selected]);
 
+  useEffect(() => {
+    if (!persistSelectionRef.current || !selected) return;
+    const vaultRoot = root ?? '';
+    setRecentFiles((current) => {
+      const paths = current?.vaultRoot === vaultRoot ? current.paths : readRecentFiles(vaultRoot);
+      if (current?.vaultRoot === vaultRoot && paths[0] === selected) return current;
+      return { vaultRoot, paths: [selected, ...paths.filter((path) => path !== selected)].slice(0, 50) };
+    });
+  }, [root, selected]);
+
+  useEffect(() => {
+    if (!recentFiles) return;
+    try {
+      localStorage.setItem(`mv:recent-files:${recentFiles.vaultRoot}`, JSON.stringify(recentFiles.paths));
+    } catch {
+      // Recents still work for this session.
+    }
+  }, [recentFiles]);
+
   // First launch always creates and opens Documents/Concrete before the required tour.
   // Returning users restore their existing vault as usual.
   useEffect(() => {
@@ -863,7 +893,7 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
         const visibleFiles = result.files.filter((file) => !isHiddenVaultFile(file));
         if (seededPath && !visibleFiles.includes(seededPath)) visibleFiles.push(seededPath);
         const preferred =
-          (lastNote && visibleFiles.includes(lastNote) ? lastNote : '') ||
+          (lastNote && (visibleFiles.includes(lastNote) || result.pdfFiles.includes(lastNote)) ? lastNote : '') ||
           (visibleFiles.find((file) => file === 'Welcome.md') ?? visibleFiles[0] ?? '');
         setSelected(preferred);
         setOpenTabs(preferred ? [preferred] : []);
@@ -1174,14 +1204,19 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
 
   const closeOpenTab = (path: string) => {
     const tabs = openTabsRef.current;
-    if (tabs.length <= 1 || !path) return;
+    if (!tabs.includes(path)) return;
     const nextTabs = closeNoteTab(tabs, path);
     setOpenTabs(nextTabs);
     if (previewTab === path) setPreviewTab(null);
     if (path !== selected) return;
     const next = tabAfterClose(tabs, path);
     if (next) select(next, { recordTab: false });
-    else setSelected('');
+    else {
+      if (controller.isDirty) void controller.persistence.flush();
+      setFindOpen(false);
+      setTreeFocus(null);
+      setSelected('');
+    }
   };
 
   /** Folder target for new notes: explicit selection, else sibling of current note. */
@@ -2390,7 +2425,7 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
         <div className="editor-split" ref={editorSplitRef}>
         <div className="editor-stage">
         <div className={`editor-wrap${isPdfFileName(selected) ? ' pdf-editor-wrap' : ''}`}>
-          {findOpen ? (
+          {selected && findOpen ? (
             <div className="find-bar" role="search">
               <input
                 ref={findInputRef}
@@ -2455,6 +2490,16 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
                 const markdown = reviewIndex.note(card.source.path)?.quizMarkdown;
                 return markdown ? (quizQuestionForCard(markdown, card)?.question ?? null) : null;
               }}
+            />
+          ) : !selected ? (
+            <VaultHome
+              recentPaths={recentFiles?.vaultRoot === pinVault ? recentFiles.paths : readRecentFiles(pinVault)}
+              availablePaths={new Set([...files, ...pdfFiles].filter((path) => !isHiddenVaultFile(path)))}
+              historyStore={quizHistory}
+              activityStore={dailyActivity}
+              onOpen={select}
+              onCreate={() => void create()}
+              onSearch={() => setOverlay('search')}
             />
           ) : isPdfFileName(selected) ? (
             <PdfView path={selected} vaultRoot={root} />
@@ -2564,12 +2609,11 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
         ) : null}
         </div>
         <footer className="statusbar">
-          <span>{controller.content.length} characters</span>
-          <span>•</span>
+          {selected ? <><span>{controller.content.length} characters</span><span>•</span></> : null}
           <span>{root ? (getBackend().target === 'web' ? 'Saved to cloud' : 'Saved to disk') : 'In-memory demo'}</span>
           {!isOnline ? <span className="airplane-mode-status" role="status" aria-label="Airplane mode: offline"><span aria-hidden="true">✈</span> Airplane mode</span> : null}
           <span className="status-spacer" />
-          {layout.focusMode ? <span>Focus mode · Esc to exit</span> : <span>{saved ? 'Saved' : 'Editing'}</span>}
+          {layout.focusMode ? <span>Focus mode · Esc to exit</span> : selected ? <span>{saved ? 'Saved' : 'Editing'}</span> : null}
           {accountSlot}
         </footer>
       </main>
