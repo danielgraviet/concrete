@@ -42,15 +42,24 @@ function limits(store: ReviewStateStore, settings: ReviewSettings, now: number) 
   };
 }
 
+function cappedCounts(available: QueueCounts, store: ReviewStateStore, settings: ReviewSettings, now: number): QueueCounts {
+  const { newLeft, reviewLeft } = limits(store, settings, now);
+  const learning = Math.min(reviewLeft, available.learning);
+  return {
+    newCount: Math.min(newLeft, available.newCount),
+    learning,
+    review: Math.min(reviewLeft - learning, available.review),
+  };
+}
+
 /** What a deck has waiting today, after daily limits. */
 export function queueCounts(cards: ReviewCard[], store: ReviewStateStore, settings: ReviewSettings, now: number): QueueCounts {
   const buckets = bucket(cards, store, now);
-  const { newLeft, reviewLeft } = limits(store, settings, now);
-  return {
-    newCount: Math.min(newLeft, buckets.fresh.length),
+  return cappedCounts({
+    newCount: buckets.fresh.length,
     learning: buckets.learning.length,
-    review: Math.min(reviewLeft, buckets.review.length),
-  };
+    review: buckets.review.length,
+  }, store, settings, now);
 }
 
 /** Spread `extra` evenly through `base` so new cards don't all come at the end. */
@@ -84,23 +93,32 @@ export class ReviewSession {
   private main: string[];
   private learning: string[];
   private history: string[] = [];
+  private lastReviewTime: number;
   reviewed = 0;
 
   constructor(
     cards: ReviewCard[],
     private store: ReviewStateStore,
     private scheduler: Scheduler,
-    settings: ReviewSettings,
+    private settings: ReviewSettings,
     now: number,
   ) {
     for (const card of cards) this.cards.set(card.id, card);
     const buckets = bucket(cards, store, now);
-    const { newLeft, reviewLeft } = limits(store, settings, now);
-    this.main = interleave(
-      buckets.review.slice(0, reviewLeft).map((c) => c.id),
-      buckets.fresh.slice(0, newLeft).map((c) => c.id),
-    );
-    this.learning = buckets.learning.map((c) => c.id);
+    this.lastReviewTime = now;
+    const counts = cappedCounts({
+      newCount: buckets.fresh.length,
+      learning: buckets.learning.length,
+      review: buckets.review.length,
+    }, store, settings, now);
+    const reviewIds = buckets.review.map((card) => card.id);
+    const newIds = buckets.fresh.map((card) => card.id);
+    this.main = [
+      ...interleave(reviewIds.slice(0, counts.review), newIds.slice(0, counts.newCount)),
+      ...reviewIds.slice(counts.review),
+      ...newIds.slice(counts.newCount),
+    ];
+    this.learning = buckets.learning.map((card) => card.id);
   }
 
   private due(id: string): number {
@@ -113,37 +131,42 @@ export class ReviewSession {
 
   /** The card to show now, or null when finished (or only waiting on learning steps). */
   current(now: number): ReviewCard | null {
-    const learningHead = this.learning[0];
+    const counts = this.counts(now);
+    const learningHead = counts.learning ? this.learning[0] : undefined;
     if (learningHead && this.due(learningHead) <= now) return this.cards.get(learningHead) ?? null;
-    if (this.main.length) return this.cards.get(this.main[0]) ?? null;
+    const next = this.main.find((id) => this.isNew(id) ? counts.newCount > 0 : counts.review > 0);
+    if (next) return this.cards.get(next) ?? null;
     if (learningHead && this.due(learningHead) <= now + LEARN_AHEAD_MS) return this.cards.get(learningHead) ?? null;
     return null;
   }
 
   /** When the next waiting learning card becomes due (null when nothing is waiting). */
-  nextLearningDue(): number | null {
-    return this.learning.length ? this.due(this.learning[0]) : null;
+  nextLearningDue(now = this.lastReviewTime): number | null {
+    return this.counts(now).learning ? this.due(this.learning[0]) : null;
   }
 
-  counts(): QueueCounts {
-    let newCount = 0;
-    let review = 0;
-    for (const id of this.main) {
-      const sched = this.store.get(id)?.sched;
-      if (!sched || sched.state === State.New) newCount += 1;
-      else review += 1;
-    }
-    return { newCount, learning: this.learning.length, review };
+  private isNew(id: string): boolean {
+    const sched = this.store.get(id)?.sched;
+    return !sched || sched.state === State.New;
+  }
+
+  counts(now = this.lastReviewTime): QueueCounts {
+    const newCount = this.main.filter((id) => this.isNew(id)).length;
+    return cappedCounts({
+      newCount,
+      learning: this.learning.length,
+      review: this.main.length - newCount,
+    }, this.store, this.settings, now);
   }
 
   /** The kind of queue a card is in, for colouring the counts. */
   queueOf(id: string): 'new' | 'learning' | 'review' {
     if (this.learning.includes(id)) return 'learning';
-    const sched = this.store.get(id)?.sched;
-    return !sched || sched.state === State.New ? 'new' : 'review';
+    return this.isNew(id) ? 'new' : 'review';
   }
 
   rate(card: ReviewCard, rating: Rating, now: number): void {
+    this.lastReviewTime = now;
     this.main = this.main.filter((id) => id !== card.id);
     this.learning = this.learning.filter((id) => id !== card.id);
     const entry = this.store.review(card, rating, now, this.scheduler);
@@ -165,7 +188,14 @@ export class ReviewSession {
     if (!id) return;
     this.store.undo();
     this.learning = this.learning.filter((other) => other !== id);
-    this.main = [id, ...this.main.filter((other) => other !== id)];
+    this.main = this.main.filter((other) => other !== id);
+    const state = this.store.get(id)?.sched?.state;
+    if (state === State.Learning || state === State.Relearning) {
+      this.learning.push(id);
+      this.sortLearning();
+    } else {
+      this.main.unshift(id);
+    }
     this.reviewed = Math.max(0, this.reviewed - 1);
   }
 

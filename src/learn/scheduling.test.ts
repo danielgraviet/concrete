@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { cardsFromNote } from './buildCards';
 import { planMigrations } from './reconcile';
-import { ReviewSession } from './ReviewSession';
+import { queueCounts, ReviewSession } from './ReviewSession';
 import { ReviewStateStore } from './ReviewStateStore';
 import { Scheduler, State } from './scheduler';
 import type { ReviewSettings } from './types';
@@ -70,6 +70,28 @@ describe('ReviewSession', () => {
     session.undo();
     expect(store.get(card.id)).toBeUndefined();
     expect(session.current(T0)?.id).toBe(card.id);
+  });
+
+  it('shares the daily budget across overdue learning and regular reviews', () => {
+    const store = freshStore();
+    const scheduler = new Scheduler();
+    const cards = cardsFromNote('n.md', Array.from({ length: 145 }, (_, i) => `Question ${i} :: Answer`).join('\n'));
+    const limited = { ...settings, maxReviewsPerDay: 50 };
+    for (const card of cards.slice(0, 120)) store.review(card, 'again', T0 - DAY, scheduler);
+    store.review(cards[120], 'easy', T0 - 30 * DAY, scheduler);
+
+    expect(queueCounts(cards, store, limited, T0)).toEqual({ newCount: 20, learning: 50, review: 0 });
+    const session = new ReviewSession(cards, store, scheduler, limited, T0);
+    expect(session.counts()).toEqual(queueCounts(cards, store, limited, T0));
+
+    for (let i = 0; i < 40; i += 1) session.rate(session.current(T0)!, 'easy', T0);
+    expect(session.counts().learning).toBe(10);
+    for (let i = 0; i < 10; i += 1) session.rate(session.current(T0)!, 'easy', T0);
+    expect(session.counts()).toEqual({ newCount: 20, learning: 0, review: 0 });
+    expect(session.queueOf(session.current(T0)!.id)).toBe('new');
+    expect(session.nextLearningDue()).toBeNull();
+    expect(store.get(cards[50].id)?.sched?.due).toBeLessThan(T0);
+    expect(queueCounts(cards, store, limited, T0 + DAY).learning).toBe(50);
   });
 
   it('keeps quiz questions out of review until enrolled', () => {
