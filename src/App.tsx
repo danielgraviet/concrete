@@ -295,8 +295,12 @@ function isAlreadyExistsError(error: unknown): boolean {
 
 export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode; onShare?: RequestShare } = {}) {
   const vault = useVault(demoNotes, demoFolders);
-  const [selected, setSelected] = useState('Welcome.md');
-  const [openTabs, setOpenTabs] = useState<string[]>(['Welcome.md']);
+  // Nothing is open until the vault restores, so a refresh goes straight to
+  // the home screen instead of flashing the demo Welcome note.
+  const [selected, setSelected] = useState('');
+  const [openTabs, setOpenTabs] = useState<string[]>([]);
+  /** True until the startup vault restore settles; the main area stays blank meanwhile. */
+  const [restoringVault, setRestoringVault] = useState(true);
   const [recentFiles, setRecentFiles] = useState<{ vaultRoot: string; paths: string[] } | null>(null);
   const [previewTab, setPreviewTab] = useState<string | null>(null);
   const selectedRef = useRef(selected);
@@ -846,7 +850,10 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
   // First launch always creates and opens Documents/Concrete before the required tour.
   // Returning users restore their existing vault as usual.
   useEffect(() => {
-    if (vault.root) return;
+    if (vault.root) {
+      setRestoringVault(false);
+      return;
+    }
     let cancelled = false;
     const firstRun = !localStorage.getItem('mv:onboarding-complete');
     const restore = () => {
@@ -854,7 +861,12 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
         ? vault.openDefault()
         : (getBackend().vault?.restore ? vault.restore() : Promise.resolve(null));
       void opening.then(async (result) => {
-        if (cancelled || !result) {
+        if (cancelled) return;
+        if (!result) {
+          // No vault to restore: show the demo Welcome note as before.
+          setSelected('Welcome.md');
+          setOpenTabs(['Welcome.md']);
+          setRestoringVault(false);
           void getBackend().perf?.mark('renderer-interactive');
           return;
         }
@@ -901,9 +913,14 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
         // Always start on the home screen (streak, ranks, recents); nothing reopens.
         setSelected('');
         setOpenTabs([]);
+        setRestoringVault(false);
         setPreviewTab(null);
         persistSelectionRef.current = true;
         void getBackend().perf?.mark('renderer-interactive');
+      }).catch((error: unknown) => {
+        // Never leave the main area blank if the restore fails.
+        console.error('Vault restore failed', error);
+        if (!cancelled) setRestoringVault(false);
       });
     };
     const idleId = window.setTimeout(restore, 0);
@@ -2532,6 +2549,8 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
                 return markdown ? (quizQuestionForCard(markdown, card)?.question ?? null) : null;
               }}
             />
+          ) : !selected && restoringVault && !root ? (
+            <div className="vault-home-pending" aria-busy="true" />
           ) : !selected ? (
             <VaultHome
               recentPaths={recentFiles?.vaultRoot === pinVault ? recentFiles.paths : readRecentFiles(pinVault)}
