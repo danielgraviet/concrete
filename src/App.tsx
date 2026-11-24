@@ -132,7 +132,7 @@ import { verifyCodeQuestions } from './quiz/verifyCode';
 import type { AgentProviderId, AppSettings } from './settings';
 // Type-only: share UI lives in src/web/share and is injected by the web entry.
 import type { RequestShare, ShareTarget } from './web/share/types';
-import { ProductTour } from './onboarding';
+import { ONBOARDING_ENABLED, ProductTour } from './onboarding';
 import { getBackend } from './backend';
 
 const SettingsPanel = lazy(() =>
@@ -882,9 +882,11 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
           }
         }
         if (cancelled) return;
-        if (firstRun) {
+        if (firstRun && ONBOARDING_ENABLED) {
           setOnboarding(true);
         } else {
+          // With the tour off, still mark first run done so later launches restore the vault.
+          if (firstRun) localStorage.setItem('mv:onboarding-complete', '1');
           setOnboarding(false);
         }
         setContents({});
@@ -2844,12 +2846,12 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
             })}
             onImportObsidian={getBackend().capabilities.diskImport ? () => { void importObsidianVault().then((imported) => { if (imported) setOverlay(null); }); } : undefined}
             onImportNotion={getBackend().capabilities.diskImport ? () => { void importNotionExport().then((imported) => { if (imported) setOverlay(null); }); } : undefined}
-            onReplayOnboarding={() => {
+            onReplayOnboarding={ONBOARDING_ENABLED ? () => {
               setOverlay(null);
               setOnboardingStep(0);
               setWalkthroughNoteCreated(false);
               setOnboarding(true);
-            }}
+            } : undefined}
             onClose={() => setOverlay(null)}
           />
         </Suspense>

@@ -19,7 +19,7 @@ ALLOWED_ORIGINS = "https://app.useconcrete.app,http://localhost:5173"
 # Sent to OpenRouter as HTTP-Referer (app attribution). Usually your production web origin.
 APP_URL = "https://app.useconcrete.app"
 # OpenRouter model used when the client sends none, or one not in ALLOWED_MODELS.
-DEFAULT_MODEL = "deepseek/deepseek-v4-flash-0731"
+DEFAULT_MODEL = "openai/gpt-5.6-luna"
 # Comma-separated OpenRouter model ids clients may choose. Keep in sync with
 # OPENROUTER_MODEL_OPTIONS in src/ai/openRouterModels.ts. DEFAULT_MODEL is always allowed.
 ALLOWED_MODELS = "deepseek/deepseek-v4-flash-0731,qwen/qwen3.8-27b,qwen/qwen3.7-flash,openai/gpt-5.6-luna,openai/gpt-4o-mini"

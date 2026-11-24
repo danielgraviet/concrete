@@ -17,7 +17,7 @@ export const OPENROUTER_MODEL_LUNA = 'openai/gpt-5.6-luna';
 export const OPENROUTER_MODEL_GPT4O_MINI = 'openai/gpt-4o-mini';
 
 /** Default live model for quiz generation and grading. */
-export const OPENROUTER_MODEL_DEFAULT = OPENROUTER_MODEL_DEEPSEEK_V4_FLASH;
+export const OPENROUTER_MODEL_DEFAULT = OPENROUTER_MODEL_LUNA;
 
 /** Extremely fast Create Cards model — routed to Cerebras on OpenRouter. */
 export const CARD_GENERATION_MODEL = OPENROUTER_MODEL_QWEN_38_27B;
@@ -35,7 +35,7 @@ export const OPENROUTER_MODEL_OPTIONS: OpenRouterModelOption[] = [
   {
     id: OPENROUTER_MODEL_DEEPSEEK_V4_FLASH,
     label: 'DeepSeek V4 Flash',
-    description: 'Fast & cheap · quiz default',
+    description: 'Fast & cheap',
   },
   {
     id: OPENROUTER_MODEL_QWEN_38_27B,
@@ -50,7 +50,7 @@ export const OPENROUTER_MODEL_OPTIONS: OpenRouterModelOption[] = [
   {
     id: OPENROUTER_MODEL_LUNA,
     label: 'GPT-5.6 Luna',
-    description: 'OpenAI low-cost tier',
+    description: 'OpenAI low-cost tier · default',
   },
   {
     id: OPENROUTER_MODEL_GPT4O_MINI,

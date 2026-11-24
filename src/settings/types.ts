@@ -99,7 +99,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   brandLogo: 'triple-c',
   autosaveMs: 800,
   providerId: 'mock',
-  openRouterModelId: 'deepseek/deepseek-v4-flash-0731',
+  openRouterModelId: 'openai/gpt-5.6-luna',
   claudeModelId: 'sonnet',
   agentProviderId: 'off',
   agentModelId: '',

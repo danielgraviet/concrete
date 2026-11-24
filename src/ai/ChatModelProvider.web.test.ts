@@ -34,7 +34,7 @@ describe('ChatModelProvider on web', () => {
       'OpenRouter · DeepSeek V4 Flash',
     );
     expect(new ChatModelProvider('openrouter', 'openai/gpt-4o-mini').label).toBe('OpenRouter · GPT-4o mini');
-    expect(new ChatModelProvider('openrouter').label).toBe('OpenRouter · DeepSeek V4 Flash');
+    expect(new ChatModelProvider('openrouter').label).toBe('OpenRouter · GPT-5.6 Luna');
   });
 
   it('sends the selected model and Cerebras pinning to the proxy bridge', async () => {

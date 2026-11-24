@@ -104,7 +104,7 @@ describe("POST /v1/chat → OpenRouter request", () => {
       "X-Title": "Concrete",
     });
     expect(call.body).toEqual({
-      model: "deepseek/deepseek-v4-flash-0731",
+      model: "openai/gpt-5.6-luna",
       // OpenAI-style roles pass straight through: system stays in messages, trailing assistant is allowed.
       messages: [
         { role: "system", content: "You are a tutor." },
@@ -167,11 +167,11 @@ describe("POST /v1/chat → OpenRouter request", () => {
     const { deps, model } = makeDeps({ env: { ALLOWED_MODELS: "x/one, y/two" } });
     await handleRequest(chatRequest({ ...USER, model: "y/two" }), deps);
     await handleRequest(chatRequest({ ...USER, model: "openai/gpt-4o-mini" }), deps);
-    await handleRequest(chatRequest({ ...USER, model: "deepseek/deepseek-v4-flash-0731" }), deps);
+    await handleRequest(chatRequest({ ...USER, model: "openai/gpt-5.6-luna" }), deps);
     expect(model.calls.map((c) => c.body.model)).toEqual([
       "y/two",
-      "deepseek/deepseek-v4-flash-0731",
-      "deepseek/deepseek-v4-flash-0731",
+      "openai/gpt-5.6-luna",
+      "openai/gpt-5.6-luna",
     ]);
   });
 
