@@ -189,7 +189,7 @@ export async function runWebVaultAgent(args: {
       } else if (type === 'read') {
         const path = vaultAgentPath(action.path);
         if (tree.files.includes(path)) result = (await vault.read(args.root, path)).slice(0, 12000);
-        else if (tree.pdfFiles.includes(path) && vault.extractPdfText) result = (await vault.extractPdfText(args.root, path)).pages.join('\n').slice(0, 12000);
+        else if (tree.pdfFiles.includes(path) && /\.pdf$/i.test(path) && vault.extractPdfText) result = (await vault.extractPdfText(args.root, path)).pages.join('\n').slice(0, 12000);
         else throw new Error(`Can't read ${path}; it is not an available Markdown or PDF file.`);
       } else if (type === 'mkdir') {
         const path = vaultAgentPath(action.path);

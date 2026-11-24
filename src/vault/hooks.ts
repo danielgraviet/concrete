@@ -3,6 +3,7 @@ import {
   applyWatchToFileList,
   applyWatchToFolderList,
   ensureFolderAncestors,
+  isDocumentFileName,
   isHiddenVaultFile,
   parentDir,
 } from './fileTree';
@@ -26,7 +27,8 @@ export function useVault(initialFiles: string[] = [], initialFolders: string[] =
   useEffect(() => {
     if (!root) return;
     const handler = filterWatchByRoot(root, (event: VaultWatchEvent) => {
-      const isPdf = event.path.toLowerCase().endsWith('.pdf');
+      // PDFs and slide decks share the documents list.
+      const isPdf = isDocumentFileName(event.path);
       if (event.type === 'add' || event.type === 'change' || event.type === 'unlink') {
         if (isPdf) {
           setPdfFiles((current) => applyWatchToFileList(current, event));

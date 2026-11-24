@@ -101,9 +101,27 @@ export const VaultService = {
     return requireVault().revealInFolder(root, name);
   },
 
-  /** Picks a Markdown or PDF file from disk and copies it into `folder`. Null when cancelled. */
-  importFile(root: string, folder: string): Promise<string | null> {
+  /**
+   * Picks a file from disk. Notes and PDFs are copied into `folder` (returns
+   * the vault path); a slide deck is returned as `{ name, bytes }` for
+   * `importQuizSource`. Null when cancelled.
+   */
+  importFile(root: string, folder: string): Promise<string | PickedFile | null> {
     return requireVault().importFile(root, folder);
+  },
+
+  /** Bytes of a vault document (PDF or .pptx). */
+  readDocument(root: string, name: string): Promise<Uint8Array> {
+    const api = requireVault();
+    if (typeof api.readDocument !== 'function') throw new Error('Restart Concrete to read slide decks.');
+    return api.readDocument(root, name);
+  },
+
+  /** Save a new .pptx or PDF into the vault (never overwrites). Returns its vault path. */
+  saveDocument(root: string, name: string, bytes: Uint8Array): Promise<string> {
+    const api = requireVault();
+    if (typeof api.saveDocument !== 'function') throw new Error('Restart Concrete to add slide decks.');
+    return api.saveDocument(root, name, bytes);
   },
 
   /** Raw text per page of a vault PDF. */

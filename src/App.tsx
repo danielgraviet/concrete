@@ -43,7 +43,9 @@ import {
   canUseDiskVault,
   ensureFolderAncestors,
   FileTreeView,
+  isDocumentFileName,
   isPdfFileName,
+  isSlideDeckFileName,
   isHiddenVaultFile,
   joinFolderPath,
   joinNotePath,
@@ -122,6 +124,10 @@ import { notePathKey, QuizFromNotePrompt, quizSourceFromMarkdown } from './quiz/
 import { QuizHistoryStore } from './quiz';
 import { DailyActivityStore } from './quiz/dailyActivity';
 import { buildPdfContext, cleanPdfPages, parsePageRange } from './quiz/pdfContext';
+import { importQuizSource, loadQuizSourceContext, type ImportedSource } from './quiz/quizSources';
+import { quizSaveFolder } from './quiz/newQuiz';
+import { createVaultSourceStore, maxStoredSourceBytes } from './quiz/vaultSourceStore';
+import { DeckView } from './quiz/DeckView';
 import { AUTO_QUIZ_ANALYSIS_SYSTEM, parseAutoQuizCounts, type AutoQuizAnalysis, type AutoQuizCounts, type ExistingSourceQuiz } from './quiz/autoComposition';
 import { settingsStore } from './settings';
 import { buildOpenAnswerRubric } from './quiz/openAnswerRubric';
@@ -143,6 +149,9 @@ const QUIZ_CONTEXT_CHARS = 12000;
 
 const GenerateQuizDialog = lazy(() =>
   import('./quiz/GenerateQuizDialog').then((m) => ({ default: m.GenerateQuizDialog })),
+);
+const NewQuizDialog = lazy(() =>
+  import('./quiz/NewQuizDialog').then((m) => ({ default: m.NewQuizDialog })),
 );
 const StudyChatPane = lazy(() =>
   import('./ai/chat/StudyChatPane').then((m) => ({ default: m.StudyChatPane })),
@@ -626,6 +635,13 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
   const pinVault = root ?? '';
   const files = vault.files;
   const pdfFiles = vault.pdfFiles;
+  const pdfFilesRef = useRef(pdfFiles);
+  pdfFilesRef.current = pdfFiles;
+  /** Slide-deck storage (originals + cached slide text) for the open vault. */
+  const sourceStore = useMemo(
+    () => (root ? createVaultSourceStore(root, () => pdfFilesRef.current) : null),
+    [root],
+  );
 
   useEffect(() => {
     setPinnedNotes({ vault: pinVault, paths: readPinnedNotes(pinVault) });
@@ -927,7 +943,7 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
       const path = selectedRef.current;
       const vaultRoot = rootRef.current;
       const markdown = contentRef.current;
-      if (isPdfFileName(path)) return;
+      if (isDocumentFileName(path)) return;
       // The editor still holds another note (e.g. startup placeholder text while
       // the selected note loads): saving now would overwrite the selected note.
       if (editorPathRef.current !== path) return;
@@ -963,7 +979,7 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
     (async () => {
       // PDFs render in PdfView; keep editorPathRef on the last note so
       // note-only effects (card indexing, external reloads) skip them.
-      if (!selected || isPdfFileName(selected)) {
+      if (!selected || isDocumentFileName(selected)) {
         controller.loadContent('');
         return;
       }
@@ -1297,7 +1313,7 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
   };
 
   const exportNotePdf = async (path: string) => {
-    if (!root || exportingPdf || isPdfFileName(path)) return;
+    if (!root || exportingPdf || isDocumentFileName(path)) return;
     setExportingPdf(true);
     try {
       if (path === selected && controller.isDirty) await controller.persistence.flush();
@@ -1326,6 +1342,10 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
 
   /** Source text for quiz generation, fitted to `budget` characters. */
   const loadSourceText = async (path: string, pageRange: string, budget: number): Promise<string> => {
+    if (isSlideDeckFileName(path)) {
+      if (!sourceStore) throw new Error('Open a vault folder to make quizzes from slide decks.');
+      return loadQuizSourceContext(sourceStore, path, pageRange, budget);
+    }
     if (!isPdfFileName(path)) return truncateNoteContext(await loadNoteBody(path), budget);
     if (!root) throw new Error('Open a vault folder to make quizzes from PDFs.');
     const { pages, totalPages } = await VaultService.extractPdfText(root, path);
@@ -1355,14 +1375,47 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
     return parseAutoQuizCounts(response);
   };
 
-  /** Import a Markdown or PDF file into the folder the user is working in and show it in the tree. */
+  /**
+   * Save a picked slide deck under Sources/ and cache its slides. When the deck
+   * is over the web upload limit, its slide text is kept as a note instead.
+   */
+  const importSlideDeck = async (picked: PickedFile): Promise<string> => {
+    if (!sourceStore) throw new Error('Open a vault folder to add slide decks.');
+    const imported = await importQuizSource(sourceStore, picked, { maxStoredBytes: maxStoredSourceBytes() });
+    if (imported.storedOriginal) {
+      vault.setPdfFiles((current) => (current.includes(imported.path) ? current : [...current, imported.path].sort()));
+      return imported.path;
+    }
+    const outline = await loadQuizSourceContext(sourceStore, imported.path, '', Number.MAX_SAFE_INTEGER);
+    const stem = imported.path.replace(/\.pptx$/i, '');
+    for (let n = 1; ; n += 1) {
+      const name = n === 1 ? `${stem} (slides)` : `${stem} (slides) ${n}`;
+      if (vault.files.includes(`${name}.md`)) continue;
+      const created = await vault.create(name);
+      await VaultService.write(root ?? '', created, `# ${noteTitle(created)}\n\n${outline}\n`);
+      return created;
+    }
+  };
+
+  /** Save a deck or PDF added in the New quiz dialog under Sources/ and list it in the vault. */
+  const addQuizSourceFile = async (file: PickedFile): Promise<ImportedSource> => {
+    if (!sourceStore) throw new Error('Open a vault folder to add files.');
+    if (file.bytes.length > 300 * 1024 * 1024) throw new Error('File is larger than 300 MB.');
+    const imported = await importQuizSource(sourceStore, file, { maxStoredBytes: maxStoredSourceBytes() });
+    if (imported.storedOriginal) {
+      vault.setPdfFiles((current) => (current.includes(imported.path) ? current : [...current, imported.path].sort()));
+    }
+    return imported;
+  };
+
+  /** Import a note, PDF or slide deck into the folder the user is working in and show it in the tree. */
   const importFile = async (): Promise<string | null> => {
     if (!root) throw new Error('Open a vault folder to import files.');
     const imported = await VaultService.importFile(root, noteTargetFolder);
-    if (imported) {
-      const setList = isPdfFileName(imported) ? vault.setPdfFiles : vault.setFiles;
-      setList((current) => (current.includes(imported) ? current : [...current, imported].sort()));
-    }
+    if (!imported) return null;
+    if (typeof imported !== 'string') return importSlideDeck(imported);
+    const setList = isPdfFileName(imported) ? vault.setPdfFiles : vault.setFiles;
+    setList((current) => (current.includes(imported) ? current : [...current, imported].sort()));
     return imported;
   };
 
@@ -1377,7 +1430,7 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
     }
 
     const primary = sourcePaths[0];
-    const saveFolder = parentDir(primary) || activeFolder;
+    const saveFolder = quizSaveFolder(primary, activeFolder);
     const takenPaths = [...vault.files];
     let titled = nextQuizTitle(result.title, saveFolder, takenPaths);
     let relative = joinNotePath(saveFolder, titled);
@@ -1906,11 +1959,11 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
       return;
     }
 
-    if (isPdfFileName(path)) {
+    if (isDocumentFileName(path)) {
       const folder = parentDir(path);
       const target = cleaned.startsWith('@root/')
         ? cleaned.slice('@root/'.length)
-        : cleaned.includes('/') ? cleaned : joinPdfPath(folder, cleaned);
+        : cleaned.includes('/') ? cleaned : joinPdfPath(folder, cleaned, isSlideDeckFileName(path) ? '.pptx' : '.pdf');
       if (!target || target === path) return;
       if (canUseDiskVault(root)) {
         try {
@@ -2189,7 +2242,7 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
           aria-label="Generate quiz"
           title="Generate quiz"
           data-tour="generate-quiz"
-          disabled={!selected || reviewing || isQuizPath(selected) || generatingQuiz}
+          disabled={reviewing || (Boolean(selected) && isQuizPath(selected)) || generatingQuiz}
           onClick={createQuiz}
         >
           <ClipboardIcon width={18} height={18} />
@@ -2426,7 +2479,7 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
         </div>
         <div className="editor-split" ref={editorSplitRef}>
         <div className="editor-stage">
-        <div className={`editor-wrap${isPdfFileName(selected) ? ' pdf-editor-wrap' : ''}`}>
+        <div className={`editor-wrap${isDocumentFileName(selected) ? ' pdf-editor-wrap' : ''}`}>
           {selected && findOpen ? (
             <div className="find-bar" role="search">
               <input
@@ -2502,8 +2555,11 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
               vaultRoot={root ?? ''}
               onOpen={select}
               onCreate={() => void create()}
+              onNewQuiz={createQuiz}
               onSearch={() => setOverlay('search')}
             />
+          ) : isSlideDeckFileName(selected) ? (
+            <DeckView path={selected} store={sourceStore} onCreateQuiz={createQuiz} />
           ) : isPdfFileName(selected) ? (
             <PdfView path={selected} vaultRoot={root} />
           ) : isQuizPath(selected) ? (
@@ -2577,12 +2633,12 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
                 <StudyChatPane
                   client={aiClient}
                   notePath={selected}
-                  noteContent={isPdfFileName(selected) ? '' : controller.content}
+                  noteContent={isDocumentFileName(selected) ? '' : controller.content}
                   vaultRoot={root}
                   sessions={chatSessions}
                   agentProviderId={agentProviderId}
                   agentModelId={agentModelId}
-                  canInsert={Boolean(selected) && !isQuizPath(selected) && !isPdfFileName(selected) && !reviewing}
+                  canInsert={Boolean(selected) && !isQuizPath(selected) && !isDocumentFileName(selected) && !reviewing}
                   onInsert={insertFromChat}
                   onClose={() => setAiChatOpen(false)}
                   seedPrompt={aiSeedPrompt}
@@ -2634,7 +2690,7 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
           />
         ) : (
           <>
-            {selected && !isQuizPath(selected) && !isPdfFileName(selected) ? (
+            {selected && !isQuizPath(selected) && !isDocumentFileName(selected) ? (
               <div className="panel-section">
                 <NoteCardsPanel
                   system={review}
@@ -2653,23 +2709,38 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
 
       {generateQuizOpen && (
         <Suspense fallback={null}>
-          <GenerateQuizDialog
-            files={files}
-            pdfFiles={pdfFiles}
-            existingSourceQuizzes={existingQuizSources}
-            quizSourceIndexReady={quizSourceIndexReady}
-            defaultSourcePath={selected}
-            folderHint={
-              selected && !isQuizPath(selected)
-                ? parentDir(selected) || 'vault root'
-                : activeFolder || 'vault root'
-            }
-            defaultSettings={settingsStore.get().quiz}
-            busy={false}
-            onCancel={() => setGenerateQuizOpen(false)}
-            onConfirm={(result) => void confirmGenerateQuiz(result)}
-            onAnalyzeAuto={analyzeQuizSources}
-          />
+          {selected && /\.md$/i.test(selected) ? (
+            // A note is open: the original flow, building the quiz from that note.
+            <GenerateQuizDialog
+              files={files}
+              pdfFiles={pdfFiles}
+              existingSourceQuizzes={existingQuizSources}
+              quizSourceIndexReady={quizSourceIndexReady}
+              defaultSourcePath={selected}
+              folderHint={(isQuizPath(selected) ? activeFolder : quizSaveFolder(selected, activeFolder)) || 'vault root'}
+              defaultSettings={settingsStore.get().quiz}
+              busy={false}
+              onCancel={() => setGenerateQuizOpen(false)}
+              onConfirm={(result) => void confirmGenerateQuiz(result)}
+              onAnalyzeAuto={analyzeQuizSources}
+            />
+          ) : (
+            // No note open: pick vault files or drop in slides/PDFs.
+            <NewQuizDialog
+              files={files}
+              pdfFiles={pdfFiles}
+              existingSourceQuizzes={existingQuizSources}
+              quizSourceIndexReady={quizSourceIndexReady}
+              defaultSourcePath={selected}
+              folderHint={(selected ? quizSaveFolder(selected, activeFolder) : activeFolder) || 'vault root'}
+              defaultSettings={settingsStore.get().quiz}
+              busy={false}
+              onCancel={() => setGenerateQuizOpen(false)}
+              onConfirm={(result) => void confirmGenerateQuiz(result)}
+              onAnalyzeAuto={analyzeQuizSources}
+              onAddFile={addQuizSourceFile}
+            />
+          )}
         </Suspense>
       )}
 

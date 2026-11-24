@@ -480,7 +480,9 @@ function ensureMdExtension(name) {
 }
 
 /** Non-markdown files the vault tree also displays (read-only-ish: open/reveal/rename/delete). */
-const DISPLAYED_EXTENSIONS = new Set(['.md', '.pdf']);
+const DISPLAYED_EXTENSIONS = new Set(['.md', '.pdf', '.pptx']);
+/** Binary documents (PDFs and slide decks), listed together as `pdfFiles`. */
+const DOCUMENT_EXTENSIONS = new Set(['.pdf', '.pptx']);
 
 function displayedExtension(name) {
   const ext = path.extname(name).toLowerCase();
@@ -549,10 +551,10 @@ async function listVaultEntries(root) {
       }
       if (!entry.isFile()) continue;
       const ext = path.extname(entry.name).toLowerCase();
-      if (!['.md', '.pdf'].includes(ext)) continue;
+      if (!DISPLAYED_EXTENSIONS.has(ext)) continue;
       const rel = relBase ? `${relBase}/${entry.name}` : entry.name;
       if (ext === '.md') files.push(rel);
-      else if (ext === '.pdf') pdfFiles.push(rel);
+      else pdfFiles.push(rel);
       if (files.length > MAX_VAULT_FILES) {
         throw new Error(`Vault contains more than ${MAX_VAULT_FILES.toLocaleString()} Markdown files and cannot be opened.`);
       }
@@ -809,7 +811,7 @@ ipcMain.handle('vault:rename', async (_, root, from, to) => {
   }
 
   const ext = displayedExtension(from);
-  if (!ext) throw new Error('Only .md and .pdf files are allowed');
+  if (!ext) throw new Error('Only .md, .pdf and .pptx files are allowed');
   const safeTo =
     ext === '.md'
       ? ensureMdExtension(toRaw)
@@ -832,7 +834,7 @@ ipcMain.handle('vault:delete', async (_, root, name) => {
     await fs.rm(resolved, { recursive: true, force: true });
     return true;
   }
-  if (!displayedExtension(name)) throw new Error('Only .md and .pdf files are allowed');
+  if (!displayedExtension(name)) throw new Error('Only .md, .pdf and .pptx files are allowed');
   await fs.unlink(resolved);
   return true;
 });
@@ -864,20 +866,31 @@ const MAX_PDF_BYTES = 50 * 1024 * 1024;
 const MAX_PDF_PAGES = 500;
 
 const MAX_MD_IMPORT_BYTES = 10 * 1024 * 1024;
+/** Slide decks are mostly images, which are never inflated, so large decks are fine. */
+const MAX_DECK_BYTES = 300 * 1024 * 1024;
 
-/** Copy a Markdown or PDF file picked from disk into a vault folder; returns its vault-relative path. */
+/**
+ * Copy a Markdown or PDF file picked from disk into a vault folder and return
+ * its vault-relative path. A slide deck is returned as `{ name, bytes }`
+ * instead: the renderer parses it and saves it under Sources/ itself.
+ */
 ipcMain.handle('vault:importFile', async (_, root, folder = '') => {
   const result = await dialog.showOpenDialog({
     properties: ['openFile'],
     filters: [
-      { name: 'Markdown or PDF', extensions: ['md', 'markdown', 'pdf'] },
+      { name: 'Notes, PDFs or slides', extensions: ['md', 'markdown', 'pdf', 'pptx', 'ppt'] },
       { name: 'Markdown', extensions: ['md', 'markdown'] },
       { name: 'PDF', extensions: ['pdf'] },
+      { name: 'PowerPoint', extensions: ['pptx', 'ppt'] },
     ],
   });
   if (result.canceled || !result.filePaths[0]) return null;
   const source = result.filePaths[0];
   const sourceExt = path.extname(source).toLowerCase();
+  if (sourceExt === '.pptx' || sourceExt === '.ppt') {
+    if ((await fs.stat(source)).size > MAX_DECK_BYTES) throw new Error('Slide deck is larger than 300 MB.');
+    return { name: path.basename(source), bytes: new Uint8Array(await fs.readFile(source)) };
+  }
   // ".markdown" lands as ".md" so the vault picks it up as a note.
   const ext = sourceExt === '.pdf' ? '.pdf' : sourceExt === '.md' || sourceExt === '.markdown' ? '.md' : null;
   if (!ext) throw new Error('Only .md and .pdf files can be imported.');
@@ -897,6 +910,30 @@ ipcMain.handle('vault:importFile', async (_, root, folder = '') => {
       if (error?.code !== 'EEXIST') throw error;
     }
   }
+});
+
+function resolveDocument(root, name) {
+  if (typeof name !== 'string' || !DOCUMENT_EXTENSIONS.has(path.extname(name).toLowerCase())) {
+    throw new Error('Only .pdf and .pptx documents are allowed');
+  }
+  return resolveWithinRoot(root, name);
+}
+
+/** Bytes of a vault document (PDF or slide deck). */
+ipcMain.handle('vault:readDocument', async (_, root, name) => {
+  return new Uint8Array(await fs.readFile(resolveDocument(root, name).resolved));
+});
+
+/** Save a new slide deck into the vault. Never overwrites: rejects when the path exists. */
+ipcMain.handle('vault:saveDocument', async (_, root, name, bytes) => {
+  const ext = path.extname(String(name)).toLowerCase();
+  if (ext !== '.pptx' && ext !== '.pdf') throw new Error('Only .pptx decks and PDFs can be saved');
+  if (!(bytes instanceof Uint8Array)) throw new Error('Invalid file data');
+  if (bytes.byteLength > MAX_DECK_BYTES) throw new Error('File is larger than 300 MB.');
+  const { resolved, relative } = resolveDocument(root, name);
+  await fs.mkdir(path.dirname(resolved), { recursive: true });
+  await fs.writeFile(resolved, bytes, { flag: 'wx' });
+  return relative;
 });
 
 /** Raw text per page from a vault PDF. Cleaning and budgeting happen in the renderer. */

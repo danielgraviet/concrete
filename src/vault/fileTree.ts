@@ -8,7 +8,7 @@ export function toPosixPath(value: string): string {
 /** Display title for a note path (`folder/Note.md` → `Note`). */
 export function noteTitle(relativePath: string): string {
   const base = toPosixPath(relativePath).split('/').pop() ?? relativePath;
-  return base.replace(/\.(?:md|pdf)$/i, '');
+  return base.replace(/\.(?:md|pdf|pptx)$/i, '');
 }
 
 /** True when basename (sans .md) starts with `Quiz `. */
@@ -20,6 +20,19 @@ export function isQuizFileName(name: string): boolean {
 /** True for exported PDFs shown alongside notes in the tree. */
 export function isPdfFileName(name: string): boolean {
   return toPosixPath(name).toLowerCase().endsWith('.pdf');
+}
+
+/** True for PowerPoint decks (.pptx) used as quiz sources. */
+export function isSlideDeckFileName(name: string): boolean {
+  return toPosixPath(name).toLowerCase().endsWith('.pptx');
+}
+
+/**
+ * True for non-note documents kept in the vault (PDFs and slide decks). They
+ * share the backend's `pdfFiles` list and are never opened in the editor.
+ */
+export function isDocumentFileName(name: string): boolean {
+  return isPdfFileName(name) || isSlideDeckFileName(name);
 }
 
 /** Agent instruction files stay in the vault for automation but are not notes. */
@@ -77,14 +90,15 @@ export function joinNotePath(folder: string, name: string): string {
   return parent ? `${parent}/${file}` : file;
 }
 
-/** Join a vault-relative folder with a PDF name → `Folder/Name.pdf`. */
-export function joinPdfPath(folder: string, name: string): string {
+/** Join a vault-relative folder with a PDF name → `Folder/Name.pdf` (or another document extension). */
+export function joinPdfPath(folder: string, name: string, extension = '.pdf'): string {
+  const ext = extension.toLowerCase();
   const cleaned = toPosixPath(name)
-    .replace(/\.pdf$/i, '')
+    .replace(new RegExp(`\\${ext}$`, 'i'), '')
     .replace(/^\/+|\/+$/g, '');
   const base = cleaned.split('/').filter(Boolean).pop() ?? cleaned;
   if (!base) return '';
-  const file = `${base}.pdf`;
+  const file = `${base}${ext}`;
   const parent = toPosixPath(folder).replace(/^\/+|\/+$/g, '');
   return parent ? `${parent}/${file}` : file;
 }

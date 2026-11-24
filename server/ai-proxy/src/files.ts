@@ -1,5 +1,5 @@
 /**
- * Per-user file storage (images and PDFs) in R2, behind the same Firebase auth
+ * Per-user file storage (images, PDFs and .pptx decks) in R2, behind the same Firebase auth
  * as the AI routes. Objects are keyed `users/<uid>/<vault-relative path>`; the
  * uid always comes from the verified token. Byte usage is tracked in D1
  * (`storage_usage`) and is completely separate from the AI request quota.
@@ -29,6 +29,7 @@ const TYPE_BY_EXT: Record<string, string> = {
   webp: "image/webp",
   svg: "image/svg+xml",
   pdf: "application/pdf",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 };
 
 export const ALLOWED_TYPES = new Set(Object.values(TYPE_BY_EXT));
@@ -128,7 +129,7 @@ async function putFile(req: Request, url: URL, path: string, key: string, ctx: F
   if (!expected || declaredType !== expected) {
     return json(
       415,
-      { error: "unsupported_type", detail: expected ? `expected ${expected}` : "only images and PDFs are allowed" },
+      { error: "unsupported_type", detail: expected ? `expected ${expected}` : "only images, PDFs and .pptx decks are allowed" },
       cors,
     );
   }

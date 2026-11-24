@@ -15,14 +15,14 @@ import { ClipboardIcon } from '@radix-ui/react-icons';
 import { isQuizPath, quizFileTitle } from './paths';
 import { parsePageRange } from './pdfContext';
 import { notePathKey } from './QuizFromNotePrompt';
-import { isPdfFileName, noteTitle } from '../vault/fileTree';
+import { isDocumentFileName, isSlideDeckFileName, noteTitle } from '../vault/fileTree';
 import type { QuizDifficulty, QuizGenerationSettings } from '../settings';
 import type { AutoQuizAnalysis, AutoQuizCounts, ExistingSourceQuiz } from './autoComposition';
 
 export type GenerateQuizDialogResult = {
   title: string;
   sourcePaths: string[];
-  /** Page range text per selected PDF ("3-10, 15"); missing or blank = all pages. */
+  /** Page or slide range text per selected PDF or deck ("3-10, 15"); missing or blank = all. */
   pageRanges: Record<string, string>;
   /** Per-run generation settings (seeded from Settings, not saved back). */
   settings: QuizGenerationSettings;
@@ -32,7 +32,7 @@ export type GenerateQuizDialogResult = {
 
 type Props = {
   files: string[];
-  /** PDFs in the vault; selectable as sources alongside notes. */
+  /** PDFs and slide decks in the vault; selectable as sources alongside notes. */
   pdfFiles: string[];
   existingSourceQuizzes: ReadonlyMap<string, ExistingSourceQuiz>;
   quizSourceIndexReady: boolean;
@@ -127,12 +127,12 @@ export function GenerateQuizDialog({
       .filter((quiz): quiz is ExistingSourceQuiz => Boolean(quiz))
       .map((quiz) => [notePathKey(quiz.quizPath), quiz] as const),
   ).values()];
-  const rangeInvalid = selected.some((path) => isPdfFileName(path) && pageRangeError(pageRanges[path] ?? ''));
+  const rangeInvalid = selected.some((path) => isDocumentFileName(path) && pageRangeError(pageRanges[path] ?? ''));
   const analyzeRef = useRef(onAnalyzeAuto);
   analyzeRef.current = onAnalyzeAuto;
   const selectionKey = selected.join('\n');
   const rangeKey = selected
-    .filter(isPdfFileName)
+    .filter(isDocumentFileName)
     .map((path) => `${path}\t${pageRanges[path] ?? ''}`)
     .join('\n');
   const [trackedSelection, setTrackedSelection] = useState(selectionKey);
@@ -192,7 +192,7 @@ export function GenerateQuizDialog({
     setAnalysisPending(false);
     setAnalyzing(true);
     const ranges = Object.fromEntries(
-      selected.filter(isPdfFileName).map((path) => [path, pageRanges[path] ?? '']),
+      selected.filter(isDocumentFileName).map((path) => [path, pageRanges[path] ?? '']),
     );
     const timer = window.setTimeout(() => {
       void analyzeRef
@@ -252,7 +252,7 @@ export function GenerateQuizDialog({
       title: quizFileTitle(descriptive),
       sourcePaths: selected,
       pageRanges: Object.fromEntries(
-        selected.filter(isPdfFileName).map((path) => [path, pageRanges[path] ?? '']),
+        selected.filter(isDocumentFileName).map((path) => [path, pageRanges[path] ?? '']),
       ),
       settings: { ...defaultSettings, ...counts, difficulty },
       sourceIntent,
@@ -272,7 +272,7 @@ export function GenerateQuizDialog({
             <Box>
               <Heading size="4">Generate quiz</Heading>
               <Text size="2" color="gray">
-                Use notes or PDFs to make a quiz, recreate an existing one, or create similar practice
+                Use notes, PDFs or slide decks to make a quiz, recreate an existing one, or create similar practice
                 {folderHint ? ` · saves under ${folderHint}` : ''}.
               </Text>
             </Box>
@@ -308,7 +308,7 @@ export function GenerateQuizDialog({
             </Flex>
             {noteFiles.length === 0 ? (
               <Text size="2" color="gray">
-                No notes available. Create a note or add a PDF to your vault first.
+                No notes available. Create a note or add a PDF or slide deck to your vault first.
               </Text>
             ) : (
               <ScrollArea
@@ -321,7 +321,8 @@ export function GenerateQuizDialog({
                   {noteFiles.map((path) => {
                     const checked = selected.includes(path);
                     const isDefault = path === defaultSourcePath;
-                    const isPdf = isPdfFileName(path);
+                    const isPdf = isDocumentFileName(path);
+                    const isDeck = isSlideDeckFileName(path);
                     const rangeError = isPdf && checked ? pageRangeError(pageRanges[path] ?? '') : null;
                     return (
                       <Flex
@@ -341,7 +342,7 @@ export function GenerateQuizDialog({
                           <Flex direction="column" gap="1" flexGrow="1">
                             <Text size="2">{noteTitle(path)}</Text>
                             <Text size="1" color="gray">
-                              {isPdf ? 'PDF · ' : isQuizPath(path) ? 'Existing quiz · ' : ''}
+                              {isDeck ? 'Slides · ' : isPdf ? 'PDF · ' : isQuizPath(path) ? 'Existing quiz · ' : ''}
                               {path}
                               {isDefault ? ' · current' : ''}
                             </Text>
@@ -351,8 +352,8 @@ export function GenerateQuizDialog({
                                   size="1"
                                   value={pageRanges[path] ?? ''}
                                   disabled={busy || analyzing}
-                                  placeholder="Pages, e.g. 1-20, 25 (blank = all)"
-                                  aria-label={`Pages to use from ${noteTitle(path)}`}
+                                  placeholder={`${isDeck ? 'Slides' : 'Pages'}, e.g. 1-20, 25 (blank = all)`}
+                                  aria-label={`${isDeck ? 'Slides' : 'Pages'} to use from ${noteTitle(path)}`}
                                   onChange={(e) => {
                                     setPageRanges((current) => ({ ...current, [path]: e.target.value }));
                                   }}

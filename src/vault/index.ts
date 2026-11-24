@@ -15,6 +15,8 @@ export {
   ensureFolderAncestors,
   filesInFolder,
   isPdfFileName,
+  isDocumentFileName,
+  isSlideDeckFileName,
   isHiddenVaultFile,
   isQuizFileName,
   joinNotePath,

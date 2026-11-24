@@ -43,3 +43,6 @@ firebase-debug.log
 # Vercel CLI link
 .vercel
 .env*
+
+# Local sample decks/docs for running tests against (not committed)
+docs/testing/
