@@ -287,7 +287,7 @@ const PING_OPENROUTER_MODEL = 'openai/gpt-4o-mini';
 /** Default completion model when the renderer omits one. */
 // Keep the default on a broadly available model; unavailable model IDs leave
 // the tutor stuck behind the renderer's "Thinking…" state.
-const DEFAULT_OPENROUTER_MODEL = 'deepseek/deepseek-v4-flash-0731';
+const DEFAULT_OPENROUTER_MODEL = 'openai/gpt-5.6-luna';
 
 async function ensureConcreteBridge() {
   if (concreteBridgeInfo) return concreteBridgeInfo;

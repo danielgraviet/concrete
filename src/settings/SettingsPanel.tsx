@@ -693,18 +693,16 @@ export function SettingsPanel({
             Import Notion Export
           </Button>
         ) : null}
-        <Button
-          type="button"
-          variant="soft"
-          color="gray"
-          onClick={onReplayOnboarding}
-          disabled={!onReplayOnboarding}
-        >
-          Replay walkthrough
-        </Button>
-        <Text size="1" color="gray">
-          Replay the required getting started walkthrough.
-        </Text>
+        {onReplayOnboarding ? (
+          <>
+            <Button type="button" variant="soft" color="gray" onClick={onReplayOnboarding}>
+              Replay walkthrough
+            </Button>
+            <Text size="1" color="gray">
+              Replay the required getting started walkthrough.
+            </Text>
+          </>
+        ) : null}
       </Flex>
         </>
       )}

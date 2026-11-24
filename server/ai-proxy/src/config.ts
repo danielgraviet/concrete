@@ -35,7 +35,7 @@ export interface Config {
   storageQuotaBytes: number;
 }
 
-export const DEFAULT_MODEL = "deepseek/deepseek-v4-flash-0731";
+export const DEFAULT_MODEL = "openai/gpt-5.6-luna";
 /** Mirrors OPENROUTER_MODEL_OPTIONS in the app's `src/ai/openRouterModels.ts`. */
 export const DEFAULT_ALLOWED_MODELS: readonly string[] = [
   "deepseek/deepseek-v4-flash-0731",

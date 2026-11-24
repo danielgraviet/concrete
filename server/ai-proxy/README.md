@@ -18,7 +18,7 @@ Every `/v1/*` endpoint requires `Authorization: Bearer <Firebase ID token>`. Wit
 ```jsonc
 {
   "messages": [{ "role": "system" | "user" | "assistant", "content": "..." }],
-  "model": "deepseek/deepseek-v4-flash-0731", // optional; used if in ALLOWED_MODELS, else DEFAULT_MODEL (logged)
+  "model": "openai/gpt-5.6-luna", // optional; used if in ALLOWED_MODELS, else DEFAULT_MODEL (logged)
   "max_tokens": 4000,     // optional, clamped to MAX_TOKENS_CAP
   "temperature": 0.4,     // optional, clamped to 0–2 (default 0.5, like the desktop app)
   "provider": { "order": ["Cerebras"], "allow_fallbacks": true, "sort": "throughput" }, // optional
@@ -126,7 +126,7 @@ R2's free tier covers 10 GB of storage, 1M Class A operations and 10M Class B op
 | `FIREBASE_PROJECT_ID` | var | – | Required. Tokens from other projects are rejected. |
 | `ALLOWED_ORIGINS` | var | (none) | Comma-separated, e.g. `https://concrete.example.com,http://localhost:5173` |
 | `APP_URL` | var | (empty) | Sent as `HTTP-Referer` to OpenRouter (app attribution). Omitted when empty. `X-Title: Concrete` is always sent. |
-| `DEFAULT_MODEL` | var | `deepseek/deepseek-v4-flash-0731` | Used when the client sends no model or one outside `ALLOWED_MODELS` |
+| `DEFAULT_MODEL` | var | `openai/gpt-5.6-luna` | Used when the client sends no model or one outside `ALLOWED_MODELS` |
 | `ALLOWED_MODELS` | var | the 5 curated ids | Comma-separated. Default: `deepseek/deepseek-v4-flash-0731`, `qwen/qwen3.8-27b`, `qwen/qwen3.7-flash`, `openai/gpt-5.6-luna`, `openai/gpt-4o-mini` (mirrors `src/ai/openRouterModels.ts`). `DEFAULT_MODEL` is always allowed. |
 | `MAX_TOKENS_CAP` | var | `8000` | |
 | `QUOTA_MONTHLY` | var | `100` | Requests per user per month |
