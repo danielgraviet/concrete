@@ -46,7 +46,9 @@ async function recordAiActivity(event) {
     await fs.appendFile(AI_ACTIVITY_PATH, `${JSON.stringify(event)}\n`, { mode: 0o600 });
   } catch (error) {
     console.warn('Unable to record AI activity:', error?.message ?? error);
+    return false;
   }
+  return true;
 }
 
 async function readAiActivity() {
@@ -1714,7 +1716,7 @@ ipcMain.handle('ai:trajectories', async () => {
 // Lets the renderer log failures that happen after a successful API call
 // (e.g. an unparseable quiz), keeping the raw model reply for debugging.
 ipcMain.handle('ai:recordActivity', async (_, event = {}) => {
-  await recordAiActivity({
+  return recordAiActivity({
     requestId: typeof event.requestId === 'string' ? event.requestId : `${Date.now()}-renderer`,
     operation: typeof event.operation === 'string' ? event.operation.slice(0, 80) : 'renderer_event',
     startedAt: Date.now(),
@@ -1725,7 +1727,6 @@ ipcMain.handle('ai:recordActivity', async (_, event = {}) => {
     responseText: typeof event.responseText === 'string' ? event.responseText.slice(0, 50000) : undefined,
     metadata: event.metadata && typeof event.metadata === 'object' ? event.metadata : null,
   });
-  return true;
 });
 
 ipcMain.handle('ai:activityClear', async () => {
