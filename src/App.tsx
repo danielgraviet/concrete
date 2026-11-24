@@ -126,6 +126,7 @@ import { DailyActivityStore } from './quiz/dailyActivity';
 import { buildPdfContext, cleanPdfPages, parsePageRange } from './quiz/pdfContext';
 import { importQuizSource, loadQuizSourceContext, type ImportedSource } from './quiz/quizSources';
 import { quizSaveFolder } from './quiz/newQuiz';
+import { useProgressSync } from './quiz/useProgressSync';
 import { createVaultSourceStore, maxStoredSourceBytes } from './quiz/vaultSourceStore';
 import { DeckView } from './quiz/DeckView';
 import { AUTO_QUIZ_ANALYSIS_SYSTEM, parseAutoQuizCounts, type AutoQuizAnalysis, type AutoQuizCounts, type ExistingSourceQuiz } from './quiz/autoComposition';
@@ -181,7 +182,6 @@ type RailView = 'files' | 'review' | 'ai';
 type Overlay = 'settings' | 'search' | null;
 
 const LAYOUT_KEY = 'mv:layout';
-const LAST_NOTE_KEY = 'mv:last-note';
 const STUDY_CHAT_KEY = 'mv:study-chat';
 const STUDY_CHAT_MIN_WIDTH = 320;
 const STUDY_CHAT_DEFAULT_WIDTH = 440;
@@ -233,14 +233,6 @@ function readNewQuizzes(): string[] {
     return Array.isArray(parsed) ? parsed.filter((p): p is string => typeof p === 'string') : [];
   } catch {
     return [];
-  }
-}
-
-function readLastNote(): string {
-  try {
-    return localStorage.getItem(LAST_NOTE_KEY) ?? '';
-  } catch {
-    return '';
   }
 }
 
@@ -758,6 +750,14 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
       document.removeEventListener('visibilitychange', recordActivity);
     };
   }, [dailyActivity]);
+
+  useProgressSync({
+    root,
+    history: quizHistory,
+    activity: dailyActivity,
+    recent: recentFiles?.vaultRoot === pinVault ? recentFiles.paths : readRecentFiles(pinVault),
+    setRecent: (paths) => setRecentFiles({ vaultRoot: pinVault, paths }),
+  });
   const rubricCalibrationSamples = getRecentOpenAnswerSamples(quizHistory.getAll(), 10);
   const review = useReviewSystem(root);
   const reviewIndex = review.index;
@@ -822,15 +822,6 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
   // Opening a quiz (from the tree, the toast, or anywhere) clears its badge.
   useEffect(() => {
     setNewQuizPaths((current) => (current.includes(selected) ? current.filter((p) => p !== selected) : current));
-  }, [selected]);
-
-  useEffect(() => {
-    if (!persistSelectionRef.current || !selected) return;
-    try {
-      localStorage.setItem(LAST_NOTE_KEY, selected);
-    } catch {
-      // Storage unavailable — skip remembering.
-    }
   }, [selected]);
 
   useEffect(() => {
@@ -907,14 +898,9 @@ export default function App({ accountSlot, onShare }: { accountSlot?: ReactNode;
         }
         setContents({});
         setActiveFolder('');
-        const lastNote = readLastNote();
-        const visibleFiles = result.files.filter((file) => !isHiddenVaultFile(file));
-        if (seededPath && !visibleFiles.includes(seededPath)) visibleFiles.push(seededPath);
-        const preferred =
-          (lastNote && (visibleFiles.includes(lastNote) || result.pdfFiles.includes(lastNote)) ? lastNote : '') ||
-          (visibleFiles.find((file) => file === 'Welcome.md') ?? visibleFiles[0] ?? '');
-        setSelected(preferred);
-        setOpenTabs(preferred ? [preferred] : []);
+        // Always start on the home screen (streak, ranks, recents); nothing reopens.
+        setSelected('');
+        setOpenTabs([]);
         setPreviewTab(null);
         persistSelectionRef.current = true;
         void getBackend().perf?.mark('renderer-interactive');
