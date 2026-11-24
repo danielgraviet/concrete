@@ -122,6 +122,21 @@ export class QuizHistoryStore {
     for (const listener of this.listeners) listener();
   }
 
+  /**
+   * Adopt synced attempts (already merged with this store's own). Notifies
+   * only when something actually changed.
+   */
+  mergeAttempts(attempts: QuizAttempt[]): void {
+    const before = JSON.stringify(this.getAll());
+    const byId = new Map(this.attempts.map((attempt) => [attempt.id, attempt] as const));
+    for (const attempt of attempts) byId.set(attempt.id, attempt);
+    const next = [...byId.values()];
+    if (JSON.stringify([...next].sort((a, b) => b.completedAt - a.completedAt)) === before) return;
+    this.attempts = next;
+    this.persist();
+    for (const listener of this.listeners) listener();
+  }
+
   private listeners = new Set<() => void>();
 
   private load(): void {
