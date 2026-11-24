@@ -51,6 +51,12 @@ interface VaultImportResult extends VaultOpenResult {
   importSummary: VaultImportSummary;
 }
 
+/** A file picked from disk that the renderer imports itself (e.g. a slide deck). */
+interface PickedFile {
+  name: string;
+  bytes: Uint8Array;
+}
+
 interface VaultListResult {
   files: string[];
   pdfFiles: string[];
@@ -153,8 +159,16 @@ interface Window {
     openPath: (root: string, name: string) => Promise<boolean>;
     /** Reveals a vault-relative file in Finder / Explorer. */
     revealInFolder: (root: string, name: string) => Promise<boolean>;
-    /** Picks a PDF from disk and copies it into `folder`. Null when cancelled. */
-    importFile: (root: string, folder: string) => Promise<string | null>;
+    /**
+     * Picks a file from disk. Notes and PDFs are copied into `folder` and their
+     * vault path is returned; a slide deck comes back as `{ name, bytes }` for
+     * the renderer to import as a quiz source. Null when cancelled.
+     */
+    importFile: (root: string, folder: string) => Promise<string | PickedFile | null>;
+    /** Bytes of a vault document (PDF or .pptx). Missing on older Electron builds. */
+    readDocument?: (root: string, name: string) => Promise<Uint8Array>;
+    /** Save a new .pptx into the vault; rejects if the path exists. Returns the vault path. */
+    saveDocument?: (root: string, name: string, bytes: Uint8Array) => Promise<string>;
     /** Raw text per page (capped at 500 pages); `totalPages` is the real count. */
     extractPdfText: (root: string, name: string) => Promise<{ pages: string[]; totalPages: number }>;
     /** Prints a note to a PDF beside it. Returns the vault-relative PDF path. */

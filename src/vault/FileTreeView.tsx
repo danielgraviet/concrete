@@ -8,7 +8,7 @@ import {
   ArchiveIcon,
   PinTopIcon,
 } from '@radix-ui/react-icons';
-import { buildFileTree, isPdfFileName, isQuizFileName, noteTitle } from './fileTree';
+import { buildFileTree, isDocumentFileName, isQuizFileName, isSlideDeckFileName, noteTitle } from './fileTree';
 import { PdfFileIcon } from './PdfFileIcon';
 import type { VaultFolderNode, VaultTreeNode } from './types';
 
@@ -323,7 +323,7 @@ function TreeNode({
 
   const isSelected = selected === node.path;
   const isQuiz = isQuizFileName(node.name);
-  const isPdf = isPdfFileName(node.name);
+  const isPdf = isDocumentFileName(node.name);
   const isRenaming = renaming?.kind === 'file' && renaming.path === node.path;
   const label = noteTitle(node.path);
   const badge = useContext(BadgesContext).get(node.path);
@@ -359,7 +359,7 @@ function TreeNode({
           {isQuiz ? (
             <ClipboardIcon width={14} height={14} className="quiz-file-icon" />
           ) : isPdf ? (
-            <PdfFileIcon />
+            <PdfFileIcon kind={isSlideDeckFileName(node.name) ? 'slides' : 'pdf'} />
           ) : (
             <FileTextIcon width={14} height={14} />
           )}

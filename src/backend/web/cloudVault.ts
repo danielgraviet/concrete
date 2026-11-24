@@ -212,6 +212,15 @@ function isPdfPath(path: string): boolean {
   return extname(path) === '.pdf';
 }
 
+/** Binary documents tracked in `pdfFiles`: PDFs and slide decks. */
+function isDocumentPath(path: string): boolean {
+  return extname(path) === '.pdf' || extname(path) === '.pptx';
+}
+
+export const PPTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+/** Largest deck the browser will read; storage has its own (smaller) upload limit. */
+const MAX_DECK_BYTES = 300 * 1024 * 1024;
+
 function isNotePath(path: string): boolean {
   return extname(path) === '.md';
 }
@@ -350,7 +359,7 @@ export function createCloudVault(options: CloudVaultOptions): CloudVault {
   async function listPdfs(): Promise<string[]> {
     if (!files) return [];
     try {
-      return (await files.list()).map((f) => f.path).filter(isPdfPath);
+      return (await files.list()).map((f) => f.path).filter(isDocumentPath);
     } catch (error) {
       logFileError('listing PDFs', error);
       return [...pdfPaths];
@@ -944,11 +953,19 @@ export function createCloudVault(options: CloudVaultOptions): CloudVault {
     return (options.extractPdfPages ?? extractPdfPagesInBrowser)(bytes, MAX_PDF_PAGES);
   }
 
-  /** Upload a PDF picked in the browser into `folder`; never overwrites ("Notes 2.pdf"). */
-  async function importFile(_root: string, folder: string): Promise<string | null> {
+  /**
+   * Upload a PDF picked in the browser into `folder`; never overwrites
+   * ("Notes 2.pdf"). A slide deck is returned as `{ name, bytes }` for the
+   * renderer to import as a quiz source instead.
+   */
+  async function importFile(_root: string, folder: string): Promise<string | PickedFile | null> {
     if (!files) return notAvailable();
-    const file = await (options.pickFile ?? pickFileInBrowser)('.pdf,application/pdf');
+    const file = await (options.pickFile ?? pickFileInBrowser)(`.pdf,application/pdf,.pptx,${PPTX_MIME},.ppt`);
     if (!file) return null;
+    if (/\.pptx?$/i.test(file.name)) {
+      if (file.size > MAX_DECK_BYTES) throw new Error('Slide deck is larger than 300 MB.');
+      return { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) };
+    }
     if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') {
       throw new Error('Only PDF files can be imported on the web.');
     }
@@ -969,6 +986,22 @@ export function createCloudVault(options: CloudVaultOptions): CloudVault {
       return path;
     }
     throw new Error('Could not find a free name for this PDF.');
+  }
+
+  async function readDocument(_root: string, name: string): Promise<Uint8Array> {
+    if (!files) return notAvailable();
+    if (typeof name !== 'string' || !isDocumentPath(name)) throw new Error('Not a PDF or slide deck');
+    return files.getBytes(name);
+  }
+
+  /** Upload a new .pptx or PDF; rejects if the path is taken. Returns its vault path. */
+  async function saveDocument(_root: string, name: string, bytes: Uint8Array): Promise<string> {
+    if (!files) return notAvailable();
+    const path = normalizeVaultPath(name);
+    if (!path || !isDocumentPath(path)) throw new Error('Only .pptx decks and PDFs can be saved');
+    await files.put(path, bytes, extname(path) === '.pdf' ? 'application/pdf' : PPTX_MIME, { ifAbsent: true });
+    pdfPaths.add(path);
+    return path;
   }
 
   const vault: CloudVault = {
@@ -1014,11 +1047,12 @@ export function createCloudVault(options: CloudVaultOptions): CloudVault {
     },
 
     async rename(_root, from, to) {
-      if (isPdfPath(from)) {
+      if (isDocumentPath(from)) {
         if (!files) return notAvailable();
+        const ext = extname(from);
         const raw = String(to || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
-        const target = normalizeVaultPath(isPdfPath(raw) ? raw : `${raw}.pdf`);
-        if (!target || !isPdfPath(target)) throw new Error('Invalid destination path');
+        const target = normalizeVaultPath(extname(raw) === ext ? raw : `${raw}${ext}`);
+        if (!target || extname(target) !== ext) throw new Error('Invalid destination path');
         if (target === from) return from;
         if (pdfPaths.has(target)) throw new Error(`"${target}" already exists`);
         await files.move(from, target);
@@ -1058,7 +1092,7 @@ export function createCloudVault(options: CloudVaultOptions): CloudVault {
     },
 
     async delete(_root, name) {
-      if (isPdfPath(name)) {
+      if (isDocumentPath(name)) {
         if (!files) return notAvailable();
         await files.remove(name);
         pdfPaths.delete(name);
@@ -1164,7 +1198,7 @@ export function createCloudVault(options: CloudVaultOptions): CloudVault {
     // `capabilities.fileImport` off on web.
     importFile: files ? importFile : notAvailable,
     extractPdfText: files ? extractPdfText : notAvailable,
-    ...(files ? { saveImage, readImageDataUrl, readPdf } : {}),
+    ...(files ? { saveImage, readImageDataUrl, readPdf, readDocument, saveDocument } : {}),
 
     flushAll,
     hasPendingWrites: () => hasBuffered() || inflightCount > 0,

@@ -26,6 +26,7 @@ function render(attemptCount: number, days: string[]) {
       vaultRoot="/vault"
       onOpen={() => {}}
       onCreate={() => {}}
+      onNewQuiz={() => {}}
       onSearch={() => {}}
     />,
   );
@@ -56,5 +57,13 @@ describe('VaultHome milestones', () => {
     expect(ids).toHaveLength(QUIZ_RANKS.length);
     expect(new Set(ids).size).toBe(ids.length);
     expect(html).not.toMatch(/NaN|undefined/);
+  });
+});
+
+describe('VaultHome actions', () => {
+  it('offers New quiz as the main action, after New note', () => {
+    const html = render(0, []);
+    expect(html).toContain('New quiz');
+    expect(html.indexOf('New note')).toBeLessThan(html.indexOf('New quiz'));
   });
 });

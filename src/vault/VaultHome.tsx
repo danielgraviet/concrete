@@ -18,13 +18,14 @@ type Props = {
   vaultRoot: string;
   onOpen: (path: string) => void;
   onCreate: () => void;
+  onNewQuiz: () => void;
   onSearch: () => void;
 };
 
 const RECENT_LIMIT = 5;
 const RANK_UP_MS = 2600;
 
-export function VaultHome({ recentPaths, availablePaths, historyStore, activityStore, vaultRoot, onOpen, onCreate, onSearch }: Props) {
+export function VaultHome({ recentPaths, availablePaths, historyStore, activityStore, vaultRoot, onOpen, onCreate, onNewQuiz, onSearch }: Props) {
   const heading = useRef<HTMLHeadingElement>(null);
   const [, refresh] = useState(0);
 
@@ -77,8 +78,11 @@ export function VaultHome({ recentPaths, availablePaths, historyStore, activityS
           <Button variant="soft" color="gray" highContrast onClick={onSearch}>
             <MagnifyingGlassIcon /> Find a file
           </Button>
-          <Button highContrast onClick={onCreate}>
+          <Button variant="soft" color="gray" highContrast onClick={onCreate}>
             <PlusIcon /> New note
+          </Button>
+          <Button highContrast onClick={onNewQuiz}>
+            <ClipboardIcon /> New quiz
           </Button>
         </Flex>
       </header>
