@@ -86,7 +86,10 @@ describe('importQuizSource', () => {
       unitCount: 24,
       storedOriginal: true,
     });
-    expect(vault.files.get('Sources/cell-membranes.pptx')).toEqual(bytes);
+    const stored = vault.files.get('Sources/cell-membranes.pptx');
+    // Compare the 1.7 MB fixture directly without Vitest's deep object traversal.
+    expect(stored?.byteLength).toBe(bytes.byteLength);
+    expect(stored?.every((byte, i) => byte === bytes[i])).toBe(true);
   });
 
   it('never overwrites a deck with the same name', async () => {

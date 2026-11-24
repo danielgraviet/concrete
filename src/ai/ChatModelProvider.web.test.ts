@@ -15,12 +15,15 @@ const caps: Backend['capabilities'] = {
   apiKeySettings: false,
 };
 
-function webBackend(chatCompletions?: (...args: unknown[]) => unknown): void {
+function webBackend(
+  chatCompletions?: (...args: unknown[]) => unknown,
+  recordActivity: AiBackend['recordActivity'] = async () => false,
+): void {
   setBackendForTesting({
     target: 'web',
     capabilities: caps,
     ...(chatCompletions
-      ? { ai: { chatCompletions, recordActivity: async () => false } as unknown as AiBackend }
+      ? { ai: { chatCompletions, recordActivity } as unknown as AiBackend }
       : {}),
   });
 }
@@ -119,5 +122,24 @@ describe('ChatModelProvider on web', () => {
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).not.toContain('AI Activity');
+  });
+
+  it('includes the AI Activity hint when saving the raw reply succeeds', async () => {
+    const chat = vi.fn().mockResolvedValue({ content: 'not a quiz', model: 'openai/gpt-4o-mini', usage: null });
+    const save = vi.fn().mockResolvedValue(true);
+    webBackend(chat, save);
+    await expect(new ChatModelProvider('openrouter', 'openai/gpt-4o-mini').generateQuiz({ topic: 'Cells' }))
+      .rejects.toThrow('saved under Settings → AI Activity');
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({
+      operation: 'quiz_parse_failure',
+      responseText: 'not a quiz',
+    }));
+  });
+
+  it('preserves the parse error when saving AI Activity fails', async () => {
+    const chat = vi.fn().mockResolvedValue({ content: 'not a quiz', model: 'openai/gpt-4o-mini', usage: null });
+    webBackend(chat, vi.fn().mockRejectedValue(new Error('Storage unavailable')));
+    await expect(new ChatModelProvider('openrouter', 'openai/gpt-4o-mini').generateQuiz({ topic: 'Cells' }))
+      .rejects.toThrow(/^Model response did not contain parseable quiz questions\. Try again\.$/);
   });
 });

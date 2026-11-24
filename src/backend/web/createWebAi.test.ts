@@ -32,7 +32,10 @@ function setup(fetchImpl: (url: string, init: RequestInit) => Promise<Response>,
   return { ai: createWebAi(client), fetchMock };
 }
 
-afterEach(() => setWebIdTokenSource(null));
+afterEach(() => {
+  setWebIdTokenSource(null);
+  vi.unstubAllEnvs();
+});
 
 describe('toProxyRequest', () => {
   it('passes model/temperature/provider/reasoning through and drops backend/capture', () => {
@@ -181,7 +184,8 @@ describe('web backend wiring', () => {
     expect(await getWebIdToken()).toBeNull();
   });
 
-  it('keeps every capability off and the vault undefined', () => {
+  it('keeps every capability off and the vault undefined without a proxy URL', () => {
+    vi.stubEnv('VITE_AI_PROXY_URL', '');
     const backend = createWebBackend();
     expect(backend.target).toBe('web');
     expect(backend.vault).toBeUndefined();
@@ -206,7 +210,6 @@ describe('web backend wiring', () => {
       const init = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1];
       expect((init.headers as Record<string, string>).Authorization).toBe('Bearer live-token');
     } finally {
-      vi.unstubAllEnvs();
       vi.unstubAllGlobals();
     }
   });

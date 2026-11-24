@@ -282,7 +282,7 @@ export class ChatModelProvider implements AiProvider {
         }
       }
       // The API call succeeded, so keep the raw reply where the user can read it.
-      void ai
+      const saved = await ai
         .recordActivity?.({
           operation: 'quiz_parse_failure',
           status: 'error',
@@ -292,9 +292,8 @@ export class ChatModelProvider implements AiProvider {
           responseText: result.content,
           metadata,
         })
-        ?.catch(() => {});
-      // Web keeps activity in account-scoped browser storage; desktop uses its local activity file.
-      throw new Error(`${message} The raw model reply is saved under Settings → AI Activity.`);
+        ?.catch(() => false);
+      throw new Error(saved ? `${message} The raw model reply is saved under Settings → AI Activity.` : message);
     }
   }
 

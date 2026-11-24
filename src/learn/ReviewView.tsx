@@ -73,12 +73,12 @@ export function ReviewView({
   const [copied, setCopied] = useState(false);
   const card = session.current(now);
   const editable = card ? canEditCard(card) : false;
-  const counts = session.counts();
+  const counts = session.counts(now);
   const total = session.reviewed + counts.newCount + counts.learning + counts.review;
   const progress = total ? session.reviewed / total : 1;
 
   // Nothing showable yet but learning cards are waiting: wake up when one is due.
-  const nextDue = card ? null : session.nextLearningDue();
+  const nextDue = card ? null : session.nextLearningDue(now);
   useEffect(() => {
     if (nextDue === null) return;
     const wait = Math.max(1000, nextDue - Date.now() - 20 * 60_000);
