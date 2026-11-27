@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { ArrowRightIcon, ClipboardIcon, FileTextIcon, MagnifyingGlassIcon, PlusIcon } from '@radix-ui/react-icons';
 import { Button, Flex } from '@radix-ui/themes';
 import type { DailyActivityStore } from '../quiz/dailyActivity';
@@ -6,7 +6,7 @@ import type { QuizHistoryStore } from '../quiz/history';
 import { isQuizPath } from '../quiz/paths';
 import { summarizeActivity } from '../quiz/progressStats';
 import { noteTitle, parentDir } from './fileTree';
-import { flameProgress, QUIZ_RANKS, rankProgress, SeenRankStore, type QuizRank } from './homeMilestones';
+import { flameProgress, QUIZ_RANKS, rankProgress, type QuizRank } from './homeMilestones';
 import { RankBadge } from './RankBadge';
 import { StreakFlame } from './StreakFlame';
 
@@ -48,13 +48,13 @@ export function VaultHome({ recentPaths, availablePaths, historyStore, activityS
   const { streak } = summarizeActivity(attempts, activityStore.getDays());
   const flame = flameProgress(streak);
   const rank = rankProgress(attempts.length);
-  const seenRanks = useMemo(() => new SeenRankStore(vaultRoot), [vaultRoot]);
   const [rankUpFrom, setRankUpFrom] = useState<number | null>(null);
 
+  // The rank reveal plays every time the home screen opens: the tier below
+  // cracks apart to show the metal you hold now (nothing to crack from sand).
   useEffect(() => {
-    const previous = seenRanks.observe(rank.index);
-    if (previous !== null) setRankUpFrom(previous);
-  }, [seenRanks, rank.index]);
+    setRankUpFrom(rank.index > 0 ? rank.index - 1 : null);
+  }, [rank.index]);
 
   useEffect(() => {
     if (rankUpFrom === null) return;
@@ -139,7 +139,7 @@ export function VaultHome({ recentPaths, availablePaths, historyStore, activityS
               </span>
             </dd>
           </div>
-          {rankUpFrom !== null ? <p className="sr-only" role="status">Rank up: {rank.current.name}</p> : null}
+          {rankUpFrom !== null ? <p className="sr-only" role="status">Current rank: {rank.current.name}</p> : null}
         </div>
       </dl>
 
