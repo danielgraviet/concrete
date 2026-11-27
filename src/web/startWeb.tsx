@@ -2,11 +2,13 @@ import { StrictMode, lazy, Suspense, type ComponentType, type ReactNode } from '
 import type { Root } from 'react-dom/client';
 import { AppTheme } from '../AppTheme';
 import { initWebBackend } from '../backend/web/session';
+import { isPhoneScreen } from '../mobile/detect';
 import { AuthGate } from './AuthGate';
 import { parseShareRoute } from './share/route';
 import { createShareController } from './share/shareController';
 import type { RequestShare } from './share/types';
 
+const MobileApp = lazy(() => import('../mobile/MobileApp').then((m) => ({ default: m.default })));
 const ShareViewer = lazy(() => import('./share/ShareViewer').then((m) => ({ default: m.ShareViewer })));
 const ShareDialogHost = lazy(() => import('./share/ShareDialog').then((m) => ({ default: m.ShareDialogHost })));
 
@@ -32,13 +34,17 @@ export async function startWeb(root: Root, App: ComponentType<WebAppProps>): Pro
   }
 
   const shares = createShareController();
+  // Phone browsers get the dedicated mobile shell; everything else the desktop app.
+  const AppShell: ComponentType<WebAppProps> = isPhoneScreen() ? MobileApp : App;
   root.render(
     <StrictMode>
       <AppTheme>
         <AuthGate session={session}>
           {(account) => (
             <>
-              <App accountSlot={account} onShare={shares.open} />
+              <Suspense fallback={null}>
+                <AppShell accountSlot={account} onShare={shares.open} />
+              </Suspense>
               <Suspense fallback={null}>
                 <ShareDialogHost controller={shares} />
               </Suspense>

@@ -102,14 +102,8 @@ import {
   type NotePlan,
   type ReviewCard,
 } from './learn';
-import {
-  aiClient,
-  LocalEchoProvider,
-  MockAiProvider,
-  ChatModelProvider,
-  truncateNoteContext,
-} from './ai';
-import { resolveOpenRouterModelId } from './ai/openRouterModels';
+import { aiClient, truncateNoteContext } from './ai';
+import { resolveAiProvider } from './ai/resolveAiProvider';
 import {
   isQuizPath,
   nextQuizTitle,
@@ -136,7 +130,7 @@ import { getRecentOpenAnswerSamples } from './quiz/rubricCalibration';
 import { BrandLogo } from './branding/BrandLogo';
 import { getSandboxStatus } from './sandbox';
 import { verifyCodeQuestions } from './quiz/verifyCode';
-import type { AgentProviderId, AppSettings } from './settings';
+import type { AgentProviderId } from './settings';
 // Type-only: share UI lives in src/web/share and is injected by the web entry.
 import type { RequestShare, ShareTarget } from './web/share/types';
 import { ONBOARDING_ENABLED, ProductTour } from './onboarding';
@@ -264,26 +258,6 @@ function loadLayout(): LayoutState {
     };
   } catch {
     return { sidebarOpen: true, rightOpen: false, focusMode: false };
-  }
-}
-
-function resolveAiProvider(settings: AppSettings) {
-  // Web has one live provider: OpenRouter through the AI proxy Worker, with the
-  // model picked in Settings (the Worker enforces its allowlist).
-  if (getBackend().target === 'web') {
-    return new ChatModelProvider('openrouter', resolveOpenRouterModelId(settings.openRouterModelId));
-  }
-  switch (settings.providerId) {
-    case 'openrouter':
-      return new ChatModelProvider('openrouter', settings.openRouterModelId);
-    case 'claude':
-      return new ChatModelProvider('claude', settings.claudeModelId);
-    case 'codex':
-      return new ChatModelProvider('codex');
-    case 'local-echo':
-      return new LocalEchoProvider();
-    default:
-      return new MockAiProvider();
   }
 }
 

@@ -1,0 +1,326 @@
+/* Mobile shell (phone browsers) — app-like layout: header, scrollable content,
+   bottom tab bar. Theme tokens only, so every theme pack applies unchanged. */
+
+.mobile-app {
+  height: 100vh;
+  height: 100dvh; /* follows the collapsing browser chrome on phones */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--mv-bg, #191919);
+  color: var(--mv-text, #d6d6d6);
+}
+
+/* Text controls: iOS Safari zooms the viewport when focusing inputs < 16px. */
+.mobile-app input,
+.mobile-app textarea,
+.mobile-app select {
+  font-size: max(16px, 1em);
+}
+
+/* ---------------------------------------------------------------- header -- */
+
+.mobile-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 6px 10px;
+  padding-top: calc(6px + env(safe-area-inset-top, 0px));
+  border-bottom: 1px solid var(--mv-border, #303030);
+  background: var(--mv-surface, #202020);
+}
+.mobile-header-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--mv-text, #e5e5e5);
+}
+.mobile-header-brand svg,
+.mobile-header-brand img {
+  width: 24px;
+  height: 24px;
+}
+.mobile-offline {
+  font-size: 11px;
+  font-weight: 600;
+  color: #c9a7ff;
+  border: 1px solid #453554;
+  border-radius: 999px;
+  background: #2a2333;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.mobile-header-spacer { flex: 1; }
+.mobile-account { display: flex; align-items: center; min-width: 0; }
+
+/* --------------------------------------------------------------- content -- */
+
+.mobile-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.mobile-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 18px 16px 32px;
+}
+.mobile-scroll .vault-home { max-width: 680px; margin-inline: auto; }
+
+.mobile-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 2px 0 14px;
+}
+.mobile-list-head h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  color: #f0f0f0;
+}
+.mobile-list-actions { margin: 0 0 16px; }
+.mobile-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--mv-border, #353535);
+  border-radius: 9px;
+  background: var(--mv-surface-2, #292929);
+  color: var(--mv-muted, #858585);
+  font: inherit;
+  cursor: pointer;
+}
+
+.mobile-list ul { list-style: none; margin: 0; padding: 0; }
+.mobile-list-section > h2 {
+  margin: 22px 2px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--mv-muted, #858585);
+}
+.mobile-list-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: var(--mv-text, #d6d6d6);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.mobile-list-row:active { background: var(--mv-surface-2, #2a2a2a); }
+.mobile-list-row > svg { flex: 0 0 auto; color: var(--mv-muted, #858585); }
+.mobile-list-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mobile-list-row-text strong {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mobile-list-row-text small {
+  font-size: 11px;
+  color: var(--mv-muted, #858585);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-empty {
+  border: 1px dashed var(--mv-border, #3a3a3a);
+  border-radius: 12px;
+  padding: 28px 18px;
+  text-align: center;
+  color: var(--mv-muted, #858585);
+}
+.mobile-empty strong { display: block; color: var(--mv-text, #d6d6d6); margin-bottom: 6px; }
+.mobile-empty p { margin: 0; line-height: 1.5; }
+
+/* Full-screen sub-views: note editor, quiz, review session. */
+
+.mobile-subview {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.mobile-subheader {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 46px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--mv-border, #303030);
+  background: var(--mv-surface, #202020);
+}
+.mobile-subheader-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.mobile-subheader-title strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--mv-text, #e5e5e5);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mobile-subheader-title small {
+  font-size: 11px;
+  color: var(--mv-muted, #858585);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Reuse the desktop editor-wrap (markdown typography, scroll) with phone
+   padding instead of the desktop 54px/7% frame. */
+.mobile-app .editor-wrap {
+  flex: 1 1 auto;
+  padding: 18px 16px calc(140px + env(safe-area-inset-bottom, 0px));
+}
+
+/* Review session: srs-review pulls itself up by -24px against desktop
+   padding; give it its own scroll frame here. */
+.mobile-review-run {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 18px 16px calc(32px + env(safe-area-inset-bottom, 0px));
+}
+.mobile-review-run .srs-review { margin: 0 auto; min-height: 0; }
+
+/* Deck list inside the Review tab. */
+.mobile-review-sidebar { padding-top: 2px; }
+.mobile-review-sidebar .srs-sidebar { padding-bottom: 8px; }
+.mobile-review-sidebar .srs-empty { margin: 12px 0 0; }
+/* The shortcut hints (⇧C / ⇧K) are desktop-only. */
+.mobile-review-sidebar .srs-empty p:last-of-type { display: none; }
+.mobile-review-sidebar .srs-decks { gap: 8px; }
+.mobile-review-sidebar .srs-stats { margin-top: 18px; }
+
+/* Quiz taking: the quiz column is already centered/max-width; add breathing
+   room at the bottom above the tab bar. */
+.mobile-quiz .quiz-take,
+.mobile-quiz .quiz-grade,
+.mobile-quiz .quiz-edit { padding-bottom: 24px; }
+
+/* Quiet loader while the open quiz's body is read (blank on desktop). */
+.mobile-app .vault-home-pending {
+  flex: 1 1 auto;
+  display: grid;
+  place-items: center;
+}
+.mobile-app .vault-home-pending::before {
+  content: "";
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--mv-border, #3a3a3a);
+  border-top-color: var(--mv-muted, #858585);
+  animation: mobile-spin 0.9s linear infinite;
+}
+@keyframes mobile-spin { to { transform: rotate(360deg); } }
+
+/* -------------------------------------------------------------- tab bar -- */
+
+.mobile-tabbar {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-top: 1px solid var(--mv-border, #303030);
+  background: var(--mv-surface, #202020);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.mobile-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-height: 54px;
+  padding: 8px 0 7px;
+  border: 0;
+  background: none;
+  color: var(--mv-muted, #777);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.mobile-tab.active { color: var(--mv-text, #ddd); }
+.mobile-tab-icon { position: relative; display: grid; place-items: center; }
+.mobile-tab-badge {
+  position: absolute;
+  top: -6px;
+  right: -14px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--mv-text, #ddd);
+  color: var(--mv-bg, #191919);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- splash -- */
+
+.mobile-splash { align-items: center; justify-content: center; gap: 16px; }
+.mobile-splash svg,
+.mobile-splash img { width: 44px; height: 44px; animation: mobile-pulse 1.2s ease-in-out infinite; }
+@keyframes mobile-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+/* ---------------------------------------------------------------- toasts -- */
+/* Same toast markup as the desktop shell, repositioned to a top banner. */
+
+.mobile-app .mv-toast-stack {
+  top: calc(58px + env(safe-area-inset-top, 0px));
+  right: 10px;
+  left: 10px;
+  bottom: auto;
+  align-items: stretch;
+}
+.mobile-app .mv-toast { max-width: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-splash svg,
+  .mobile-splash img { animation: none; }
+  .mobile-app .vault-home-pending::before { animation: none; }
+}

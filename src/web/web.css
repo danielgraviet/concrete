@@ -1,5 +1,6 @@
 .web-auth-screen {
   min-height: 100vh;
+  min-height: 100dvh; /* phones: follows the collapsing browser chrome */
   display: grid;
   place-items: center;
   padding: 24px 16px;
