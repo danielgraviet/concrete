@@ -18,7 +18,8 @@ type Props = {
   vaultRoot: string;
   onOpen: (path: string) => void;
   onCreate: () => void;
-  onNewQuiz: () => void;
+  /** Opens quiz creation. Omit to hide the button (e.g. the mobile shell, where quizzes are take-only). */
+  onNewQuiz?: () => void;
   onSearch: () => void;
 };
 
@@ -81,9 +82,11 @@ export function VaultHome({ recentPaths, availablePaths, historyStore, activityS
           <Button variant="soft" color="gray" highContrast onClick={onCreate}>
             <PlusIcon /> New note
           </Button>
-          <Button highContrast onClick={onNewQuiz}>
-            <ClipboardIcon /> New quiz
-          </Button>
+          {onNewQuiz ? (
+            <Button highContrast onClick={onNewQuiz}>
+              <ClipboardIcon /> New quiz
+            </Button>
+          ) : null}
         </Flex>
       </header>
 

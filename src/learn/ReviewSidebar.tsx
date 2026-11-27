@@ -20,7 +20,8 @@ function CountPills({ counts }: { counts: QueueCounts }) {
 type Props = {
   system: ReviewSystem;
   onStart: (deck: Deck) => void;
-  onClose: () => void;
+  /** Closes the sidebar. Omit to hide the heading row (e.g. inside the mobile shell's Review tab). */
+  onClose?: () => void;
   onCreate?: () => void;
   /** Adds "Share deck…" to each deck's context menu (web only). */
   onShare?: (deck: Deck) => void;
@@ -54,14 +55,16 @@ export function ReviewSidebar({ system, onStart, onClose, onCreate, onShare }: P
 
   return (
     <>
-      <div className="sidebar-heading">
-        <Text size="1" color="gray" weight="bold">
-          REVIEW
-        </Text>
-        <IconButton type="button" size="1" variant="ghost" color="gray" aria-label="Collapse sidebar" onClick={onClose}>
-          <Cross1Icon />
-        </IconButton>
-      </div>
+      {onClose ? (
+        <div className="sidebar-heading">
+          <Text size="1" color="gray" weight="bold">
+            REVIEW
+          </Text>
+          <IconButton type="button" size="1" variant="ghost" color="gray" aria-label="Collapse sidebar" onClick={onClose}>
+            <Cross1Icon />
+          </IconButton>
+        </div>
+      ) : null}
       <div className="srs-sidebar">
         {onCreate ? <Button size="2" highContrast onClick={onCreate}><PlusIcon /> Create flashcard</Button> : null}
         {cards.length === 0 ? (

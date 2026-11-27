@@ -7,6 +7,7 @@ Write Markdown notes and study them with quizzes and flashcards.
 ## Web and desktop
 
 - **Web** — Sign in with Google. Concrete saves your notes to your online workspace.
+- **Mobile web** — On a phone browser you get a dedicated mobile layout (streaks, notes, flashcards, quizzes) with the same account and synced progress. Add it to your home screen to run it full-screen.
 - **Desktop** — Open an existing Markdown folder or start a new one. Your notes stay as regular `.md` files you can edit in any text editor. You can also import an Obsidian vault.
 
 ## Study from your notes
