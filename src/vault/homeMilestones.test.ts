@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { flameProgress, rankProgress, SeenRankStore } from './homeMilestones';
+import { describe, expect, it } from 'vitest';
+import { flameProgress, rankProgress } from './homeMilestones';
 
 describe('flameProgress', () => {
   it.each([
@@ -55,38 +55,3 @@ describe('rankProgress', () => {
   });
 });
 
-describe('SeenRankStore', () => {
-  beforeEach(() => {
-    const data = new Map<string, string>();
-    vi.stubGlobal('localStorage', {
-      getItem: (key: string) => data.get(key) ?? null,
-      setItem: (key: string, value: string) => void data.set(key, value),
-    });
-  });
-  afterEach(() => vi.unstubAllGlobals());
-
-  it('records the first visit silently', () => {
-    const store = new SeenRankStore('/vault');
-    expect(store.observe(4)).toBeNull();
-    expect(store.get()).toBe(4);
-  });
-
-  it('reports a rank-up once, from the previously seen rank', () => {
-    const store = new SeenRankStore('/vault');
-    store.observe(3);
-    expect(store.observe(4)).toBe(3);
-    expect(store.observe(4)).toBeNull();
-  });
-
-  it('does not celebrate a lower rank after history is cleared', () => {
-    const store = new SeenRankStore('/vault');
-    store.observe(5);
-    expect(store.observe(1)).toBeNull();
-    expect(store.observe(2)).toBe(1);
-  });
-
-  it('keeps vaults separate', () => {
-    new SeenRankStore('/a').observe(6);
-    expect(new SeenRankStore('/b').observe(2)).toBeNull();
-  });
-});

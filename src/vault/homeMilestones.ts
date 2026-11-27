@@ -95,36 +95,3 @@ export function rankProgress(quizCount: number): Progression<QuizRank> {
   return progression(QUIZ_RANKS, quizCount);
 }
 
-/**
- * Remembers the highest quiz rank the home screen has shown, so the rank-up
- * animation plays once per new rank. The first visit records silently.
- */
-export class SeenRankStore {
-  private readonly key: string;
-
-  constructor(vaultRoot = '') {
-    this.key = `mv:home-rank-seen:${vaultRoot || '__default__'}`;
-  }
-
-  get(): number | null {
-    try {
-      const raw = localStorage.getItem(this.key);
-      if (raw === null) return null;
-      const value = Number(raw);
-      return Number.isInteger(value) && value >= 0 ? value : null;
-    } catch {
-      return null;
-    }
-  }
-
-  set(index: number): void {
-    try { localStorage.setItem(this.key, String(index)); } catch { /* Rank-up animation is optional if storage is unavailable. */ }
-  }
-
-  /** Records `current` and returns the previous rank index when this is a rank-up. */
-  observe(current: number): number | null {
-    const seen = this.get();
-    if (seen !== current) this.set(current);
-    return seen !== null && current > seen ? seen : null;
-  }
-}
